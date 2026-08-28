@@ -9,6 +9,7 @@ pub mod camera;
 pub mod diag;
 pub mod light;
 pub mod list;
+pub mod mcp;
 pub mod snapshot;
 
 #[derive(Debug, Subcommand)]
@@ -30,6 +31,9 @@ pub enum Command {
     /// Inspect and control standalone Logitech lights.
     #[command(subcommand)]
     Light(light::LightCmd),
+    /// Serve the agent to AI assistants over the Model Context Protocol
+    /// (stdio transport; register the command `openlogi mcp` in the client).
+    Mcp(mcp::McpArgs),
 }
 
 impl Command {
@@ -49,6 +53,7 @@ impl Command {
             Self::Assets(cmd) => cmd.run()?,
             Self::Diag(cmd) => cmd.run().await?,
             Self::Light(cmd) => cmd.run().await?,
+            Self::Mcp(args) => mcp::run(args).await?,
         }
         Ok(ExitCode::SUCCESS)
     }
