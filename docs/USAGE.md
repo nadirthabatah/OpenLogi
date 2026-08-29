@@ -273,6 +273,11 @@ anything; only a key with no face *and* no action is refused.
 Actions fire on the press, not the release, so a key does its thing once per
 push rather than twice.
 
+Actions run on their own thread, in the order the keys were pressed. A key
+bound to a build, or to anything else that takes its time, therefore delays the
+actions queued behind it but does not stop the deck reading key presses — a
+deck that stops responding is indistinguishable from a cable that has come out.
+
 Some actions run a program or type text — `RunShellCommand`, `RunAppleScript`,
 `OpenApplication`, `TypeText`. A layout carrying any of those is **refused
 before the device is even opened**: nothing is applied and nothing is bound.

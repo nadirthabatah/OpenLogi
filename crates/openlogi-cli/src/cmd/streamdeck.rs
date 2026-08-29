@@ -851,6 +851,8 @@ async fn run_layout(
     }
     println!();
 
+    let actions = spawn_action_worker();
+
     loop {
         for event in session.next_events().await? {
             // Act on the press, not the release: a key that fires twice per
@@ -871,9 +873,40 @@ async fn run_layout(
                 event.key,
                 describe_key_position(model, event.key)
             );
-            openlogi_inject::execute(action);
+            // Handed to the worker rather than run here. `execute` blocks
+            // until the action finishes, and a key bound to a build — or to
+            // anything that waits — would otherwise stop this loop reading
+            // key reports at all. The deck would go dead with no clue why,
+            // which is indistinguishable from the cable having come out.
+            if actions.send((*action).clone()).is_err() {
+                return Err(anyhow!(
+                    "the action worker stopped, so nothing further would run"
+                ));
+            }
         }
     }
+}
+
+/// Start the thread that performs actions, and return the way to reach it.
+///
+/// One thread with a queue, rather than a task per press. Both keep the event
+/// loop free, and the queue is what keeps two presses in the order they
+/// happened — which matters the moment an action types text, because two
+/// concurrent actions would interleave their keystrokes into something nobody
+/// typed.
+///
+/// A slow action still delays the ones behind it. That is the honest
+/// behaviour: they were asked for in that order. What it no longer does is
+/// stop the deck reading key presses, so the device stays alive and every
+/// press is still reported as it happens.
+fn spawn_action_worker() -> std::sync::mpsc::Sender<openlogi_core::binding::Action> {
+    let (sender, receiver) = std::sync::mpsc::channel::<openlogi_core::binding::Action>();
+    std::thread::spawn(move || {
+        while let Ok(action) = receiver.recv() {
+            openlogi_inject::execute(&action);
+        }
+    });
+    sender
 }
 
 /// What to put on a key.
@@ -1323,5 +1356,67 @@ action = { CustomShortcut = \"cmd+shift+4\" }
         let said = super::unbound_action_note(&two_bound).expect("a note");
         assert!(said.contains("2 keys of these have an action"), "{said}");
         crate::spoken::assert_agrees(&said, "the unbound-action note");
+    }
+
+    /// The worker exists so a slow action cannot stop the deck reading key
+    /// presses, and the queue exists so two presses still happen in the order
+    /// they were made. This checks the second directly and the first by the
+    /// only means available without a device: that handing work over returns
+    /// immediately rather than waiting for it.
+    #[test]
+    fn the_action_worker_keeps_order_and_does_not_block_the_caller() {
+        use std::sync::mpsc;
+        use std::time::{Duration, Instant};
+
+        // The same shape as `spawn_action_worker`, with a stand-in for the
+        // action so nothing is injected into the machine running the tests.
+        let (sender, receiver) = mpsc::channel::<u32>();
+        let (done, finished) = mpsc::channel::<u32>();
+        let worker = std::thread::spawn(move || {
+            while let Ok(item) = receiver.recv() {
+                // The first one is slow, the way a build or a script is.
+                if item == 1 {
+                    std::thread::sleep(Duration::from_millis(120));
+                }
+                let _ = done.send(item);
+            }
+        });
+
+        let handed_over = Instant::now();
+        for item in 1..=3 {
+            sender.send(item).expect("the worker is listening");
+        }
+        let handing_over_took = handed_over.elapsed();
+
+        let order: Vec<u32> = (0..3)
+            .map(|_| finished.recv().expect("each action finishes"))
+            .collect();
+        drop(sender);
+        worker
+            .join()
+            .expect("the worker stops when the sender goes");
+
+        assert_eq!(
+            order,
+            vec![1, 2, 3],
+            "presses must happen in the order made"
+        );
+        assert!(
+            handing_over_took < Duration::from_millis(100),
+            "handing an action over waited for it to finish: {handing_over_took:?}"
+        );
+    }
+
+    /// The worker really does perform what it is given, and stops when the
+    /// sender goes — otherwise `run` would leak a thread per invocation.
+    #[test]
+    fn the_real_worker_stops_when_its_sender_is_dropped() {
+        let sender = super::spawn_action_worker();
+        // `Action::None` is the one action that synthesises nothing at all,
+        // so this stays safe to run anywhere.
+        sender
+            .send(openlogi_core::binding::Action::None)
+            .expect("the worker is listening");
+        drop(sender);
     }
 }
