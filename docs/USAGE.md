@@ -6,6 +6,7 @@ The `openlogi` command-line tool. For install and configuration, see the
 
 ```sh
 openlogi list                 # paired devices: slot, codename, kind, online, battery
+openlogi devices              # everything plugged in, whoever made it, and what it offers
 openlogi assets sync          # pre-fetch device renders from the fastest available mirror
 openlogi diag features        # dump every HID++ feature the active device reports
 openlogi diag controls        # dump reprogrammable controls and capability flags
@@ -25,6 +26,44 @@ openlogi profile export FILE  # write this machine's whole configuration to a fi
 openlogi profile inspect FILE # show what a profile holds, without applying it
 openlogi profile import FILE  # apply a profile, backing up the current one first
 ```
+
+## Everything plugged in
+
+`openlogi list` answers "which Logitech devices are paired". `openlogi
+devices` answers a different question: **what is on this desk, and what can
+this program do with each of it** — whoever made it.
+
+It surveys every HID device and every camera the OS reports, collapses the
+several HID collections one physical device exposes into a single entry, and
+sorts what it finds into three groups:
+
+- **Configurable now** — a driver in this build handles it. Each entry says
+  what that driver actually lets you change and which command to reach it
+  with, so the listing is also the instructions.
+- **Wireless receivers** — a Unifying or Bolt receiver is supported, but it is
+  a way in rather than a peripheral; the devices paired to it are listed in
+  their own right. Filing it under "unsupported" would tell you your mouse was
+  not going to work, which is the opposite of the truth.
+- **Detected, not configurable by this build** — everything else. These are
+  never hidden. A device the hub cannot drive is still a device you own, and
+  omitting it is how vendor software leaves people unable to tell "not
+  supported" from "not plugged in". Each line carries the vendor and product
+  ids, which are exactly what a device-support request needs.
+
+The closing line gives a total, because a long list read aloud needs one.
+`--supported` narrows the listing to what can be configured, and still prints
+the full count so a shorter list does not read as a smaller desk.
+
+Cameras are in the list whoever made them. UVC is a class standard rather than
+a per-vendor protocol — the same brightness, exposure, focus and zoom
+registers answer on an Elgato Facecam, an Obsbot, or a laptop's built-in
+camera — so a camera is supported because of what it is, not because of who
+made it.
+
+If nothing at all is reported, the command says so and names the likely cause:
+on Linux that is almost always the udev rules rather than an empty desk, and
+on macOS a missing Input Monitoring grant. "Nothing found" on its own would
+send you to check your cables.
 
 ## Stream Decks
 

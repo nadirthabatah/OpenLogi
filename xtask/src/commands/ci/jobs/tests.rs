@@ -95,6 +95,37 @@ fn wasm_checks_the_crates_ci_checks() {
     }
 }
 
+/// The other direction for the crate list, which the test above does not
+/// cover: a crate the workflow checks but this runner does not is a crate
+/// `cargo xtask ci` passes on and CI then rejects — the exact surprise the
+/// local runner exists to prevent.
+#[test]
+fn ci_yml_checks_no_wasm_crate_this_runner_skips() {
+    let Some(workflow) = workflow() else {
+        return;
+    };
+    let known: Vec<&str> = super::steps::wasm_portable_crates().collect();
+    let commands = workflow_commands(&workflow);
+    for invocation in commands.split("cargo check").skip(1) {
+        let Some(end) = invocation.find("--target wasm32-unknown-unknown") else {
+            continue;
+        };
+        let mut words = invocation[..end].split_whitespace();
+        while let Some(word) = words.next() {
+            if word != "-p" {
+                continue;
+            }
+            let Some(crate_name) = words.next() else {
+                continue;
+            };
+            assert!(
+                known.contains(&crate_name),
+                "ci.yml's wasm job checks {crate_name}, which this runner does not"
+            );
+        }
+    }
+}
+
 /// The other direction: a job added to `ci.yml` that this runner cannot even
 /// name is a job nobody can reproduce locally.
 #[test]

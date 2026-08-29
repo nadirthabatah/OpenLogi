@@ -6,6 +6,7 @@ use clap::Subcommand;
 pub mod assets;
 pub mod backlight;
 pub mod camera;
+pub mod devices;
 pub mod diag;
 pub mod light;
 pub mod list;
@@ -18,6 +19,9 @@ pub mod streamdeck;
 pub enum Command {
     /// List connected Logitech HID++ devices.
     List(list::ListArgs),
+    /// Survey every peripheral attached, whoever made it, and say what
+    /// this build can configure on each.
+    Devices(devices::DevicesArgs),
     /// Read or persistently set the keyboard backlight (HID++ 0x1982).
     Backlight(backlight::BacklightArgs),
     /// Capture one frame from a Logitech webcam to a PNG.
@@ -51,6 +55,7 @@ impl Command {
     pub async fn run(self) -> Result<ExitCode> {
         match self {
             Self::List(args) => return list::run(args).await,
+            Self::Devices(args) => return devices::run(args).await,
             Self::Backlight(args) => backlight::run(args).await?,
             // Camera capture is blocking AVFoundation — no need for the async runtime.
             Self::Snapshot(args) => snapshot::run(args)?,

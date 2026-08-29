@@ -1,0 +1,330 @@
+//! What this build can do with a device, once it knows what the device is.
+
+use openlogi_device_registry::LOGITECH_VENDOR_ID;
+use openlogi_device_registry::litra::find_litra;
+use openlogi_device_registry::receiver::{ReceiverBrand, find_receiver};
+use openlogi_streamdeck::model::identify as identify_deck;
+
+use crate::hidpp::is_long_collection;
+use crate::identity::Identity;
+
+/// A driver compiled into this build.
+///
+/// Deliberately a closed enum rather than a string: a device survey that can
+/// name a driver which does not exist would be worse than one that admits it
+/// knows nothing, because it sends someone looking for a command that is not
+/// there. Adding a driver here is a compile-time change, so the list cannot
+/// promise support the binary does not carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Driver {
+    /// Logitech's HID++ protocol: mice, keyboards, and their controls.
+    HidPlusPlus,
+    /// Logitech's Litra lights.
+    Litra,
+    /// Elgato Stream Decks and the Stream Deck Pedal.
+    StreamDeck,
+    /// Any UVC webcam, whoever made it.
+    Uvc,
+}
+
+impl Driver {
+    /// Stable identifier, for scripts and for `--json` output.
+    #[must_use]
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::HidPlusPlus => "hidpp",
+            Self::Litra => "litra",
+            Self::StreamDeck => "streamdeck",
+            Self::Uvc => "uvc",
+        }
+    }
+
+    /// What this driver actually lets you change, in one line.
+    ///
+    /// Written to be read aloud: the point of the survey is that someone who
+    /// cannot see the screen learns what each device offers without opening
+    /// anything.
+    #[must_use]
+    pub const fn what_it_configures(self) -> &'static str {
+        match self {
+            Self::HidPlusPlus => "buttons, pointer speed, scroll wheel, and backlight",
+            Self::Litra => "power, brightness, and colour temperature",
+            Self::StreamDeck => "key images, labels, brightness, and key actions",
+            Self::Uvc => "brightness, contrast, exposure, focus, and zoom",
+        }
+    }
+
+    /// The command that configures a device this driver handles.
+    #[must_use]
+    pub const fn command(self) -> &'static str {
+        match self {
+            Self::HidPlusPlus => "openlogi list",
+            Self::Litra => "openlogi light",
+            Self::StreamDeck => "openlogi streamdeck",
+            Self::Uvc => "openlogi camera",
+        }
+    }
+}
+
+/// What this build can do with one device.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Support {
+    /// A driver in this build configures it.
+    Driver {
+        /// The driver that handles it.
+        driver: Driver,
+        /// The model, when a catalog entry names one.
+        model: Option<&'static str>,
+    },
+    /// A Logitech receiver: a way in, not a peripheral.
+    ///
+    /// Reported distinctly because listing it as an unsupported device would
+    /// be actively wrong — it is fully supported, and the things it supports
+    /// are the mice and keyboards paired to it, which appear in their own
+    /// right. Someone reading "Unifying receiver: unsupported" would
+    /// reasonably conclude their mouse was not going to work.
+    Receiver(ReceiverBrand),
+    /// Detected, and nothing in this build drives it.
+    ///
+    /// Never omitted from a listing. A device you own that the hub cannot
+    /// configure is exactly what you need told, and it is also how the list of
+    /// what to support next gets written.
+    Unsupported,
+}
+
+impl Support {
+    /// Whether this build can configure the device.
+    #[must_use]
+    pub const fn is_configurable(&self) -> bool {
+        matches!(self, Self::Driver { .. })
+    }
+}
+
+/// One thing plugged in, and what can be done with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Peripheral {
+    /// Who and what the OS says it is.
+    pub identity: Identity,
+    /// What this build can do with it.
+    pub support: Support,
+}
+
+impl Peripheral {
+    /// Classify a HID node.
+    ///
+    /// A single peripheral exposes several HID collections and the verdict can
+    /// differ between them — only one collection of a Logitech mouse carries
+    /// HID++ — so this answers for the collection it is given, and merging the
+    /// collections of one device is the caller's job.
+    #[must_use]
+    pub fn from_hid(identity: Identity, usage_page: u16, usage_id: u16) -> Self {
+        let support = classify_hid(&identity, usage_page, usage_id);
+        Self { identity, support }
+    }
+
+    /// Classify a camera.
+    ///
+    /// Every camera the OS reports as a capture device is a UVC camera, and
+    /// UVC is a class standard rather than a per-vendor protocol: the same
+    /// brightness, exposure, focus and zoom registers answer on an Elgato
+    /// Facecam, an Obsbot, and a laptop's built-in camera. So there is nothing
+    /// to look up — a camera is supported because of what it is, not because
+    /// of who made it.
+    #[must_use]
+    pub fn from_camera(identity: Identity) -> Self {
+        Self {
+            identity,
+            support: Support::Driver {
+                driver: Driver::Uvc,
+                model: None,
+            },
+        }
+    }
+
+    /// Keep whichever verdict says more, when one device was seen twice.
+    ///
+    /// Merging collections of one physical device must not lose the supported
+    /// verdict just because the unsupported collection came second: a Logitech
+    /// mouse enumerates a plain mouse collection alongside its HID++ one, and
+    /// which arrives first is not something we control.
+    #[must_use]
+    pub fn merge(self, other: Self) -> Self {
+        match (&self.support, &other.support) {
+            (Support::Unsupported, _) if !matches!(other.support, Support::Unsupported) => other,
+            _ => self,
+        }
+    }
+}
+
+/// The verdict for one HID collection.
+fn classify_hid(identity: &Identity, usage_page: u16, usage_id: u16) -> Support {
+    let (vendor, product) = (identity.vendor_id, identity.product_id);
+
+    if let Some(deck) = identify_deck(vendor, product) {
+        return Support::Driver {
+            driver: Driver::StreamDeck,
+            model: Some(deck.name),
+        };
+    }
+
+    // Checked before HID++, not after: a Litra deliberately uses the same
+    // vendor collection as Logitech's HID++ peripherals, so the more specific
+    // match has to win or every Litra would be reported as a mouse.
+    if let Some(litra) = find_litra(vendor, product, usage_page, usage_id) {
+        return Support::Driver {
+            driver: Driver::Litra,
+            model: Some(litra.registry_model_id),
+        };
+    }
+
+    if let Some(receiver) = find_receiver(vendor, product) {
+        return Support::Receiver(receiver.brand);
+    }
+
+    if vendor == LOGITECH_VENDOR_ID && is_long_collection(usage_page, usage_id) {
+        return Support::Driver {
+            driver: Driver::HidPlusPlus,
+            model: None,
+        };
+    }
+
+    Support::Unsupported
+}
+
+#[cfg(test)]
+mod tests {
+    use openlogi_device_registry::LOGITECH_VENDOR_ID;
+    use openlogi_device_registry::litra::{
+        LITRA_GLOW_PRODUCT_ID, LITRA_USAGE_ID, LITRA_USAGE_PAGE,
+    };
+    use openlogi_device_registry::receiver::ReceiverBrand;
+    use openlogi_streamdeck::model::ELGATO_VENDOR_ID;
+
+    use super::{Driver, Identity, Peripheral, Support};
+
+    fn identity(vendor_id: u16, product_id: u16) -> Identity {
+        Identity {
+            vendor_id,
+            product_id,
+            ..Identity::default()
+        }
+    }
+
+    #[test]
+    fn a_stream_deck_is_named_by_its_catalog_entry() {
+        let found = Peripheral::from_hid(identity(ELGATO_VENDOR_ID, 0x0080), 0xff00, 0x0001);
+        assert_eq!(
+            found.support,
+            Support::Driver {
+                driver: Driver::StreamDeck,
+                model: Some("Stream Deck MK.2"),
+            }
+        );
+    }
+
+    /// The one ordering in this function that is not arbitrary. A Litra
+    /// answers on the same vendor collection HID++ uses, so checking HID++
+    /// first would report every Litra as a mouse and offer the wrong commands.
+    #[test]
+    fn a_litra_is_a_light_not_a_mouse() {
+        let found = Peripheral::from_hid(
+            identity(LOGITECH_VENDOR_ID, LITRA_GLOW_PRODUCT_ID),
+            LITRA_USAGE_PAGE,
+            LITRA_USAGE_ID,
+        );
+        assert_eq!(
+            found.support,
+            Support::Driver {
+                driver: Driver::Litra,
+                model: Some("8c900"),
+            }
+        );
+    }
+
+    #[test]
+    fn a_logitech_hidpp_collection_is_configurable() {
+        let found = Peripheral::from_hid(identity(LOGITECH_VENDOR_ID, 0x4082), 0xff00, 0x0002);
+        assert_eq!(
+            found.support,
+            Support::Driver {
+                driver: Driver::HidPlusPlus,
+                model: None,
+            }
+        );
+    }
+
+    /// The plain mouse collection of a Logitech mouse. Not a bug — the device
+    /// is still supported through its other collection, which is exactly why
+    /// `merge` exists.
+    #[test]
+    fn a_logitech_non_hidpp_collection_is_not_configurable_on_its_own() {
+        let found = Peripheral::from_hid(identity(LOGITECH_VENDOR_ID, 0x4082), 0x0001, 0x0002);
+        assert_eq!(found.support, Support::Unsupported);
+    }
+
+    #[test]
+    fn a_receiver_is_reported_as_a_receiver_not_as_unsupported() {
+        let found = Peripheral::from_hid(identity(LOGITECH_VENDOR_ID, 0xc52b), 0xff00, 0x0002);
+        assert_eq!(found.support, Support::Receiver(ReceiverBrand::Unifying));
+    }
+
+    #[test]
+    fn an_unknown_device_is_reported_rather_than_dropped() {
+        let found = Peripheral::from_hid(identity(0x1234, 0x5678), 0x000c, 0x0001);
+        assert_eq!(found.support, Support::Unsupported);
+        assert!(!found.support.is_configurable());
+    }
+
+    #[test]
+    fn every_camera_is_supported_whoever_made_it() {
+        for vendor in [LOGITECH_VENDOR_ID, ELGATO_VENDOR_ID, 0x1234] {
+            let found = Peripheral::from_camera(identity(vendor, 0x0001));
+            assert_eq!(
+                found.support,
+                Support::Driver {
+                    driver: Driver::Uvc,
+                    model: None,
+                },
+                "a UVC camera from {vendor:#06x} should be configurable"
+            );
+        }
+    }
+
+    /// The ordering hazard: a mouse's plain collection can be enumerated
+    /// before its HID++ one, and merging must not let the later, emptier
+    /// verdict win.
+    #[test]
+    fn merging_keeps_the_verdict_that_says_more_in_either_order() {
+        let plain = Peripheral::from_hid(identity(LOGITECH_VENDOR_ID, 0x4082), 0x0001, 0x0002);
+        let rich = Peripheral::from_hid(identity(LOGITECH_VENDOR_ID, 0x4082), 0xff00, 0x0002);
+        assert!(
+            plain.clone().merge(rich.clone()).support.is_configurable(),
+            "unsupported first"
+        );
+        assert!(
+            rich.merge(plain).support.is_configurable(),
+            "supported first"
+        );
+    }
+
+    #[test]
+    fn every_driver_has_a_distinct_id_and_a_command() {
+        let drivers = [
+            Driver::HidPlusPlus,
+            Driver::Litra,
+            Driver::StreamDeck,
+            Driver::Uvc,
+        ];
+        for (index, driver) in drivers.iter().enumerate() {
+            assert!(!driver.what_it_configures().is_empty());
+            assert!(driver.command().starts_with("openlogi "));
+            assert!(
+                drivers[..index]
+                    .iter()
+                    .all(|other| other.id() != driver.id()),
+                "{} is used twice",
+                driver.id()
+            );
+        }
+    }
+}
