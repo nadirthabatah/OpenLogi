@@ -278,6 +278,12 @@ fn nothing_this_project_prints_is_hostile_to_a_screen_reader() {
     sandbox.run(&["streamdeck", "example", "streaming"]);
 
     let invocations: &[&[&str]] = &[
+        // `list` is inherited, and is also what `openlogi` with no arguments
+        // runs — so it is the first thing anyone hears. Its device tree used
+        // to be drawn with box characters, which a screen reader reads one
+        // character at a time.
+        &["list"],
+        &[],
         &["doctor"],
         &["doctor", "--json"],
         &["devices"],
