@@ -496,4 +496,78 @@ mod tests {
         assert!(text.contains("11"), "{text}");
         assert!(text.contains("Refusing"), "{text}");
     }
+
+    /// Arbitrary bytes from a board must never panic the parser, and must
+    /// never be read as an answer to a question they do not answer.
+    ///
+    /// A QMK board is the one thing this crate cannot get its hands on, so the
+    /// next best assurance is to assume it sends anything at all and require
+    /// a value or an error — never a crash, and never a keycode taken from a
+    /// report that was about something else. A panic here kills the process
+    /// mid-keymap-read; a wrong accept writes someone's keyboard from noise.
+    ///
+    /// Deterministic, so a failure names bytes that reproduce it.
+    #[test]
+    fn no_report_of_any_shape_panics_or_is_misread() {
+        let mut state = 0x853C_49E6_748F_EA9B_u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+
+        let commands = [
+            Command::GetProtocolVersion,
+            Command::GetLayerCount,
+            Command::GetKeycode {
+                layer: 1,
+                row: 2,
+                column: 3,
+            },
+            Command::SetKeycode {
+                layer: 1,
+                row: 2,
+                column: 3,
+                keycode: 0x0068,
+            },
+        ];
+
+        for command in commands {
+            for _ in 0..20_000 {
+                let len = (next() % 80) as usize;
+                let mut report = vec![0_u8; len];
+                for byte in &mut report {
+                    *byte = (next() & 0xff) as u8;
+                }
+                match Response::parse(command, &report) {
+                    Err(_) => {}
+                    Ok(response) => {
+                        // An accepted report must have echoed this command...
+                        assert_eq!(
+                            report[0],
+                            command.id() as u8,
+                            "accepted a report for another command: {report:02x?}"
+                        );
+                        // ...and, for the positional commands, this position.
+                        if let Command::GetKeycode { layer, row, column }
+                        | Command::SetKeycode {
+                            layer, row, column, ..
+                        } = command
+                        {
+                            assert_eq!(
+                                [report[1], report[2], report[3]],
+                                [layer, row, column],
+                                "accepted a report about another key: {report:02x?}"
+                            );
+                            assert!(
+                                matches!(response, Response::Keycode(_)),
+                                "a keycode command answered as {response:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

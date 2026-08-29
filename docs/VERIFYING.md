@@ -14,6 +14,28 @@ If you have limited time, do steps 0, 6 and 7. Step 0 clears the permission
 problems that mask everything else, step 6 proves the hub sees your desk, and
 step 7 exercises the code most likely to be wrong.
 
+## What is checked without a device, and what is not
+
+Two decoders here meet bytes a device sent: the Stream Deck key-report
+decoder and the VIA response parser. Neither has ever met a device, so both
+are checked against the assumption that a device sends *anything at all* —
+220,000 generated reports between them, across every catalogued model and
+every command, requiring a value or an error and never a crash.
+
+That is not a substitute for hardware and is not offered as one. It rules
+out one specific way the drivers could fail on your desk — a panic or a
+misread when a report arrives truncated, out of order, or as noise from a
+device being unplugged mid-transfer — which is the failure this project can
+least afford, because it kills the process that was watching your keys.
+
+The generators are deterministic, so a failure names bytes that reproduce
+it rather than a run that happened once.
+
+What still needs a device is everything about *meaning*: that the key you
+press is the key we report, that the image we send lands the right way up,
+and that the collection we chose is the one carrying the traffic. That is
+what the steps below are for.
+
 ## 0. Build, then ask the program what is wrong
 
 ```sh
