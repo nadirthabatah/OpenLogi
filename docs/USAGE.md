@@ -17,6 +17,8 @@ openlogi streamdeck verify    # check the Stream Deck driver against your hardwa
 openlogi streamdeck fill 0 ff8800   # fill the top-left key with a colour
 openlogi streamdeck image 0 icon.png # show a picture on the top-left key
 openlogi streamdeck label 0 "MUTE MIC"  # write a label, sized to fit
+openlogi streamdeck example deck.toml   # write a layout file to start from
+openlogi streamdeck apply deck.toml     # apply a whole layout at once
 openlogi mcp                  # serve the agent to an AI assistant over MCP (see below)
 openlogi profile export FILE  # write this machine's whole configuration to a file
 openlogi profile inspect FILE # show what a profile holds, without applying it
@@ -32,6 +34,39 @@ device.
 Keys are numbered from 0 at the top left, running left to right then down, and
 every command that takes a key also prints its row and column — so "key 7" and
 "row 2, column 3" always appear together and you never have to count squares.
+
+### Layouts
+
+Nothing a Stream Deck shows survives unplugging it — the images live in the
+device's volatile memory and go when it loses power. A layout file is where a
+deck's appearance actually lives:
+
+```toml
+brightness = 80
+
+[[keys]]
+index = 0
+label = "MUTE MIC"
+background = "802020"
+
+[[keys]]
+index = 2
+image = "icons/camera.png"
+```
+
+`openlogi streamdeck example deck.toml` writes one to start from, and
+`openlogi streamdeck apply deck.toml` applies it. Image paths are relative to
+the layout file, so a layout and its icons travel together. Neither the example
+nor a parse error needs a device attached, so you can write and check a layout
+before the hardware arrives.
+
+A layout is checked before anything is written: a key the attached model does
+not have, the same key listed twice, a key with both a label and an image, or
+one with neither, are all refused with nothing half-applied. A misspelled field
+is refused too rather than silently ignored — a key that just stays blank tells
+you nothing.
+
+### Keys
 
 `label` writes words on a key, wrapped and sized to fill it — a key that says
 what it does. That matters beyond convenience: the label is text the system

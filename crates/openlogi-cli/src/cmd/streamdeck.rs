@@ -9,7 +9,9 @@
 //! paste into an issue, which is a far better way to close that gap than
 //! asking a user to describe what happened.
 
-use std::path::PathBuf;
+mod layout;
+
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -52,6 +54,16 @@ pub enum StreamDeckCmd {
     Label(LabelArgs),
     /// Clear every key back to black.
     Clear,
+    /// Apply a whole deck layout from a file.
+    Apply(PathArgs),
+    /// Write an example layout file to get started from.
+    Example(PathArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct PathArgs {
+    /// The layout file.
+    pub file: PathBuf,
 }
 
 #[derive(Debug, Args)]
@@ -98,6 +110,28 @@ impl StreamDeckCmd {
     /// Propagates enumeration and I/O failures. "No device attached" is not an
     /// error: it exits [`NOTHING_FOUND`].
     pub async fn run(self) -> Result<ExitCode> {
+        // Writing an example layout needs no device, and wanting one before
+        // the hardware arrives — or on a machine that will never have it — is
+        // the ordinary case, not an edge one.
+        if let Self::Example(args) = &self {
+            std::fs::write(&args.file, EXAMPLE_LAYOUT)
+                .with_context(|| format!("failed to write {}", args.file.display()))?;
+            println!("example layout written to {}", args.file.display());
+            println!(
+                "Edit it, then: openlogi streamdeck apply {}",
+                args.file.display()
+            );
+            return Ok(ExitCode::SUCCESS);
+        }
+
+        // Likewise, a layout that does not parse is worth saying so about
+        // before demanding hardware: the file is wrong either way, and "no
+        // Stream Deck found" would send someone hunting the wrong problem.
+        let parsed = match &self {
+            Self::Apply(args) => Some(read_layout(&args.file)?),
+            _ => None,
+        };
+
         let collections = streamdeck::attached()
             .await
             .context("failed to enumerate HID devices")?;
@@ -155,6 +189,12 @@ impl StreamDeckCmd {
                 }
                 println!("cleared all {} keys", model.key_count());
             }
+            Self::Apply(args) => {
+                let layout = parsed.ok_or_else(|| anyhow!("the layout was not read"))?;
+                return apply(&collections, &args.file, &layout).await;
+            }
+            // Handled before the device scan above.
+            Self::Example(_) => unreachable!("example returns before the device scan"),
             Self::Watch => {
                 let mut session = open_preferred(&collections).await?;
                 println!(
@@ -170,6 +210,91 @@ impl StreamDeckCmd {
         }
         Ok(ExitCode::SUCCESS)
     }
+}
+
+/// A layout to start from, written by `openlogi streamdeck example`.
+const EXAMPLE_LAYOUT: &str = r#"# A Stream Deck layout.
+#
+# Keys count from 0 at the top left, running left to right then down.
+# Apply it with: openlogi streamdeck apply this-file.toml
+#
+# Nothing a deck shows survives unplugging it, so this file is where a
+# layout actually lives — keep it in git, carry it between machines, and
+# re-apply it whenever the deck is plugged back in.
+
+brightness = 80
+
+[[keys]]
+index = 0
+label = "MUTE MIC"
+background = "802020"
+
+[[keys]]
+index = 1
+label = "REC"
+colour = "ff4040"
+
+# A key can show a picture instead of words. The path is relative to this
+# file, so a layout and its icons travel together.
+# [[keys]]
+# index = 2
+# image = "icons/camera.png"
+"#;
+
+/// Read and parse a layout file, without needing a device.
+fn read_layout(file: &Path) -> Result<layout::Layout> {
+    let source = std::fs::read_to_string(file)
+        .with_context(|| format!("failed to read {}", file.display()))?;
+    layout::Layout::parse(file, &source).map_err(|error| anyhow!("{error}"))
+}
+
+/// Apply a parsed layout to the attached deck.
+async fn apply(collections: &[Attached], file: &Path, layout: &layout::Layout) -> Result<ExitCode> {
+    let mut session = open_preferred(collections).await?;
+    let model = session.model();
+    // Validated against the model before anything is written, so a layout
+    // naming a key this deck does not have fails with nothing half-applied.
+    layout.validate(model).map_err(|error| anyhow!("{error}"))?;
+
+    if let Some(percent) = layout.brightness {
+        let brightness = Brightness::new(percent).map_err(|error| anyhow!("{error}"))?;
+        session.set_brightness(brightness).await?;
+        println!("brightness set to {percent}%");
+    }
+
+    for key in &layout.keys {
+        let ink = key
+            .colour
+            .as_deref()
+            .map_or(Ok((255, 255, 255)), parse_colour)?;
+        let paper = key
+            .background
+            .as_deref()
+            .map_or(Ok((0, 0, 0)), parse_colour)?;
+        let picture = if let Some(text) = &key.label {
+            render::label(model, text, ink, paper).map_err(|e| anyhow!("{e}"))?
+        } else if let Some(relative) = &key.image {
+            let path = layout::Layout::resolve(file, relative);
+            image::open(&path).with_context(|| format!("failed to read {}", path.display()))?
+        } else {
+            // `validate` rejects an entry with neither, so this is unreachable
+            // unless that rule and this loop disagree.
+            unreachable!("validate rejects a key with nothing to draw");
+        };
+        let encoded = render::key_image(model, &picture).map_err(|e| anyhow!("{e}"))?;
+        session.set_key_image(key.index, &encoded).await?;
+        println!(
+            "  key {} ({})",
+            key.index,
+            describe_key_position(model, key.index)
+        );
+    }
+    println!(
+        "applied {} key(s) from {}",
+        layout.keys.len(),
+        file.display()
+    );
+    Ok(ExitCode::SUCCESS)
 }
 
 /// What to put on a key.

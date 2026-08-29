@@ -5489,6 +5489,7 @@ dependencies = [
  "openlogi-ipc",
  "openlogi-streamdeck",
  "png 0.17.16",
+ "serde",
  "serde_json",
  "tarpc",
  "tempfile",
