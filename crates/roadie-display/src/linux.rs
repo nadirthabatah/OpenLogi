@@ -71,15 +71,16 @@ pub(crate) struct I2cBus {
 
 impl I2cBus {
     /// Open `path`, which is a `/dev/i2c-*` node.
-    fn open(path: &Path, name: String) -> Result<Self, DisplayError> {
+    ///
+    /// The failure is a sentence rather than a [`DisplayError`] because the
+    /// caller is about to attach it to a display that has a name, and the
+    /// display's name is the useful half of that sentence.
+    fn open(path: &Path, name: String) -> Result<Self, String> {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .open(path)
-            .map_err(|error| DisplayError::Access {
-                path: path.display().to_string(),
-                reason: explain(&error),
-            })?;
+            .map_err(|error| format!("{}: {}", path.display(), explain(&error)))?;
         Ok(Self { file, name })
     }
 
@@ -158,7 +159,18 @@ fn explain(error: &io::Error) -> String {
 
 /// Every connected display, whether or not its control line can be opened.
 pub(crate) fn enumerate() -> Result<Vec<Display>, DisplayError> {
-    let entries = match fs::read_dir(DRM) {
+    enumerate_under(Path::new(DRM))
+}
+
+/// [`enumerate`], against a given display-subsystem root.
+///
+/// The root is a parameter for one reason: it is what lets the promise this
+/// function makes — that a display is never dropped for being unreachable —
+/// be a tested fact rather than a comment. `/sys` cannot be written to, and
+/// the machines this is built on have no monitors, so without this the whole
+/// enumeration path would be checked only by reading it.
+fn enumerate_under(root: &Path) -> Result<Vec<Display>, DisplayError> {
+    let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
         // No display subsystem at all: a container, a headless server, a
         // kernel built without DRM. That is not a failure to enumerate, it is
@@ -168,7 +180,7 @@ pub(crate) fn enumerate() -> Result<Vec<Display>, DisplayError> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => {
             return Err(DisplayError::Access {
-                path: DRM.to_owned(),
+                path: root.display().to_string(),
                 reason: explain(&error),
             });
         }
@@ -189,15 +201,13 @@ pub(crate) fn enumerate() -> Result<Vec<Display>, DisplayError> {
         let backend = match i2c_node(&connector) {
             Some(node) => match I2cBus::open(&node, name.clone()) {
                 Ok(bus) => crate::backend::boxed(Ddc::new(bus)),
-                Err(error) => Unreachable::boxed(name, &error),
+                Err(reason) => Unreachable::boxed(name, reason),
             },
             None => Unreachable::boxed(
-                name.clone(),
-                &DisplayError::Access {
-                    path: connector.display().to_string(),
-                    reason: "the graphics driver published no I2C line for this connector"
-                        .to_owned(),
-                },
+                name,
+                "the graphics driver published no I2C line for this connector, so it \
+                 cannot be controlled over DDC on this machine"
+                    .to_owned(),
             ),
         };
         displays.push(Display::new(id, edid, backend));
@@ -220,13 +230,15 @@ fn connected(connector: &Path) -> bool {
 ///
 /// A connector that is connected but whose `edid` is empty is a real state:
 /// the kernel reports the link before it has read the block, and some KVMs
-/// never let it. That is a display with no name, not an absent display.
+/// never let it. That is a display with no name, not an absent display, and
+/// [`enumerate`] keeps it either way.
+///
+/// There is deliberately no length check here. `Edid::parse` requires a full
+/// 128-byte base block and rejects anything shorter, empty included, so a
+/// guard for it would be a branch that cannot fire — and a branch that cannot
+/// fire reads as load-bearing to whoever finds it next.
 fn read_edid(connector: &Path) -> Option<Edid> {
-    let bytes = fs::read(connector.join("edid")).ok()?;
-    if bytes.is_empty() {
-        return None;
-    }
-    Edid::parse(&bytes).ok()
+    Edid::parse(&fs::read(connector.join("edid")).ok()?).ok()
 }
 
 /// The `/dev/i2c-*` node carrying this connector's DDC line.

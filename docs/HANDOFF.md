@@ -169,10 +169,22 @@ and require a failure. A mutation that survives is a claim nothing checks.
 Script it — apply, test, revert — and expect roughly a fifth to survive the
 first pass.
 
-Track record across the fork: five sweeps, and **every gap was in code that
+Track record across the fork: six sweeps, and **every gap was in code that
 had prose about it but no test.** The comments were consistently ahead of the
 tests. The driver logic, where the consequences are worst and the care was
 highest, came back clean each time.
+
+The sixth sweep, over `roadie-display`, held to that exactly. Twenty-nine
+mutations, twenty-seven killed on the first pass. One survivor was an
+equivalent mutant — a redundant emptiness check in front of `Edid::parse`,
+which rejects a short block anyway, so the guard was a branch that could not
+fire; it was deleted rather than given a test that would not have bitten. The
+other was real, and was the sort this method exists to find: the Linux
+backend's central promise, that a display is never dropped for being
+unreachable, had a paragraph of prose and no test, because enumeration read
+`/sys/class/drm` directly and `/sys` cannot be written to. Making the root a
+parameter turned five claims into tested ones, and the test written for it
+immediately exposed a message that nested one error's text inside another's.
 
 Two cautions learned the hard way. `rustfmt` reflows source, so a
 pattern-match mutation script silently finds nothing — always report

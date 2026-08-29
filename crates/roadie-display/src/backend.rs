@@ -186,6 +186,20 @@ pub enum DisplayError {
         source: CapabilitiesError,
     },
 
+    /// The display was found, and its control channel could not be opened.
+    ///
+    /// Distinct from [`Self::Access`] because it names the *display* rather
+    /// than the path: "LG ULTRAFINE cannot be reached" is the sentence someone
+    /// can act on, and the panel's own name is the thing they can match
+    /// against a screen on the desk.
+    #[error("{name} cannot be reached: {reason}")]
+    Unopened {
+        /// The display, by whatever name it could be given.
+        name: String,
+        /// Why its control channel could not be opened.
+        reason: String,
+    },
+
     /// We refused the write, because it cannot be undone from the keyboard.
     ///
     /// Not a failure of the display or the host. See [`Risk`].
@@ -224,21 +238,23 @@ pub struct Unreachable {
 impl Unreachable {
     /// Box a display that could not be opened, keeping `reason` to explain it.
     ///
-    /// The reason is flattened to a string here because it is about to be
-    /// repeated for every operation, and a `DisplayError` is not `Clone` —
-    /// its `Silent` variant boxes another one.
+    /// `reason` is a bare sentence rather than a [`DisplayError`], deliberately.
+    /// Wrapping one error's rendered text inside another produces "cannot reach
+    /// the display on X: cannot reach the display on Y: ...", which is unhelpful
+    /// on screen and genuinely hard to follow read aloud.
     #[must_use]
-    pub fn boxed(name: String, reason: &DisplayError) -> Box<dyn VcpBackend> {
-        Box::new(Self {
-            name,
-            reason: reason.to_string(),
-        })
+    pub fn boxed(name: String, reason: String) -> Box<dyn VcpBackend> {
+        Box::new(Self { name, reason })
     }
 
     /// The stored refusal, shaped as the error for any operation.
+    ///
+    /// Every operation gives the same answer on purpose: the one a person
+    /// happens to try first is the one they will report, so it must not decide
+    /// how much they are told.
     fn refuse<T>(&self) -> Result<T, DisplayError> {
-        Err(DisplayError::Access {
-            path: self.name.clone(),
+        Err(DisplayError::Unopened {
+            name: self.name.clone(),
             reason: self.reason.clone(),
         })
     }
