@@ -74,37 +74,93 @@ const DISAGREEING: &[&str] = &[
     " that are ",
     " that were ",
     " that have ",
+    " that point ",
+    " which run ",
+    " which are ",
+    " which were ",
+    " which have ",
+    " which point ",
     " were accepted",
+    " were not ",
+    " were found",
     " are not ",
     " have been ",
-    " were found",
 ];
 
-/// Fail if a singular count is followed by a plural verb.
+/// Clauses that a plural count in front of them makes ungrammatical.
 ///
-/// Only the "1 " case can be wrong this way, so that is all this looks for.
+/// The mirror of [`DISAGREEING`], and the one I wrote immediately after fixing
+/// its cases: having got the verb to agree with the count, the *next* clause
+/// in the same sentence still said "it". Both directions are the same mistake
+/// — a sentence tested at one length and shipped at the other.
+const DISAGREEING_PLURAL: &[&str] = &[
+    " it points ",
+    " it is ",
+    " it was ",
+    " it has ",
+    " it does ",
+    " which is ",
+    " that is not among",
+];
+
+/// Fail if a count and the words after it disagree in number.
+///
+/// Checks both directions: a count of one followed by a plural verb, and a
+/// count of more than one followed by a singular clause. A sentence is
+/// normally written and tested at one of the two lengths, so whichever the
+/// author did not try is the one that ships broken — and read aloud it does
+/// not merely look untidy, it arrives as a sentence that does not parse.
 ///
 /// # Panics
 ///
-/// Whenever a line starts a count at one and then uses a plural verb.
+/// Whenever a line's count and its verbs disagree.
 pub fn assert_agrees(text: &str, what: &str) {
     for line in text.lines() {
-        let Some(at) = line.find("1 ") else {
+        let Some((count, rest)) = leading_count(line) else {
             continue;
         };
-        // "11 devices" and "21 devices" are not the singular case.
-        if line[..at].ends_with(|c: char| c.is_ascii_digit()) {
-            continue;
-        }
-        let rest = &line[at..];
-        for pattern in DISAGREEING {
+        let (patterns, how) = if count == 1 {
+            (DISAGREEING, "a count of one")
+        } else {
+            (DISAGREEING_PLURAL, "a count of more than one")
+        };
+        for pattern in patterns {
             assert!(
                 !rest.contains(pattern),
-                "{what} says {pattern:?} after a count of one, which reads as \
-                 a broken sentence: {line}"
+                "{what} says {pattern:?} after {how}, which reads as a broken \
+                 sentence: {line}"
             );
         }
     }
+}
+
+/// The first count in a line, and everything after it.
+///
+/// Returns `None` for a line with no count in it, and skips a number that is
+/// part of a longer one — "11 devices" is not the singular case.
+fn leading_count(line: &str) -> Option<(u32, &str)> {
+    let bytes = line.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() {
+        if !bytes[at].is_ascii_digit() {
+            at += 1;
+            continue;
+        }
+        let start = at;
+        while at < bytes.len() && bytes[at].is_ascii_digit() {
+            at += 1;
+        }
+        // A number glued to a letter or a dot is a version, an id or a
+        // measurement rather than a count of something.
+        let is_a_count = start == 0 || !bytes[start - 1].is_ascii_alphanumeric();
+        if is_a_count
+            && bytes.get(at) == Some(&b' ')
+            && let Ok(count) = line[start..at].parse::<u32>()
+        {
+            return Some((count, &line[at..]));
+        }
+    }
+    None
 }
 
 /// Fail if `text` carries anything hostile to a screen reader.
@@ -138,7 +194,7 @@ pub fn assert_listenable(text: &str, what: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{assert_listenable, counted};
+    use super::{assert_agrees, assert_listenable, counted, leading_count};
 
     #[test]
     fn one_takes_the_singular_and_everything_else_the_plural() {
@@ -180,5 +236,48 @@ mod tests {
     #[should_panic(expected = "carries the meaning")]
     fn a_bare_tick_is_caught() {
         assert_listenable("\u{2713} permissions", "a test string");
+    }
+
+    /// Both directions of the mistake, each taken from output that shipped.
+    #[test]
+    fn a_count_that_disagrees_with_its_verbs_is_caught() {
+        let broken = [
+            "  1 action that run a program or type text were accepted:",
+            "  the 1 device you cannot open are not among them",
+            "  2 linked folders were not followed, because it points somewhere else",
+        ];
+        for line in broken {
+            let caught = std::panic::catch_unwind(|| assert_agrees(line, "a probe"));
+            assert!(caught.is_err(), "not caught: {line}");
+        }
+    }
+
+    /// And the sentences that are fine have to stay fine, or the check gets
+    /// switched off by whoever it wakes up at three in the morning.
+    #[test]
+    fn correct_sentences_are_left_alone() {
+        let fine = [
+            "  accepted 1 action that would run a program or type text:",
+            "  the attached HID device can be opened",
+            "  all 3 attached HID devices can be opened",
+            "  1 device you cannot open is not among them",
+            "  2 devices you cannot open are not among them",
+            "  applied 11 keys from deck.toml",
+            "  speaks VIA protocol 9, with 1 keymap layer",
+            "  1 of 1 attached device can be configured by this build.",
+        ];
+        for line in fine {
+            assert_agrees(line, "a probe");
+        }
+    }
+
+    /// A number that is part of a word is not a count of anything.
+    #[test]
+    fn a_version_or_an_id_is_not_read_as_a_count() {
+        assert_eq!(leading_count("no numbers here"), None);
+        assert_eq!(leading_count("1 device"), Some((1, " device")));
+        assert_eq!(leading_count("11 devices"), Some((11, " devices")));
+        // "046d:4082" is an id; the digits glued to it must not read as one.
+        assert_eq!(leading_count("MX Master 3S (046d:4082)"), None);
     }
 }

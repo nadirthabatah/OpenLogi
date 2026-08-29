@@ -23,15 +23,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-/// What a bundle held, so the command can say what it actually did.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Contents {
-    /// Where it was written or read.
-    pub path: PathBuf,
-    /// Names of the layouts carried.
-    pub layouts: Vec<String>,
-}
-
 /// The configuration file inside a bundle.
 #[must_use]
 pub fn config_in(bundle: &Path) -> PathBuf {
@@ -64,7 +55,7 @@ pub fn is_bundle(path: &Path) -> bool {
 /// because a person may organise icons into folders, and a copy that silently
 /// flattened or skipped them would produce a bundle that looks complete and
 /// applies to a deck full of blank keys.
-fn copy_tree(from: &Path, to: &Path) -> Result<()> {
+fn copy_tree(from: &Path, to: &Path, skipped: &mut Vec<PathBuf>) -> Result<()> {
     std::fs::create_dir_all(to).with_context(|| format!("failed to create {}", to.display()))?;
     let entries =
         std::fs::read_dir(from).with_context(|| format!("failed to read {}", from.display()))?;
@@ -72,9 +63,27 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
         let entry = entry.with_context(|| format!("failed to read {}", from.display()))?;
         let source = entry.path();
         let destination = to.join(entry.file_name());
-        if source.is_dir() {
-            copy_tree(&source, &destination)?;
+        // `file_type` does not follow the link, which `Path::is_dir` does.
+        // That distinction is the whole of this: a directory symlink pointing
+        // anywhere at or above itself makes the recursion below unbounded, and
+        // it recurses until the operating system refuses at around forty
+        // levels, leaving forty levels of rubbish in a half-written bundle and
+        // an error naming a path nobody can read.
+        let kind = entry
+            .file_type()
+            .with_context(|| format!("failed to inspect {}", source.display()))?;
+        if kind.is_symlink() && source.is_dir() {
+            // Not followed, and not silent. A bundle is made to be carried to
+            // another machine, where a link into this one's home directory
+            // would dangle — so the person needs to know these did not travel,
+            // rather than finding blank keys later.
+            skipped.push(source);
+        } else if kind.is_dir() {
+            copy_tree(&source, &destination, skipped)?;
         } else {
+            // A symlink to a *file* is followed, because `fs::copy` copies the
+            // contents: an icon linked from a shared folder travels as an
+            // icon, which is what someone who linked it wanted.
             std::fs::copy(&source, &destination)
                 .with_context(|| format!("failed to copy {}", source.display()))?;
         }
@@ -95,6 +104,8 @@ pub struct Gathered {
     /// tidiness. But a layout they deleted months ago still riding along in
     /// what they think is a current backup is a surprise, so it is named.
     pub left_over: Vec<String>,
+    /// Directory symlinks that were not followed, and so did not travel.
+    pub skipped_links: Vec<PathBuf>,
 }
 
 /// Copy the layout library into a bundle.
@@ -109,15 +120,21 @@ pub fn gather_layouts(library: &Path, bundle: &Path) -> Result<Gathered> {
         return Ok(Gathered {
             carried: Vec::new(),
             left_over: before,
+            skipped_links: Vec::new(),
         });
     }
-    copy_tree(library, &destination)?;
+    let mut skipped_links = Vec::new();
+    copy_tree(library, &destination, &mut skipped_links)?;
     let carried = names_in(library);
     let left_over = before
         .into_iter()
         .filter(|name| !carried.contains(name))
         .collect();
-    Ok(Gathered { carried, left_over })
+    Ok(Gathered {
+        carried,
+        left_over,
+        skipped_links,
+    })
 }
 
 /// Copy a bundle's layouts back into the library.
@@ -136,7 +153,11 @@ pub fn restore_layouts(bundle: &Path, library: &Path) -> Result<Vec<String>> {
     if !source.is_dir() {
         return Ok(Vec::new());
     }
-    copy_tree(&source, library)?;
+    // A bundle made by this program has no directory symlinks in it, so
+    // anything skipped here came from a bundle someone assembled by hand;
+    // dropped rather than followed, for the same reason as on the way out.
+    let mut skipped = Vec::new();
+    copy_tree(&source, library, &mut skipped)?;
     Ok(names_in(&source))
 }
 

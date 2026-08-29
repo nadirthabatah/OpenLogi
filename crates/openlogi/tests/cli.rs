@@ -360,6 +360,44 @@ fn a_layout_can_be_created_listed_and_not_clobbered() {
         .expect_says("already exists");
 }
 
+/// A linked folder inside the layout library must not be followed.
+///
+/// Following one is unbounded whenever it points at or above itself, and the
+/// recursion runs until the operating system refuses at around forty levels —
+/// leaving forty levels of rubbish in a half-written bundle and an error
+/// naming a path nobody can read. A person who symlinks their layouts into a
+/// synced folder is doing something ordinary, not something perverse.
+#[test]
+fn a_linked_folder_in_the_library_is_reported_rather_than_followed() {
+    let sandbox = Sandbox::new("symlinked-layouts");
+    let library = sandbox.path("config/openlogi/layouts");
+    std::fs::create_dir_all(library.join("deck")).expect("a library");
+    std::fs::write(library.join("deck.toml"), "brightness = 50\n\nkeys = []\n").expect("a layout");
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&library, library.join("deck").join("loop"))
+        .expect("a link pointing back at the library it sits inside");
+
+    let bundle = sandbox.path("setup");
+    let run = sandbox.run(&["profile", "export", &bundle.to_string_lossy()]);
+    run.expect_status(0);
+
+    #[cfg(unix)]
+    {
+        run.expect_says("not followed");
+        // The layout itself still travelled; only the link did not.
+        assert!(
+            bundle.join("layouts").join("deck.toml").is_file(),
+            "the layout beside the link must still be carried"
+        );
+        // And nothing recursed: no `loop` inside a `loop`.
+        assert!(
+            !bundle.join("layouts/deck/loop/deck/loop").exists(),
+            "the link was followed"
+        );
+    }
+}
+
 /// A bundle carrying an action that would run a program is refused, and the
 /// refusal has to leave the layouts alone too.
 ///

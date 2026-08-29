@@ -202,6 +202,26 @@ fn export(named: &Path) -> Result<ExitCode> {
             gathered.carried.join(", ")
         );
     }
+    // A linked folder is not followed, so its contents did not travel. Said,
+    // because the alternative is discovering it as blank keys on the machine
+    // the bundle was carried to — with the bundle itself looking complete.
+    if !gathered.skipped_links.is_empty() {
+        println!(
+            "  {} not followed:",
+            counted(
+                gathered.skipped_links.len(),
+                "linked folder inside your layouts folder was",
+                "linked folders inside your layouts folder were"
+            )
+        );
+        for link in &gathered.skipped_links {
+            println!("    {}", link.display());
+        }
+        println!(
+            "  Each points somewhere else on this machine, so nothing inside them \
+             travelled. Copy what should into the layouts folder itself."
+        );
+    }
     // Exporting again over an earlier bundle copies in without deleting, so a
     // layout removed since is still in that folder. Said out loud rather than
     // removed: this is a path the person named, and quietly deleting inside it
