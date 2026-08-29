@@ -277,6 +277,25 @@ pub async fn set_stream_deck_key_label(arguments: &Value) -> Result<String, Stri
     ))
 }
 
+/// What to add to an answer when the key font cannot draw part of a label.
+///
+/// Those characters render as hollow boxes. An assistant that reports "the key
+/// now reads ..." has told the person something untrue about a key they very
+/// likely cannot see, and will keep saying it however many times they ask.
+pub fn undrawable_note(text: &str) -> String {
+    let missing = openlogi_streamdeck::font::missing_from(text);
+    if missing.is_empty() {
+        return String::new();
+    }
+    let listed: Vec<String> = missing.iter().map(|c| format!("{c:?}")).collect();
+    format!(
+        ". Note: the key font cannot draw {} — each is a hollow box on the key. It \
+         carries capitals, digits and common punctuation; lowercase is drawn as \
+         capitals. Say so rather than reporting the label as written.",
+        listed.join(", ")
+    )
+}
+
 /// Turn every key black.
 pub async fn clear_stream_deck(arguments: &Value) -> Result<String, String> {
     let mut session = open(arguments).await?;

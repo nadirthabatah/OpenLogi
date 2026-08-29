@@ -173,11 +173,15 @@ pub fn set_layout_key(arguments: &Value) -> Result<String, String> {
     );
     let was = crate::cmd::streamdeck::set_layout_key(&layout, &key)
         .map_err(|error| format!("{error}"))?;
+    let mut note = "Saved to the layout file. Apply the layout to see it on the deck.".to_owned();
+    if let Some(label) = arguments.get("label").and_then(Value::as_str) {
+        note.push_str(&super::decks::undrawable_note(label));
+    }
     rendered(&json!({
         "layout": layout,
         "key": index,
         "was": describe_key(was.as_ref()),
-        "note": "Saved to the layout file. Apply the layout to see it on the deck.",
+        "note": note,
     }))
 }
 

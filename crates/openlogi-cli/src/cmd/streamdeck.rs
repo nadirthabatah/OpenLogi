@@ -21,6 +21,7 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, anyhow};
 use clap::{Args, Subcommand};
 use openlogi_hid::streamdeck::{self, Attached, Session};
+use openlogi_streamdeck::font;
 use openlogi_streamdeck::render;
 use openlogi_streamdeck::report::{Brightness, KeyAction};
 
@@ -588,6 +589,9 @@ fn set_key(path: &Path, args: &SetArgs) -> Result<ExitCode> {
         if existing { "replaced" } else { "added" },
         path.display()
     );
+    if let Some(label) = &args.label {
+        warn_about_undrawable(label);
+    }
     // Said because a key set with only an action shows nothing, and someone
     // who cannot see the deck has no other way to notice.
     if args.label.is_none() && args.image.is_none() {
@@ -877,7 +881,35 @@ async fn draw(collections: &[Attached], key: u16, drawing: &Drawing<'_>) -> Resu
         Drawing::Picture(_, path) => format!("now shows {}", path.display()),
     };
     println!("key {key} {what} ({})", describe_key_position(model, key));
+    if let Drawing::Label(text, ..) = drawing {
+        warn_about_undrawable(text);
+    }
     Ok(())
+}
+
+/// Say which characters of a label the key font cannot draw.
+///
+/// They render as hollow boxes, which is visible on the key and says nothing
+/// about what went wrong — and says nothing at all to whoever cannot see the
+/// key. The command reports success either way, so without this the only
+/// signal is the one signal this project cannot rely on.
+fn warn_about_undrawable(text: &str) {
+    let missing = font::missing_from(text);
+    if missing.is_empty() {
+        return;
+    }
+    let listed: Vec<String> = missing.iter().map(|c| format!("{c:?}")).collect();
+    // No count in front of the sentence, and "each" rather than "it" or
+    // "they", so the wording is right whether one character is missing or
+    // twenty.
+    println!(
+        "  The key font cannot draw: {}. Each becomes a hollow box on the key.",
+        listed.join(", ")
+    );
+    println!(
+        "  It carries capitals, digits and common punctuation; lowercase is drawn as \
+         capitals. Use a picture for anything else."
+    );
 }
 
 /// Explain an empty scan: nothing attached, or something attached that this

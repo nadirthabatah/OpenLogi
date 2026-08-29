@@ -449,6 +449,42 @@ fn a_refused_bundle_import_writes_neither_configuration_nor_layouts() {
     );
 }
 
+/// A label the key font cannot draw has to be said out loud, not left to the
+/// key to reveal.
+///
+/// The key renders each unsupported character as a hollow box. That is visible
+/// if you can see the deck, and says nothing at all if you cannot — while the
+/// command reports plain success. So the only signal is the one signal this
+/// project cannot rely on.
+#[test]
+fn a_label_the_font_cannot_draw_is_reported() {
+    let sandbox = Sandbox::new("undrawable-label");
+    let layout = sandbox.path("deck.toml").to_string_lossy().into_owned();
+
+    // Katakana: perfectly reasonable to try, and not in a five-by-seven font.
+    sandbox
+        .run(&[
+            "streamdeck",
+            "set",
+            &layout,
+            "0",
+            "--label",
+            "\u{30df}\u{30e5}",
+        ])
+        .expect_status(0)
+        .expect_says("cannot draw");
+
+    // And a label it can draw says nothing extra, or the warning becomes noise
+    // that gets tuned out.
+    let clean = sandbox.run(&["streamdeck", "set", &layout, "1", "--label", "MUTE MIC"]);
+    clean.expect_status(0);
+    assert!(
+        !clean.said().contains("cannot draw"),
+        "an ordinary label must not draw a warning:\n{}",
+        clean.said()
+    );
+}
+
 /// A layout is a file someone owns, and editing one key of it must not throw
 /// away the rest of what they wrote.
 ///

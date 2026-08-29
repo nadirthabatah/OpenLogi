@@ -290,6 +290,12 @@ is a rendering of it rather than its identity. Capitals, digits and common
 punctuation are drawn; lowercase is drawn as capitals, which are more legible
 at this size.
 
+A label the font cannot draw — accented letters, Japanese, an emoji — renders
+each unsupported character as a hollow box, and the command **says so**, naming
+the characters. That box is perfectly visible if you can see the deck and tells
+you nothing at all if you cannot, while the command otherwise reports plain
+success. Use a picture for anything the font does not carry.
+
 `fill` takes six hex digits; `image` takes any common picture file and scales
 and rotates it to fit the key, so you do not have to know the model's screen
 size or which way its panel is mounted. A picture that is not square is scaled
