@@ -596,6 +596,24 @@ every one would train you to wave the whole audit through.
 Exit status `3` means a profile was refused for this reason, distinct from a
 read or parse failure, so a script can tell them apart.
 
+### What a profile does not carry, and why
+
+A monitor's brightness and an Elgato light's colour temperature are not in it,
+and that is deliberate rather than an omission. Those settings live in the
+device, not in this program's configuration — the monitor keeps its own
+brightness whichever computer is plugged into it, and a Key Light keeps its own
+whether anything is talking to it at all. Carrying them to another machine
+would mean reaching across and changing hardware that already has an answer.
+
+A Logitech Litra is the exception that shows the rule. Its settings *are* in
+the configuration, because OpenRoadie is what applies them — the light has no
+opinion of its own until something on USB tells it one, so there is something
+to carry.
+
+So after an import, expect your remapping, your profiles and your Stream Deck
+layouts to be there, and expect your monitor to be exactly as bright as you
+left it.
+
 ## Model Context Protocol server
 
 `roadie mcp` serves the running agent to an AI assistant over the Model
