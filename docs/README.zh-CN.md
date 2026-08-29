@@ -1,34 +1,17 @@
 > [!WARNING]
-> **OpenLogi 仍在积极开发中**，尚未稳定 —— 功能与配置仍可能变动。点个 **Star** ⭐ 并 **Watch** 👀 本仓库，在新版本发布时获得通知。
+> **OpenRoadie 仍在积极开发中**，尚未稳定 —— 功能与配置仍可能变动。点个 **Star** ⭐ 并 **Watch** 👀 本仓库，在新版本发布时获得通知。
 
 <h4 align="right"><a href="../README.md">English</a> | <strong>简体中文</strong> | <a href="README.ja.md">日本語</a> | <a href="README.de.md">Deutsch</a> | <a href="README.fr.md">Français</a> | <a href="README.ko.md">한국어</a></h4>
 
-<p align="center">
-    <img src="https://assets.openlogi.org/brand/openlogi-icon.png" width="138" alt="OpenLogi"/>
-</p>
 
-<h1 align="center">OpenLogi</h1>
+<h1 align="center">OpenRoadie</h1>
+<p align="center">OpenRoadie is a fork of <a href="https://github.com/AprilNEA/OpenLogi">OpenLogi</a> by @AprilNEA.</p>
 <p align="center"><strong>⚡️ 本地优先的 Logitech Options+ 平替 <br/>通过 HID++ 与 UVC 协议解锁 Logitech 鼠标、键盘与摄像头的完整能力</strong></p>
 
 
-<div align="center">
-    <a href="https://twitter.com/AprilNEA" target="_blank">
-    <img alt="twitter" src="https://img.shields.io/badge/follow-AprilNEA-green?style=social&logo=Twitter"></a>
-    <a href="https://t.me/+VDtkR5OSAT04NzVh" target="_blank">
-    <img alt="telegram" src="https://img.shields.io/badge/chat-telegram-blueviolet?style=flat&logo=Telegram"></a>
-    <a href="https://github.com/AprilNEA/OpenLogi/releases" target="_blank">
-    <img alt="GitHub downloads" src="https://img.shields.io/github/downloads/AprilNEA/OpenLogi/total.svg?style=flat"></a>
-    <a href="https://github.com/AprilNEA/OpenLogi/commits" target="_blank">
-    <img alt="GitHub commit" src="https://img.shields.io/github/commit-activity/m/AprilNEA/OpenLogi?style=flat"></a>
-    <img alt="Hits" src="https://hits.aprilnea.com/hits?url=https://github.com/aprilnea/openlogi">
-</div>
 
-<p align="center">
-    <a href="https://trendshift.io/repositories/42303" target="_blank">
-    <img src="https://trendshift.io/api/badge/trendshift/repositories/42303/daily?language=Rust" alt="AprilNEA%2FOpenLogi | Trendshift" width="250" height="55"/></a>
-</p>
 
-> **被 Options+ 折腾够了？试试 OpenLogi。**
+> **被 Options+ 折腾够了？试试 OpenRoadie。**
 
 支持 macOS、Linux 和 Windows。
 
@@ -36,10 +19,10 @@
 
 ## 超越 Options+
 
-OpenLogi 能做、而 Options+ 做不到的事：
+OpenRoadie 能做、而 Options+ 做不到的事：
 
 - **轻量化** 原生 Rust + GPUI。
-- **支持 Linux** Linux 是 OpenLogi 的一等公民。
+- **支持 Linux** Linux 是 OpenRoadie 的一等公民。
 - **自定义手势键** 可自由指定任一物理按键承担手势角色，也可以彻底关闭手势。
 - **纯文本配置** 通过一个 TOML 文件完成，可通过多种方法在多台机器之间同步。
 - **可脚本化** 除了 GUI 以外还支持 CLI。
@@ -83,22 +66,22 @@ OpenLogi 能做、而 Options+ 做不到的事：
 
 需要 macOS 13 或更高版本。
 
-从[最新 release](https://github.com/AprilNEA/OpenLogi/releases/latest) 下载已签名、已公证的 `.dmg`，把 `OpenLogi.app` 拖入 `/Applications`。
+从[最新 release](https://github.com/AprilNEA/OpenLogi/releases/latest) 下载已签名、已公证的 `.dmg`，把 `OpenRoadie.app` 拖入 `/Applications`。
 
 或通过 [Homebrew](https://brew.sh) 安装：
 
 ```sh
-brew install --cask openlogi
+brew install --cask roadie
 ```
 
 官方 Homebrew cask 是默认安装途径。如需改用 `aprilnea/tap` 显式跟踪 GitHub 最新 release：
 
 ```sh
 brew tap aprilnea/tap
-brew install --cask aprilnea/tap/openlogi@latest
+brew install --cask aprilnea/tap/roadie@latest
 ```
 
-`openlogi@latest` 由 OpenLogi 的发布工作流维护，可能比官方 cask 的自动更新先一步。`openlogi` 和 `openlogi@latest` 二选一安装，不要同时装。
+`roadie@latest` 由 OpenRoadie 的发布工作流维护，可能比官方 cask 的自动更新先一步。`roadie` 和 `roadie@latest` 二选一安装，不要同时装。
 
 ### Linux
 
@@ -106,13 +89,13 @@ brew install --cask aprilnea/tap/openlogi@latest
 
 ```sh
 # Debian / Ubuntu
-sudo dpkg -i openlogi_*.deb
+sudo dpkg -i roadie_*.deb
 
 # Fedora / RHEL
-sudo rpm -i openlogi-*.rpm
+sudo rpm -i roadie-*.rpm
 
 # Arch Linux
-sudo pacman -U openlogi-*.pkg.tar.zst
+sudo pacman -U roadie-*.pkg.tar.zst
 ```
 
 安装包同时提供 `x86_64`/`amd64` 与 `arm64`/`aarch64` 两种架构。
@@ -120,14 +103,14 @@ sudo pacman -U openlogi-*.pkg.tar.zst
 安装包会写入 udev 规则，让你的用户无需 `sudo` 即可访问 `/dev/hidraw*` 和 `/dev/uinput`。装完后为当前用户启用后台 agent：
 
 ```sh
-systemctl --user enable --now openlogi-agent.service
+systemctl --user enable --now roadie-agent.service
 ```
 
 手动 / 源码安装以及无 systemd 的发行版，见 [INSTALL-linux.md](INSTALL-linux.md)。
 
 ### Windows
 
-每个 release 都附带签名的便携式 `.zip` 压缩包和按用户安装的 `.msi` 安装程序（x86_64 与 arm64）。两者均同时包含 GUI（`OpenLogi.exe`）和拥有全部设备 I/O 的后台 agent（`openlogi-agent.exe`）。使用便携式 zip 时，请把这两个文件放在同一目录，否则 GUI 将无法连接。
+每个 release 都附带签名的便携式 `.zip` 压缩包和按用户安装的 `.msi` 安装程序（x86_64 与 arm64）。两者均同时包含 GUI（`OpenRoadie.exe`）和拥有全部设备 I/O 的后台 agent（`roadie-agent.exe`）。使用便携式 zip 时，请把这两个文件放在同一目录，否则 GUI 将无法连接。
 
 Windows 支持可正常工作，并已在 Windows 11 实机上完成端到端验证：包括有线键盘、使用 Unifying 接收器的鼠标，以及 MSI 的安装、原位升级和卸载。它比 macOS 版本更新，如遇到粗糙之处，请[反馈问题](https://github.com/AprilNEA/OpenLogi/issues)。agent 会显示系统托盘图标（「显示主窗口」/「退出」），因此关闭主窗口后仍可打开应用。如需在 Windows 上禁用该图标，请在 TOML 的 `[app_settings]` 块中设置 `show_in_menu_bar = false`，然后重启 agent；GUI 开关目前仅适用于 macOS。
 
@@ -162,17 +145,13 @@ Windows 支持可正常工作，并已在 Windows 11 实机上完成端到端验
 
 ### 第三方代码
 
-`crates/openlogi-hidpp` 是 [`hidpp`](https://crates.io/crates/hidpp)（作者 [@lus](https://github.com/lus)）的 vendored fork，采用 0BSD 许可证。
+`crates/roadie-hidpp` 是 [`hidpp`](https://crates.io/crates/hidpp)（作者 [@lus](https://github.com/lus)）的 vendored fork，采用 0BSD 许可证。
 
 ### Logo 与品牌资产
 
-感谢 [@kubai087](https://github.com/kubai087) 为 OpenLogi 设计的 Logo，该 Logo —— 即 [`design/`](../design/) 下的品牌资产 —— © 2026 AprilNEA 保留所有权利，不在上述 MIT/Apache 许可范围内，许可证详见 [`design/LICENSE`](../design/LICENSE)。
-Fork 代码并不授予 OpenLogi 名称、Logo 或图标的使用权，未经事先书面许可，请勿用它们代表你自己的项目、Fork 或分发版本。
+感谢 [@kubai087](https://github.com/kubai087) 为 OpenRoadie 设计的 Logo，该 Logo —— 即 [`design/`](../design/) 下的品牌资产 —— © 2026 AprilNEA 保留所有权利，不在上述 MIT/Apache 许可范围内，许可证详见 [`design/LICENSE`](../design/LICENSE)。
+Fork 代码并不授予 OpenRoadie 名称、Logo 或图标的使用权，未经事先书面许可，请勿用它们代表你自己的项目、Fork 或分发版本。
 
 ---
 
 **与 Logitech 无关联。** 「Logitech」、「MX Master」与「Options+」是 Logitech International S.A. 的商标。
-
-## 仓库活跃度
-
-![Repobeats analytics image](https://repobeats.axiom.co/api/embed/4a0b576a03e9d528ad31ccf4797a1286c045d021.svg "Repobeats analytics image")

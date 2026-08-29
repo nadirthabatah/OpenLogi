@@ -23,7 +23,7 @@
 [workspace]
 # Open release PRs from a `release-plz/`-prefixed branch.
 pr_branch_prefix = "release-plz/"
-# OpenLogi ships as an application, not a published-API library, so
+# OpenRoadie ships as an application, not a published-API library, so
 # cargo-semver-checks' "⚠ API breaking changes" analysis is just noise in the
 # release PR. Disable it so the PR shows the changelog, not the break risk.
 semver_check = false
@@ -38,94 +38,94 @@ changelog_update = false
 release_always = false
 
 [[package]]
-name = "openlogi"
-version_group = "openlogi"
+name = "roadie"
+version_group = "roadie"
 git_tag_enable = true
 git_tag_name = "v{{ version }}"
 # GitHub Release is owned by release.yml (softprops), not release-plz — see header.
 git_release_enable = false
 
 [[package]]
-name = "openlogi-device-registry"
-version_group = "openlogi"
+name = "roadie-device-registry"
+version_group = "roadie"
 
 [[package]]
-name = "openlogi-core"
-version_group = "openlogi"
+name = "roadie-core"
+version_group = "roadie"
 
 # The published CLI uses this contract to read the running agent's inventory,
 # so IPC is part of the crates.io dependency closure even though its other
 # consumers are application crates.
 [[package]]
-name = "openlogi-ipc"
-version_group = "openlogi"
+name = "roadie-ipc"
+version_group = "roadie"
 
-# OS input-event synthesis split out of openlogi-core (depends on it). Published
+# OS input-event synthesis split out of roadie-core (depends on it). Published
 # with the workspace under unified versioning.
 [[package]]
-name = "openlogi-inject"
-version_group = "openlogi"
+name = "roadie-inject"
+version_group = "roadie"
 
 [[package]]
-name = "openlogi-hid"
-version_group = "openlogi"
+name = "roadie-hid"
+version_group = "roadie"
 
 [[package]]
-name = "openlogi-assets"
-version_group = "openlogi"
+name = "roadie-assets"
+version_group = "roadie"
 
-# UVC webcam discovery. Published because `openlogi-cli` (published) depends on
+# UVC webcam discovery. Published because `roadie-cli` (published) depends on
 # it by an exact version — a crates.io package cannot depend on an unpublished
 # path dependency. It must stay in the version group for that same reason: with
 # an independently computed next version it can disagree with the group on the
 # single shared `version.workspace` field, and a cli published against a
 # camera version that was never pushed to crates.io is a hard publish failure.
 [[package]]
-name = "openlogi-camera"
-version_group = "openlogi"
+name = "roadie-camera"
+version_group = "roadie"
 
 [[package]]
-name = "openlogi-cli"
-version_group = "openlogi"
+name = "roadie-cli"
+version_group = "roadie"
 
 [[package]]
-name = "openlogi-hook"
-version_group = "openlogi"
+name = "roadie-hook"
+version_group = "roadie"
 
 # Vendored fork of the `hidpp` crate (0BSD, from lus/logy). Published with the
 # workspace under unified versioning; upstream's 0.3.0 is provenance only.
 [[package]]
-name = "openlogi-hidpp"
-version_group = "openlogi"
+name = "roadie-hidpp"
+version_group = "roadie"
 
 # App crates: not crates.io packages (git gpui deps / login-item binary).
 # `publish = false` must mirror each crate's Cargo.toml.
 [[package]]
-name = "openlogi-desktop"
+name = "roadie-desktop"
 release = false
 publish = false
 
 [[package]]
-name = "openlogi-ui"
+name = "roadie-ui"
 release = false
 publish = false
 
 [[package]]
-name = "openlogi-permissions"
+name = "roadie-permissions"
 release = false
 publish = false
 
 [[package]]
-name = "openlogi-overlay"
+name = "roadie-overlay"
 release = false
 publish = false
 
 [[package]]
-name = "openlogi-agent-core"
+name = "roadie-agent-core"
 release = false
 publish = false
 
 [[package]]
-name = "openlogi-agent"
+name = "roadie-agent"
 release = false
 publish = false

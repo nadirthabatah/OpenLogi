@@ -125,7 +125,7 @@ jobs:
     permissions:
       contents: read
     env:
-      OPENLOGI_BUNDLE_ASSETS: ${{ vars.OPENLOGI_BUNDLE_ASSETS }}
+      ROADIE_BUNDLE_ASSETS: ${{ vars.ROADIE_BUNDLE_ASSETS }}
     steps:
       - uses: actions/checkout@v7
 
@@ -162,7 +162,7 @@ jobs:
             echo "No Xcode 26 on this runner; the app icon cannot be compiled." >&2
             exit 1
           fi
-          echo "OPENLOGI_DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
+          echo "ROADIE_DEVELOPER_DIR=$xcode/Contents/Developer" >> "$GITHUB_ENV"
           echo "Building with $xcode"
 
       - name: Load release secrets from 1Password
@@ -181,8 +181,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.OP_APPLE_SECRET_ITEM }}/APPLE_TEAM_ID
           GITHUB_APP_ID: ${{ secrets.OP_GITHUB_APP_ITEM }}/GITHUB_APP_ID
           GITHUB_APP_PRIVATE_KEY: ${{ secrets.OP_GITHUB_APP_ITEM }}/GITHUB_APP_PRIVATE_KEY
-          OPENLOGI_UPDATE_BASE_URL: ${{ secrets.OP_R2_SECRET_ITEM }}/OPENLOGI_UPDATE_BASE_URL
-          OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY: ${{ secrets.OP_R2_SECRET_ITEM }}/OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY
+          ROADIE_UPDATE_BASE_URL: ${{ secrets.OP_R2_SECRET_ITEM }}/ROADIE_UPDATE_BASE_URL
+          ROADIE_UPDATE_MINISIGN_PUBLIC_KEY: ${{ secrets.OP_R2_SECRET_ITEM }}/ROADIE_UPDATE_MINISIGN_PUBLIC_KEY
 
       - name: Cache Homebrew downloads
         uses: actions/cache@v6
@@ -198,7 +198,7 @@ jobs:
         run: |
           # cargo-bundle has bottles for both hosted macOS architectures.
           # Installing the bottle avoids compiling the tool from source in
-          # every release leg before OpenLogi itself can start building.
+          # every release leg before OpenRoadie itself can start building.
           brew install librsvg create-dmg cargo-bundle
 
       - name: Validate release secrets
@@ -212,8 +212,8 @@ jobs:
           APPLE_TEAM_ID: ${{ steps.load_secrets.outputs.APPLE_TEAM_ID }}
           GITHUB_APP_ID: ${{ steps.load_secrets.outputs.GITHUB_APP_ID }}
           GITHUB_APP_PRIVATE_KEY: ${{ steps.load_secrets.outputs.GITHUB_APP_PRIVATE_KEY }}
-          OPENLOGI_UPDATE_BASE_URL: ${{ steps.load_secrets.outputs.OPENLOGI_UPDATE_BASE_URL }}
-          OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY: ${{ steps.load_secrets.outputs.OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY }}
+          ROADIE_UPDATE_BASE_URL: ${{ steps.load_secrets.outputs.ROADIE_UPDATE_BASE_URL }}
+          ROADIE_UPDATE_MINISIGN_PUBLIC_KEY: ${{ steps.load_secrets.outputs.ROADIE_UPDATE_MINISIGN_PUBLIC_KEY }}
         run: |
           set -euo pipefail
           : "${APPLE_SIGNING_IDENTITY:?Configure APPLE_SIGNING_IDENTITY in 1Password}"
@@ -224,8 +224,8 @@ jobs:
           : "${APPLE_TEAM_ID:?Configure APPLE_TEAM_ID in 1Password}"
           : "${GITHUB_APP_ID:?Configure GITHUB_APP_ID in 1Password}"
           : "${GITHUB_APP_PRIVATE_KEY:?Configure GITHUB_APP_PRIVATE_KEY in 1Password}"
-          : "${OPENLOGI_UPDATE_BASE_URL:?Configure OPENLOGI_UPDATE_BASE_URL in 1Password}"
-          : "${OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY:?Configure OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY in 1Password}"
+          : "${ROADIE_UPDATE_BASE_URL:?Configure ROADIE_UPDATE_BASE_URL in 1Password}"
+          : "${ROADIE_UPDATE_MINISIGN_PUBLIC_KEY:?Configure ROADIE_UPDATE_MINISIGN_PUBLIC_KEY in 1Password}"
 
       - name: Import Apple signing certificate
         if: ${{ inputs.sign }}
@@ -234,14 +234,14 @@ jobs:
           p12-file-base64: ${{ steps.load_secrets.outputs.APPLE_CERTIFICATE }}
           p12-password: ${{ steps.load_secrets.outputs.APPLE_CERTIFICATE_PASSWORD }}
 
-      - name: Build and package OpenLogi
+      - name: Build and package OpenRoadie
         env:
           APPLE_SIGNING_IDENTITY: ${{ steps.load_secrets.outputs.APPLE_SIGNING_IDENTITY }}
-          OPENLOGI_UPDATE_BASE_URL: ${{ steps.load_secrets.outputs.OPENLOGI_UPDATE_BASE_URL }}
-          OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY: ${{ steps.load_secrets.outputs.OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY }}
+          ROADIE_UPDATE_BASE_URL: ${{ steps.load_secrets.outputs.ROADIE_UPDATE_BASE_URL }}
+          ROADIE_UPDATE_MINISIGN_PUBLIC_KEY: ${{ steps.load_secrets.outputs.ROADIE_UPDATE_MINISIGN_PUBLIC_KEY }}
         run: |
           set -euo pipefail
-          export OPENLOGI_UPDATE_MANIFEST_URL="${OPENLOGI_UPDATE_BASE_URL%/}/channels/stable/latest.json"
+          export ROADIE_UPDATE_MANIFEST_URL="${ROADIE_UPDATE_BASE_URL%/}/channels/stable/latest.json"
           if [ "${{ inputs.sign }}" = "true" ]; then
             cargo run -p xtask -- macos package --target ${{ matrix.target }} --sign-identity "$APPLE_SIGNING_IDENTITY"
           else
@@ -253,12 +253,12 @@ jobs:
           EXPECTED_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          app="target/release/bundle/osx/OpenLogi.app"
+          app="target/release/bundle/osx/OpenRoadie.app"
           binaries=(
-            "$app/Contents/MacOS/openlogi-desktop"
-            "$app/Contents/MacOS/openlogi"
-            "$app/Contents/Library/LoginItems/OpenLogi Agent.app/Contents/MacOS/openlogi-agent"
-            "$app/Contents/Library/LoginItems/OpenLogi Overlay.app/Contents/MacOS/openlogi-overlay"
+            "$app/Contents/MacOS/roadie-desktop"
+            "$app/Contents/MacOS/roadie"
+            "$app/Contents/Library/LoginItems/OpenRoadie Agent.app/Contents/MacOS/roadie-agent"
+            "$app/Contents/Library/LoginItems/OpenRoadie Overlay.app/Contents/MacOS/roadie-overlay"
           )
           for binary in "${binaries[@]}"; do
             archs=$(lipo -archs "$binary")
@@ -273,7 +273,7 @@ jobs:
       - name: Verify production bundle identities
         run: |
           set -euo pipefail
-          app="target/release/bundle/osx/OpenLogi.app"
+          app="target/release/bundle/osx/OpenRoadie.app"
           plist() { /usr/libexec/PlistBuddy -c "Print :$2" "$1/Contents/Info.plist"; }
           check() { # bundle expected-id expected-name
             [ "$(plist "$1" CFBundleIdentifier)" = "$2" ]
@@ -281,18 +281,18 @@ jobs:
             [ "$(plist "$1" CFBundleDisplayName)" = "$3" ]
             [ -f "$1/Contents/Resources/AppIcon.icns" ]
           }
-          check "$app" "org.openlogi.openlogi" "OpenLogi"
-          check "$app/Contents/Library/LoginItems/OpenLogi Agent.app" "org.openlogi.agent" "OpenLogi Agent"
-          check "$app/Contents/Library/LoginItems/OpenLogi Overlay.app" "org.openlogi.overlay" "OpenLogi Overlay"
+          check "$app" "org.roadie.roadie" "OpenRoadie"
+          check "$app/Contents/Library/LoginItems/OpenRoadie Agent.app" "org.roadie.agent" "OpenRoadie Agent"
+          check "$app/Contents/Library/LoginItems/OpenRoadie Overlay.app" "org.roadie.overlay" "OpenRoadie Overlay"
 
       - name: Verify signed app bundle
         if: ${{ inputs.sign }}
         run: |
           set -euo pipefail
-          app="target/release/bundle/osx/OpenLogi.app"
-          helper="$app/Contents/Library/LoginItems/OpenLogi Agent.app"
-          overlay="$app/Contents/Library/LoginItems/OpenLogi Overlay.app"
-          cli="$app/Contents/MacOS/openlogi"
+          app="target/release/bundle/osx/OpenRoadie.app"
+          helper="$app/Contents/Library/LoginItems/OpenRoadie Agent.app"
+          overlay="$app/Contents/Library/LoginItems/OpenRoadie Overlay.app"
+          cli="$app/Contents/MacOS/roadie"
           codesign --verify --strict --verbose=2 "$app"
           [ -d "$helper" ] && codesign --verify --strict --verbose=2 "$helper"
           [ -d "$overlay" ] && codesign --verify --strict --verbose=2 "$overlay"
@@ -309,7 +309,7 @@ jobs:
           APPLE_TEAM_ID: ${{ steps.load_secrets.outputs.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          xcrun notarytool submit target/release/OpenLogi.dmg \
+          xcrun notarytool submit target/release/OpenRoadie.dmg \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
@@ -319,19 +319,19 @@ jobs:
         if: ${{ inputs.sign }}
         run: |
           set -euo pipefail
-          xcrun stapler staple target/release/OpenLogi.dmg
-          xcrun stapler validate target/release/OpenLogi.dmg
+          xcrun stapler staple target/release/OpenRoadie.dmg
+          xcrun stapler validate target/release/OpenRoadie.dmg
 
       - name: Collect DMG artifact
         run: |
           mkdir -p dist
           ref_name="${GITHUB_REF_NAME:-dev}"
           ref_name="${ref_name//\//-}"
-          cp target/release/OpenLogi.dmg "dist/OpenLogi-${ref_name}-macos-${{ matrix.arch }}.dmg"
+          cp target/release/OpenRoadie.dmg "dist/OpenRoadie-${ref_name}-macos-${{ matrix.arch }}.dmg"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: OpenLogi-macos-dmg-${{ matrix.arch }}
+          name: OpenRoadie-macos-dmg-${{ matrix.arch }}
           path: dist/*.dmg
           # 'warn' (the default) would let an empty-dist job stay green while
           # `results.macos` reports success and the publish gate ships nothing —
@@ -373,7 +373,7 @@ jobs:
       id-token: write
       contents: read
     # The federated credential's subject is bound to this GitHub environment, so the
-    # OIDC `sub` claim stays stable (repo:AprilNEA/OpenLogi:environment:release)
+    # OIDC `sub` claim stays stable (repo:AprilNEA/OpenRoadie:environment:release)
     # instead of changing with every tag ref. Only signed (release) runs enter it;
     # an unsigned run needs no secrets, so it takes no environment (fork PRs, which
     # can't access a protected environment at all, then build fine).
@@ -456,8 +456,8 @@ jobs:
           export-env: false
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          OPENLOGI_UPDATE_BASE_URL: ${{ secrets.OP_R2_SECRET_ITEM }}/OPENLOGI_UPDATE_BASE_URL
-          OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY: ${{ secrets.OP_R2_SECRET_ITEM }}/OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY
+          ROADIE_UPDATE_BASE_URL: ${{ secrets.OP_R2_SECRET_ITEM }}/ROADIE_UPDATE_BASE_URL
+          ROADIE_UPDATE_MINISIGN_PUBLIC_KEY: ${{ secrets.OP_R2_SECRET_ITEM }}/ROADIE_UPDATE_MINISIGN_PUBLIC_KEY
 
       # Same rationale as the Azure gate above: load-secrets emits empty
       # outputs on a missing item, and an empty key would rebuild the broken
@@ -466,37 +466,37 @@ jobs:
         if: ${{ inputs.sign }}
         shell: bash
         env:
-          OPENLOGI_UPDATE_BASE_URL: ${{ steps.update_config.outputs.OPENLOGI_UPDATE_BASE_URL }}
-          OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY: ${{ steps.update_config.outputs.OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY }}
+          ROADIE_UPDATE_BASE_URL: ${{ steps.update_config.outputs.ROADIE_UPDATE_BASE_URL }}
+          ROADIE_UPDATE_MINISIGN_PUBLIC_KEY: ${{ steps.update_config.outputs.ROADIE_UPDATE_MINISIGN_PUBLIC_KEY }}
         run: |
           set -euo pipefail
-          : "${OPENLOGI_UPDATE_BASE_URL:?Configure OPENLOGI_UPDATE_BASE_URL in the R2 1Password item}"
-          : "${OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY:?Configure OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY in the R2 1Password item}"
+          : "${ROADIE_UPDATE_BASE_URL:?Configure ROADIE_UPDATE_BASE_URL in the R2 1Password item}"
+          : "${ROADIE_UPDATE_MINISIGN_PUBLIC_KEY:?Configure ROADIE_UPDATE_MINISIGN_PUBLIC_KEY in the R2 1Password item}"
 
       # The CLI ships inside the same zip and MSI rather than as a separate
       # artifact, so job and artifact names carry no GUI qualifier. The GUI is
       # a thin IPC client; the headless agent (ported in
       # #167) owns the device I/O, input hook, and IPC server, and the GUI
-      # spawns a sibling `openlogi-agent.exe` when the pipe is absent — so the
+      # spawns a sibling `roadie-agent.exe` when the pipe is absent — so the
       # agent MUST ship next to the GUI or the app connects to nothing (#347).
-      # The updater env mirrors the macOS bundle step: openlogi-desktop reads the
+      # The updater env mirrors the macOS bundle step: roadie-desktop reads the
       # key and manifest URL via option_env! at compile time. Unsigned builds
       # get empty values and keep the fail-closed dev behaviour, so the
       # manifest-URL export is guarded rather than derived from an empty base.
-      - name: Build OpenLogi executables
+      - name: Build OpenRoadie executables
         shell: bash
         env:
-          OPENLOGI_UPDATE_BASE_URL: ${{ steps.update_config.outputs.OPENLOGI_UPDATE_BASE_URL }}
-          OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY: ${{ steps.update_config.outputs.OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY }}
+          ROADIE_UPDATE_BASE_URL: ${{ steps.update_config.outputs.ROADIE_UPDATE_BASE_URL }}
+          ROADIE_UPDATE_MINISIGN_PUBLIC_KEY: ${{ steps.update_config.outputs.ROADIE_UPDATE_MINISIGN_PUBLIC_KEY }}
         run: |
           set -euo pipefail
-          if [ -n "$OPENLOGI_UPDATE_BASE_URL" ]; then
-            export OPENLOGI_UPDATE_MANIFEST_URL="${OPENLOGI_UPDATE_BASE_URL%/}/channels/stable/latest.json"
+          if [ -n "$ROADIE_UPDATE_BASE_URL" ]; then
+            export ROADIE_UPDATE_MANIFEST_URL="${ROADIE_UPDATE_BASE_URL%/}/channels/stable/latest.json"
           fi
-          cargo build --release -p openlogi-desktop -p openlogi-overlay -p openlogi-agent -p openlogi --target ${{ matrix.target }}
+          cargo build --release -p roadie-desktop -p roadie-overlay -p roadie-agent -p roadie --target ${{ matrix.target }}
 
       # Federated (passwordless) login. Requires an app registration whose federated
-      # credential subject is `repo:AprilNEA/OpenLogi:environment:release`, granted the
+      # credential subject is `repo:AprilNEA/OpenRoadie:environment:release`, granted the
       # "Artifact Signing Certificate Profile Signer" role on the signing account.
       - name: Azure login (OIDC)
         if: ${{ inputs.sign }}
@@ -522,7 +522,7 @@ jobs:
       # Authenticode-signs via Artifact Signing (ex-Trusted Signing). The action only
       # runs on Windows runners. azure/login leaves an az CLI session that the action's
       # default AzureCliCredential picks up, so no azure-* secret inputs are needed.
-      - name: Sign OpenLogi Windows executables with Artifact Signing
+      - name: Sign OpenRoadie Windows executables with Artifact Signing
         if: ${{ inputs.sign }}
         uses: azure/artifact-signing-action@v2
         with:
@@ -531,10 +531,10 @@ jobs:
           certificate-profile-name: ${{ steps.azure_config.outputs.AZURE_CERT_PROFILE }}
           # `files` is a newline-separated list; one call signs every PE file.
           files: |
-            ${{ github.workspace }}\target\${{ matrix.target }}\release\openlogi-desktop.exe
-            ${{ github.workspace }}\target\${{ matrix.target }}\release\openlogi-overlay.exe
-            ${{ github.workspace }}\target\${{ matrix.target }}\release\openlogi-agent.exe
-            ${{ github.workspace }}\target\${{ matrix.target }}\release\openlogi.exe
+            ${{ github.workspace }}\target\${{ matrix.target }}\release\roadie-desktop.exe
+            ${{ github.workspace }}\target\${{ matrix.target }}\release\roadie-overlay.exe
+            ${{ github.workspace }}\target\${{ matrix.target }}\release\roadie-agent.exe
+            ${{ github.workspace }}\target\${{ matrix.target }}\release\roadie.exe
           # Timestamping is mandatory: without it the signature expires after
           # 3 days. The URL must stay http — SignTool rejects an https /tr up
           # front ("SignTool Error: Invalid Timestamp URL", v0.6.5) before
@@ -555,7 +555,7 @@ jobs:
           # HashMismatch (bytes no longer match the signature) are trust-store
           # independent and always ship-blockers; NotTrusted/UnknownError depend
           # on the runner's trust store, so they stay log-only.
-          foreach ($exe in 'openlogi-desktop.exe', 'openlogi-overlay.exe', 'openlogi-agent.exe', 'openlogi.exe') {
+          foreach ($exe in 'roadie-desktop.exe', 'roadie-overlay.exe', 'roadie-agent.exe', 'roadie.exe') {
             $sig = Get-AuthenticodeSignature "target\${{ matrix.target }}\release\$exe"
             $sig | Format-List
             if ($null -eq $sig.SignerCertificate -or
@@ -567,22 +567,22 @@ jobs:
 
       # The portable artifact is a zip of every exe: a bare exe has nowhere to
       # put the agent, and GUI-only can never work (#347). Inside the zip the
-      # GUI carries the product name (`OpenLogi.exe`, matching the MSI layout)
+      # GUI carries the product name (`OpenRoadie.exe`, matching the MSI layout)
       # and the agent keeps the exact name the GUI's sibling lookup expects.
-      # `openlogi.exe` is the CLI the docs and both issue templates ask users to
+      # `roadie.exe` is the CLI the docs and both issue templates ask users to
       # run; it is the same binary Linux installs to /usr/bin and macOS embeds
-      # at Contents/MacOS/openlogi. It goes in `bin\` rather than beside the
+      # at Contents/MacOS/roadie. It goes in `bin\` rather than beside the
       # GUI because Windows path comparison is case-insensitive: staging it as
-      # `stage\openlogi.exe` would overwrite `stage\OpenLogi.exe` and ship a zip
+      # `stage\roadie.exe` would overwrite `stage\OpenRoadie.exe` and ship a zip
       # with the CLI wearing the GUI's name. The MSI splits them the same way.
       - name: Collect signed portable zip artifact
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist, stage, stage\bin | Out-Null
-          Copy-Item target\${{ matrix.target }}\release\openlogi-desktop.exe stage\OpenLogi.exe
-          Copy-Item target\${{ matrix.target }}\release\openlogi-overlay.exe stage\openlogi-overlay.exe
-          Copy-Item target\${{ matrix.target }}\release\openlogi-agent.exe stage\openlogi-agent.exe
-          Copy-Item target\${{ matrix.target }}\release\openlogi.exe stage\bin\openlogi.exe
+          Copy-Item target\${{ matrix.target }}\release\roadie-desktop.exe stage\OpenRoadie.exe
+          Copy-Item target\${{ matrix.target }}\release\roadie-overlay.exe stage\roadie-overlay.exe
+          Copy-Item target\${{ matrix.target }}\release\roadie-agent.exe stage\roadie-agent.exe
+          Copy-Item target\${{ matrix.target }}\release\roadie.exe stage\bin\roadie.exe
           # Guard the collision above: four inputs must produce four staged
           # files. A case-insensitive overwrite would silently leave three.
           $staged = (Get-ChildItem stage -Recurse -File).Count
@@ -592,11 +592,11 @@ jobs:
           }
           # Zipping after signing is safe: Authenticode lives in the PE files.
           $ref = $env:GITHUB_REF_NAME -replace '/', '-'
-          Compress-Archive -Path stage\* -DestinationPath "dist\OpenLogi-$ref-windows-${{ matrix.arch }}.zip"
+          Compress-Archive -Path stage\* -DestinationPath "dist\OpenRoadie-$ref-windows-${{ matrix.arch }}.zip"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: OpenLogi-windows-${{ matrix.arch }}
+          name: OpenRoadie-windows-${{ matrix.arch }}
           path: dist/*.zip
           # 'warn' (the default) would let a no-zip job stay green, and publish
           # would then die at the by-name download instead of shipping DMG-only.
@@ -629,16 +629,16 @@ jobs:
       contents: read
     environment: ${{ inputs.sign && 'release' || '' }}
     steps:
-      # Needed for packaging/windows/OpenLogi.wxs.
+      # Needed for packaging/windows/OpenRoadie.wxs.
       - uses: actions/checkout@v7
 
       # The portable zip from this arch's windows leg, containing the
-      # already-signed OpenLogi.exe, openlogi-agent.exe, openlogi-overlay.exe,
-      # and openlogi.exe. The MSI packages exactly the bytes the portable
+      # already-signed OpenRoadie.exe, roadie-agent.exe, roadie-overlay.exe,
+      # and roadie.exe. The MSI packages exactly the bytes the portable
       # artifact ships.
       - uses: actions/download-artifact@v8
         with:
-          name: OpenLogi-windows-${{ matrix.arch }}
+          name: OpenRoadie-windows-${{ matrix.arch }}
           path: signed-zip
 
       - name: Extract the signed exes
@@ -690,7 +690,7 @@ jobs:
         # MSI (validation, cab layout), and nothing in CI installs the MSI, so
         # drift would only surface on end-user machines. Bump deliberately.
         # The UI extension (the progress-only dialog flow) and Util extension
-        # (util:CloseApplication in OpenLogi.wxs) are pinned to the same version
+        # (util:CloseApplication in OpenRoadie.wxs) are pinned to the same version
         # — WiX extensions release in lockstep with wix.
         run: |
           dotnet tool install --global wix --version 6.0.2
@@ -713,16 +713,16 @@ jobs:
           # by-name download, the extract step's guard) should make the misses
           # unreachable; the guards turn a confusing "$null.FullName -> empty
           # -d" wix error into a named cause if those invariants ever shift.
-          $gui = Get-Item signed-exe\OpenLogi.exe -ErrorAction SilentlyContinue
-          $overlay = Get-Item signed-exe\openlogi-overlay.exe -ErrorAction SilentlyContinue
-          $agent = Get-Item signed-exe\openlogi-agent.exe -ErrorAction SilentlyContinue
-          $cli = Get-Item signed-exe\bin\openlogi.exe -ErrorAction SilentlyContinue
+          $gui = Get-Item signed-exe\OpenRoadie.exe -ErrorAction SilentlyContinue
+          $overlay = Get-Item signed-exe\roadie-overlay.exe -ErrorAction SilentlyContinue
+          $agent = Get-Item signed-exe\roadie-agent.exe -ErrorAction SilentlyContinue
+          $cli = Get-Item signed-exe\bin\roadie.exe -ErrorAction SilentlyContinue
           if ($null -eq $gui -or $null -eq $overlay -or $null -eq $agent -or $null -eq $cli) {
-            Write-Error "signed-exe\ must contain OpenLogi.exe, openlogi-overlay.exe, openlogi-agent.exe, and bin\openlogi.exe — nothing to package"
+            Write-Error "signed-exe\ must contain OpenRoadie.exe, roadie-overlay.exe, roadie-agent.exe, and bin\roadie.exe — nothing to package"
             exit 1
           }
           New-Item -ItemType Directory -Force -Path out | Out-Null
-          wix build packaging\windows\OpenLogi.wxs `
+          wix build packaging\windows\OpenRoadie.wxs `
             -ext WixToolset.UI.wixext `
             -ext WixToolset.Util.wixext `
             -arch ${{ matrix.msi_platform }} `
@@ -731,7 +731,7 @@ jobs:
             -d AgentExeFile="$($agent.FullName)" `
             -d OverlayExeFile="$($overlay.FullName)" `
             -d CliExeFile="$($cli.FullName)" `
-            -o out\OpenLogi.msi
+            -o out\OpenRoadie.msi
 
       - name: Azure login (OIDC)
         if: ${{ inputs.sign }}
@@ -750,14 +750,14 @@ jobs:
             Register-PSRepository -Default
           }
 
-      - name: Sign OpenLogi.msi with Artifact Signing
+      - name: Sign OpenRoadie.msi with Artifact Signing
         if: ${{ inputs.sign }}
         uses: azure/artifact-signing-action@v2
         with:
           endpoint: ${{ steps.azure_config.outputs.AZURE_SIGNING_ENDPOINT }}
           signing-account-name: ${{ steps.azure_config.outputs.AZURE_SIGNING_ACCOUNT }}
           certificate-profile-name: ${{ steps.azure_config.outputs.AZURE_CERT_PROFILE }}
-          files: ${{ github.workspace }}\out\OpenLogi.msi
+          files: ${{ github.workspace }}\out\OpenRoadie.msi
           # http on purpose — see the exe signing step.
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
           cache-dependencies: false
@@ -766,13 +766,13 @@ jobs:
         if: ${{ inputs.sign }}
         shell: pwsh
         run: |
-          $sig = Get-AuthenticodeSignature out\OpenLogi.msi
+          $sig = Get-AuthenticodeSignature out\OpenRoadie.msi
           $sig | Format-List
           # Same gate as the exe: NotSigned/HashMismatch are trust-store
           # independent ship-blockers; NotTrusted/UnknownError stay log-only.
           if ($null -eq $sig.SignerCertificate -or
               "$($sig.Status)" -in 'NotSigned', 'HashMismatch') {
-            Write-Error "OpenLogi.msi Authenticode signature is invalid: $($sig.Status)"
+            Write-Error "OpenRoadie.msi Authenticode signature is invalid: $($sig.Status)"
             exit 1
           }
 
@@ -782,11 +782,11 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           # Renaming after signing is safe: the signature lives in the MSI.
           $ref = $env:GITHUB_REF_NAME -replace '/', '-'
-          Copy-Item out\OpenLogi.msi "dist\OpenLogi-$ref-windows-${{ matrix.arch }}.msi"
+          Copy-Item out\OpenRoadie.msi "dist\OpenRoadie-$ref-windows-${{ matrix.arch }}.msi"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: OpenLogi-windows-msi-${{ matrix.arch }}
+          name: OpenRoadie-windows-msi-${{ matrix.arch }}
           path: dist/*.msi
           if-no-files-found: error
 
@@ -852,7 +852,7 @@ jobs:
           NFPM_SHA256: ${{ matrix.nfpm_sha256 }}
         run: |
           sudo apt-get update
-          # The Linux packaging task builds openlogi-desktop, which links GPUI's full
+          # The Linux packaging task builds roadie-desktop, which links GPUI's full
           # wayland / x11 stack — keep this in sync with ci.yml's Linux deps
           # (the proven set). The previous short list was missing
           # libxkbcommon-x11-dev / libwayland-dev / libx11-xcb-dev, so every
@@ -875,7 +875,7 @@ jobs:
         env:
           MAX_GLIBC_VERSION: "2.35"
         run: |
-          for binary in openlogi openlogi-desktop openlogi-overlay openlogi-agent; do
+          for binary in roadie roadie-desktop roadie-overlay roadie-agent; do
             required=$(
               readelf --version-info "target/release/$binary" \
                 | sed -n 's/.*Name: GLIBC_\([0-9][0-9.]*\).*/\1/p' \
@@ -904,17 +904,17 @@ jobs:
           for pkg in target/release/*.deb target/release/*.rpm; do
             [ -f "$pkg" ] || continue
             ext="${pkg##*.}"
-            cp "$pkg" "dist/openlogi-${ref_name}-linux-${PKG_ARCH}.${ext}"
+            cp "$pkg" "dist/roadie-${ref_name}-linux-${PKG_ARCH}.${ext}"
           done
           # .pkg.tar.zst has a compound extension; handle it separately.
           for pkg in target/release/*.pkg.tar.zst; do
             [ -f "$pkg" ] || continue
-            cp "$pkg" "dist/openlogi-${ref_name}-linux-${PKG_ARCH}.pkg.tar.zst"
+            cp "$pkg" "dist/roadie-${ref_name}-linux-${PKG_ARCH}.pkg.tar.zst"
           done
 
       - uses: actions/upload-artifact@v7
         with:
-          name: OpenLogi-linux-packages-${{ matrix.arch }}
+          name: OpenRoadie-linux-packages-${{ matrix.arch }}
           path: dist/*
 
   # Single owner of the GitHub Release. softprops/action-gh-release@v3 creates the

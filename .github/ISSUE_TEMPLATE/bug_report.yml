@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for filing a bug report! OpenLogi talks to hardware over HID++, so
+        Thanks for filing a bug report! OpenRoadie talks to hardware over HID++, so
         **device, connection, and version details are essential** — issues without
         them are usually impossible to reproduce.
 
@@ -22,16 +22,16 @@ body:
           required: true
         - label: I am on the [latest release](https://github.com/AprilNEA/OpenLogi/releases/latest) or a recent `master` build.
           required: true
-        - label: I quit **Logi Options+** before running OpenLogi (the two apps fight over HID++ access and only one can own a receiver at a time).
+        - label: I quit **Logi Options+** before running OpenRoadie (the two apps fight over HID++ access and only one can own a receiver at a time).
           required: true
 
   - type: dropdown
     id: component
     attributes:
-      label: Which part of OpenLogi?
+      label: Which part of OpenRoadie?
       options:
         - GUI (desktop app)
-        - CLI (the `openlogi` binary)
+        - CLI (the `roadie` binary)
         - Both
         - Not sure
     validations:
@@ -40,8 +40,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: OpenLogi version
-      description: GUI → About window, or run `openlogi --version`.
+      label: OpenRoadie version
+      description: GUI → About window, or run `roadie --version`.
       placeholder: e.g. 0.4.0
     validations:
       required: true
@@ -134,8 +134,8 @@ body:
   - type: textarea
     id: device-list
     attributes:
-      label: "`openlogi list` output"
-      description: Run `openlogi list` and paste the output — it shows your receiver/device IDs and pairing state. Omit only if the CLI is unreachable.
+      label: "`roadie list` output"
+      description: Run `roadie list` and paste the output — it shows your receiver/device IDs and pairing state. Omit only if the CLI is unreachable.
       render: text
 
   - type: textarea
@@ -144,8 +144,8 @@ body:
       label: Logs
       description: |
         Re-run with verbose logging and paste the relevant output.
-        CLI: `OPENLOGI_LOG=debug openlogi <command>`.
-        GUI: launch from a terminal with `OPENLOGI_LOG=debug /Applications/OpenLogi.app/Contents/MacOS/OpenLogi`.
+        CLI: `ROADIE_LOG=debug roadie <command>`.
+        GUI: launch from a terminal with `ROADIE_LOG=debug /Applications/OpenRoadie.app/Contents/MacOS/OpenRoadie`.
       render: shell
 
   - type: checkboxes
@@ -154,5 +154,5 @@ body:
       label: macOS permissions (if applicable)
       description: System Settings → Privacy & Security
       options:
-        - label: OpenLogi has **Accessibility** permission (needed to remap buttons via the event tap).
-        - label: OpenLogi has **Input Monitoring** permission (needed for Bluetooth-direct devices and capture).
+        - label: OpenRoadie has **Accessibility** permission (needed to remap buttons via the event tap).
+        - label: OpenRoadie has **Input Monitoring** permission (needed for Bluetooth-direct devices and capture).

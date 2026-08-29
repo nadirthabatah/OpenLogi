@@ -122,7 +122,7 @@ jobs:
           commit_user_name: "aprilnea[bot]"
           commit_user_email: "41898282+github-actions[bot]@users.noreply.github.com"
           commit_author: "aprilnea[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
-      # OpenLogi's whole-repo changelog is the release PR body.
+      # OpenRoadie's whole-repo changelog is the release PR body.
       - name: Replace release PR body with changelog
         if: steps.open_release_pr.outputs.number != ''
         uses: actions/github-script@v9

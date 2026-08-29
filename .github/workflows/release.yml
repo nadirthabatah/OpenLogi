@@ -100,7 +100,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: OpenLogi-release-notes
+          name: OpenRoadie-release-notes
           path: .release/RELEASE_NOTES.md
 
   publish:
@@ -147,7 +147,7 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          pattern: OpenLogi-macos-dmg-*
+          pattern: OpenRoadie-macos-dmg-*
           path: dist
           merge-multiple: true
 
@@ -159,18 +159,18 @@ jobs:
       # succeeds with an empty dist (unlike by-name, which fails).
       - uses: actions/download-artifact@v8
         with:
-          pattern: OpenLogi-windows-*
+          pattern: OpenRoadie-windows-*
           path: dist
           merge-multiple: true
 
       - uses: actions/download-artifact@v8
         with:
-          name: OpenLogi-release-notes
+          name: OpenRoadie-release-notes
           path: .release
 
       - uses: actions/download-artifact@v8
         with:
-          pattern: OpenLogi-linux-packages-*
+          pattern: OpenRoadie-linux-packages-*
           path: dist
           merge-multiple: true
 
@@ -216,9 +216,9 @@ jobs:
           export-env: false
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          OPENLOGI_UPDATE_BASE_URL: ${{ secrets.OP_R2_SECRET_ITEM }}/OPENLOGI_UPDATE_BASE_URL
-          OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY: ${{ secrets.OP_R2_SECRET_ITEM }}/OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY
-          OPENLOGI_UPDATE_MINISIGN_SECRET_KEY: ${{ secrets.OP_R2_SECRET_ITEM }}/OPENLOGI_UPDATE_MINISIGN_SECRET_KEY
+          ROADIE_UPDATE_BASE_URL: ${{ secrets.OP_R2_SECRET_ITEM }}/ROADIE_UPDATE_BASE_URL
+          ROADIE_UPDATE_MINISIGN_PUBLIC_KEY: ${{ secrets.OP_R2_SECRET_ITEM }}/ROADIE_UPDATE_MINISIGN_PUBLIC_KEY
+          ROADIE_UPDATE_MINISIGN_SECRET_KEY: ${{ secrets.OP_R2_SECRET_ITEM }}/ROADIE_UPDATE_MINISIGN_SECRET_KEY
           R2_ACCOUNT_ID: ${{ secrets.OP_R2_SECRET_ITEM }}/CLOUDFLARE_R2_ACCOUNT_ID
           R2_BUCKET: ${{ secrets.OP_R2_SECRET_ITEM }}/CLOUDFLARE_R2_BUCKET
           R2_ACCESS_KEY_ID: ${{ secrets.OP_R2_SECRET_ITEM }}/CLOUDFLARE_R2_ACCESS_KEY_ID
@@ -226,18 +226,18 @@ jobs:
 
       - name: Validate R2 publishing configuration
         env:
-          OPENLOGI_UPDATE_BASE_URL: ${{ steps.r2_config.outputs.OPENLOGI_UPDATE_BASE_URL }}
-          OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY: ${{ steps.r2_config.outputs.OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY }}
-          OPENLOGI_UPDATE_MINISIGN_SECRET_KEY: ${{ steps.r2_config.outputs.OPENLOGI_UPDATE_MINISIGN_SECRET_KEY }}
+          ROADIE_UPDATE_BASE_URL: ${{ steps.r2_config.outputs.ROADIE_UPDATE_BASE_URL }}
+          ROADIE_UPDATE_MINISIGN_PUBLIC_KEY: ${{ steps.r2_config.outputs.ROADIE_UPDATE_MINISIGN_PUBLIC_KEY }}
+          ROADIE_UPDATE_MINISIGN_SECRET_KEY: ${{ steps.r2_config.outputs.ROADIE_UPDATE_MINISIGN_SECRET_KEY }}
           R2_ACCOUNT_ID: ${{ steps.r2_config.outputs.R2_ACCOUNT_ID }}
           R2_BUCKET: ${{ steps.r2_config.outputs.R2_BUCKET }}
           R2_ACCESS_KEY_ID: ${{ steps.r2_config.outputs.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ steps.r2_config.outputs.R2_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
-          : "${OPENLOGI_UPDATE_BASE_URL:?Configure OPENLOGI_UPDATE_BASE_URL in the R2 1Password item}"
-          : "${OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY:?Configure OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY in the R2 1Password item}"
-          : "${OPENLOGI_UPDATE_MINISIGN_SECRET_KEY:?Configure OPENLOGI_UPDATE_MINISIGN_SECRET_KEY in the R2 1Password item}"
+          : "${ROADIE_UPDATE_BASE_URL:?Configure ROADIE_UPDATE_BASE_URL in the R2 1Password item}"
+          : "${ROADIE_UPDATE_MINISIGN_PUBLIC_KEY:?Configure ROADIE_UPDATE_MINISIGN_PUBLIC_KEY in the R2 1Password item}"
+          : "${ROADIE_UPDATE_MINISIGN_SECRET_KEY:?Configure ROADIE_UPDATE_MINISIGN_SECRET_KEY in the R2 1Password item}"
           : "${R2_ACCOUNT_ID:?Configure CLOUDFLARE_R2_ACCOUNT_ID in the R2 1Password item}"
           : "${R2_BUCKET:?Configure CLOUDFLARE_R2_BUCKET in the R2 1Password item}"
           : "${R2_ACCESS_KEY_ID:?Configure CLOUDFLARE_R2_ACCESS_KEY_ID in the R2 1Password item}"
@@ -250,18 +250,18 @@ jobs:
 
       - name: Sign release artifacts with minisign
         env:
-          OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY: ${{ steps.r2_config.outputs.OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY }}
-          OPENLOGI_UPDATE_MINISIGN_SECRET_KEY: ${{ steps.r2_config.outputs.OPENLOGI_UPDATE_MINISIGN_SECRET_KEY }}
+          ROADIE_UPDATE_MINISIGN_PUBLIC_KEY: ${{ steps.r2_config.outputs.ROADIE_UPDATE_MINISIGN_PUBLIC_KEY }}
+          ROADIE_UPDATE_MINISIGN_SECRET_KEY: ${{ steps.r2_config.outputs.ROADIE_UPDATE_MINISIGN_SECRET_KEY }}
         run: |
           set -euo pipefail
-          key_file="${RUNNER_TEMP}/openlogi-minisign.key"
+          key_file="${RUNNER_TEMP}/roadie-minisign.key"
           umask 077
           trap 'rm -f "$key_file"' EXIT
           # The secret key file is stored base64-encoded in 1Password so its two
           # lines survive paste/round-trip (a raw multi-line value can have its
           # newline mangled to a space — see the GitHub App key note above).
           # `tr -d` drops any wrapping whitespace before decoding.
-          printf '%s' "$OPENLOGI_UPDATE_MINISIGN_SECRET_KEY" | tr -d '[:space:]' | base64 -d > "$key_file"
+          printf '%s' "$ROADIE_UPDATE_MINISIGN_SECRET_KEY" | tr -d '[:space:]' | base64 -d > "$key_file"
           # The Windows binaries and Linux packages get the same minisign
           # treatment as the DMGs: manual verification today, and the future
           # auto-updaters need the detached signatures to exist for every
@@ -272,18 +272,18 @@ jobs:
           shopt -s nullglob
           for artifact in dist/*.dmg dist/*.zip dist/*.msi dist/*.deb dist/*.rpm dist/*.pkg.tar.zst; do
             minisign -S -m "$artifact" -s "$key_file" -x "$artifact.minisig" -W
-            minisign -V -m "$artifact" -P "$OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY" -x "$artifact.minisig"
+            minisign -V -m "$artifact" -P "$ROADIE_UPDATE_MINISIGN_PUBLIC_KEY" -x "$artifact.minisig"
           done
 
       - name: Generate static updater manifest
         env:
-          OPENLOGI_UPDATE_BASE_URL: ${{ steps.r2_config.outputs.OPENLOGI_UPDATE_BASE_URL }}
+          ROADIE_UPDATE_BASE_URL: ${{ steps.r2_config.outputs.ROADIE_UPDATE_BASE_URL }}
         run: |
           set -euo pipefail
           cargo run -p xtask -- release latest-json \
             --dist dist \
             --tag "$GITHUB_REF_NAME" \
-            --base-url "$OPENLOGI_UPDATE_BASE_URL" \
+            --base-url "$ROADIE_UPDATE_BASE_URL" \
             --include-windows \
             --output dist/latest.json
 
@@ -366,6 +366,6 @@ jobs:
         with:
           token: ${{ steps.tap_token.outputs.token }}
           repository: AprilNEA/homebrew-tap
-          event-type: update-openlogi
+          event-type: update-roadie
           client-payload: |
             {"version": "${{ github.ref_name }}"}

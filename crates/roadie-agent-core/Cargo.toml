@@ -1,0 +1,29 @@
+[package]
+name = "roadie-agent-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Headless orchestration shared by the OpenRoadie background agent: hook runtime, HID++ writes, DPI cycle, Actions Ring session state."
+# Links path-only siblings and is bundled inside the .app via roadie-agent.
+publish = false
+
+[dependencies]
+roadie-core = { path = "../roadie-core" }
+roadie-inject = { path = "../roadie-inject" }
+roadie-hid = { path = "../roadie-hid" }
+roadie-hook = { path = "../roadie-hook" }
+roadie-ipc = { path = "../roadie-ipc" }
+futures-lite = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+# Only to advance virtual time in the DeviceOp/timed timeout test without a
+# real multi-second sleep.
+tokio = { workspace = true, features = ["test-util"] }

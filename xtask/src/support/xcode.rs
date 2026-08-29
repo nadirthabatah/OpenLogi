@@ -2,7 +2,7 @@
 //!
 //! Every developer tool the bundle build shells out to — the cargo builds that
 //! link against the macOS SDK, and `actool` — has to be the same one, or a
-//! bundle is assembled from two toolchains. `OPENLOGI_DEVELOPER_DIR` picks it;
+//! bundle is assembled from two toolchains. `ROADIE_DEVELOPER_DIR` picks it;
 //! without one, whatever `/Applications/Xcode.app` points at.
 //!
 //! That default is why this exists as a knob at all: a machine — a CI runner
@@ -18,7 +18,7 @@ use xshell::{Shell, cmd};
 /// directory, and the SDK path that Xcode resolves to.
 pub(crate) fn env() -> Result<Vec<(String, String)>> {
     let sh = Shell::new()?;
-    let developer_dir = env::var("OPENLOGI_DEVELOPER_DIR")
+    let developer_dir = env::var("ROADIE_DEVELOPER_DIR")
         .unwrap_or_else(|_| "/Applications/Xcode.app/Contents/Developer".to_string());
     let sdkroot = cmd!(sh, "/usr/bin/xcrun --sdk macosx --show-sdk-path")
         .env("DEVELOPER_DIR", &developer_dir)

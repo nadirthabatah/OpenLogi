@@ -30,7 +30,7 @@ pub(crate) enum Job {
     ClippyWindows,
     Wasm,
     /// Locale parity. Part of `tests (macos)`, and the suite Linux CI cannot
-    /// run because it excludes `openlogi-desktop`.
+    /// run because it excludes `roadie-desktop`.
     I18n,
     /// The bincode/tarpc golden wire format. Part of the test jobs.
     Wire,
@@ -146,7 +146,7 @@ impl Job {
                 prefix: None,
                 hosts: &[Host::Linux],
                 in_default_run: true,
-                caveat: "Excludes openlogi-desktop, so the i18n locale-parity tests never run on Linux CI.",
+                caveat: "Excludes roadie-desktop, so the i18n locale-parity tests never run on Linux CI.",
             },
             Self::TestsMacos => Spec {
                 name: "tests (macos)",
@@ -162,7 +162,7 @@ impl Job {
                 prefix: None,
                 hosts: Host::ANY,
                 in_default_run: true,
-                caveat: "Rooted at crates/openlogi — exactly the crates published to crates.io. Falls back to `nix run nixpkgs#cargo-deny` when the binary is not installed.",
+                caveat: "Rooted at crates/roadie — exactly the crates published to crates.io. Falls back to `nix run nixpkgs#cargo-deny` when the binary is not installed.",
             },
             Self::ClippyWindows => Spec {
                 name: "clippy (windows)",
@@ -185,7 +185,7 @@ impl Job {
             Self::I18n => focused_spec(
                 "i18n",
                 &[],
-                "Locale parity. Part of tests (macos), and the suite Linux CI cannot run because it excludes openlogi-desktop.",
+                "Locale parity. Part of tests (macos), and the suite Linux CI cannot run because it excludes roadie-desktop.",
             ),
             Self::Wire => focused_spec(
                 "wire_format",

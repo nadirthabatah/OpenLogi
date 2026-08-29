@@ -1,34 +1,17 @@
 > [!WARNING]
-> **OpenLogi は現在活発に開発中**であり、まだ安定していません —— 機能や設定は今後も変わる可能性があります。リポジトリに **Star** ⭐ と **Watch** 👀 を付けて、新しいリリースの通知を受け取りましょう。
+> **OpenRoadie は現在活発に開発中**であり、まだ安定していません —— 機能や設定は今後も変わる可能性があります。リポジトリに **Star** ⭐ と **Watch** 👀 を付けて、新しいリリースの通知を受け取りましょう。
 
 <h4 align="right"><a href="../README.md">English</a> | <a href="README.zh-CN.md">简体中文</a> | <strong>日本語</strong> | <a href="README.de.md">Deutsch</a> | <a href="README.fr.md">Français</a> | <a href="README.ko.md">한국어</a></h4>
 
-<p align="center">
-    <img src="https://assets.openlogi.org/brand/openlogi-icon.png" width="138" alt="OpenLogi"/>
-</p>
 
-<h1 align="center">OpenLogi</h1>
+<h1 align="center">OpenRoadie</h1>
+<p align="center">OpenRoadie is a fork of <a href="https://github.com/AprilNEA/OpenLogi">OpenLogi</a> by @AprilNEA.</p>
 <p align="center"><strong>⚡️ Rust 製のネイティブでローカルファーストな Logitech Options+ 代替 🦀<br/>HID++ と UVC で Logitech のマウス・キーボード・ウェブカメラの能力を最大限に引き出す</strong></p>
 
 
-<div align="center">
-    <a href="https://twitter.com/AprilNEA" target="_blank">
-    <img alt="twitter" src="https://img.shields.io/badge/follow-AprilNEA-green?style=social&logo=Twitter"></a>
-    <a href="https://t.me/+VDtkR5OSAT04NzVh" target="_blank">
-    <img alt="telegram" src="https://img.shields.io/badge/chat-telegram-blueviolet?style=flat&logo=Telegram"></a>
-    <a href="https://github.com/AprilNEA/OpenLogi/releases" target="_blank">
-    <img alt="GitHub downloads" src="https://img.shields.io/github/downloads/AprilNEA/OpenLogi/total.svg?style=flat"></a>
-    <a href="https://github.com/AprilNEA/OpenLogi/commits" target="_blank">
-    <img alt="GitHub commit" src="https://img.shields.io/github/commit-activity/m/AprilNEA/OpenLogi?style=flat"></a>
-    <img alt="Hits" src="https://hits.aprilnea.com/hits?url=https://github.com/aprilnea/openlogi">
-</div>
 
-<p align="center">
-    <a href="https://trendshift.io/repositories/42303" target="_blank">
-    <img src="https://trendshift.io/api/badge/trendshift/repositories/42303/daily?language=Rust" alt="AprilNEA%2FOpenLogi | Trendshift" width="250" height="55"/></a>
-</p>
 
-> **Options+ にうんざり？OpenLogi をどうぞ。**
+> **Options+ にうんざり？OpenRoadie をどうぞ。**
 
 macOS、Linux、Windows に対応。
 
@@ -36,10 +19,10 @@ macOS、Linux、Windows に対応。
 
 ## Options+ を超えて
 
-OpenLogi にできて Options+ にできないこと：
+OpenRoadie にできて Options+ にできないこと：
 
 - **軽量なまま。** ネイティブ Rust + GPUI。
-- **Linux で動く。** Linux は OpenLogi のファーストクラスプラットフォームです。
+- **Linux で動く。** Linux は OpenRoadie のファーストクラスプラットフォームです。
 - **ジェスチャーボタンを自由に。** どの物理ボタンにでもジェスチャー役を割り当てられ、ジェスチャーを完全にオフにもできます。
 - **設定がプレーンテキスト。** すべてが 1 つの TOML ファイルに収まり、好きな方法でマシン間を同期できます。
 - **スクリプトで叩ける。** GUI に加えて本物の CLI も。
@@ -83,22 +66,22 @@ OpenLogi にできて Options+ にできないこと：
 
 macOS 13 以降が必要です。
 
-[最新リリース](https://github.com/AprilNEA/OpenLogi/releases/latest)から署名・公証済みの `.dmg` をダウンロードし、`OpenLogi.app` を `/Applications` にドラッグします。
+[最新リリース](https://github.com/AprilNEA/OpenLogi/releases/latest)から署名・公証済みの `.dmg` をダウンロードし、`OpenRoadie.app` を `/Applications` にドラッグします。
 
 または [Homebrew](https://brew.sh) で：
 
 ```sh
-brew install --cask openlogi
+brew install --cask roadie
 ```
 
 公式 Homebrew cask が標準のインストール経路です。代わりに `aprilnea/tap` で GitHub の最新リリースを明示的に追うには：
 
 ```sh
 brew tap aprilnea/tap
-brew install --cask aprilnea/tap/openlogi@latest
+brew install --cask aprilnea/tap/roadie@latest
 ```
 
-`openlogi@latest` は OpenLogi のリリースワークフローが管理しており、公式 cask の autobump より先に更新されることがあります。`openlogi` か `openlogi@latest` のどちらか一方だけをインストールしてください。
+`roadie@latest` は OpenRoadie のリリースワークフローが管理しており、公式 cask の autobump より先に更新されることがあります。`roadie` か `roadie@latest` のどちらか一方だけをインストールしてください。
 
 ### Linux
 
@@ -106,13 +89,13 @@ brew install --cask aprilnea/tap/openlogi@latest
 
 ```sh
 # Debian / Ubuntu
-sudo dpkg -i openlogi_*.deb
+sudo dpkg -i roadie_*.deb
 
 # Fedora / RHEL
-sudo rpm -i openlogi-*.rpm
+sudo rpm -i roadie-*.rpm
 
 # Arch Linux
-sudo pacman -U openlogi-*.pkg.tar.zst
+sudo pacman -U roadie-*.pkg.tar.zst
 ```
 
 パッケージは `x86_64`/`amd64` と `arm64`/`aarch64` の両方で公開されています。
@@ -120,14 +103,14 @@ sudo pacman -U openlogi-*.pkg.tar.zst
 パッケージは udev ルールをインストールし、`sudo` なしで `/dev/hidraw*` と `/dev/uinput` にアクセスできるようにします。インストール後、ユーザーのバックグラウンドエージェントを有効化してください：
 
 ```sh
-systemctl --user enable --now openlogi-agent.service
+systemctl --user enable --now roadie-agent.service
 ```
 
 手動 / ソースからのインストールや systemd のないディストリビューションは [INSTALL-linux.md](INSTALL-linux.md) を参照。
 
 ### Windows
 
-各リリースには署名済みポータブル `.zip` とユーザー単位の `.msi` インストーラー（x86_64 / arm64）が付属します。どちらも GUI（`OpenLogi.exe`）と、すべてのデバイス I/O を所有するバックグラウンド agent（`openlogi-agent.exe`）を同梱します。ポータブル zip では 2 ファイルを同じ場所に置いてください。そうしないと GUI は接続先を失います。
+各リリースには署名済みポータブル `.zip` とユーザー単位の `.msi` インストーラー（x86_64 / arm64）が付属します。どちらも GUI（`OpenRoadie.exe`）と、すべてのデバイス I/O を所有するバックグラウンド agent（`roadie-agent.exe`）を同梱します。ポータブル zip では 2 ファイルを同じ場所に置いてください。そうしないと GUI は接続先を失います。
 
 Windows サポートは動作しており、有線キーボードと Unifying レシーバー接続のマウスを使い、MSI のインストール、インプレースアップグレード、アンインストールを含めて Windows 11 実機でエンドツーエンド検証済みです。macOS 版より新しいため、問題があれば[報告](https://github.com/AprilNEA/OpenLogi/issues)してください。agent はシステムトレイアイコン（メインウィンドウを表示 / 終了）を表示し、メインウィンドウを閉じてもアプリを開けます。Windows で無効にするには TOML の `[app_settings]` ブロックで `show_in_menu_bar = false` を設定し、agent を再起動してください。GUI の切り替えは現在 macOS 専用です。
 
@@ -162,16 +145,12 @@ Windows サポートは動作しており、有線キーボードと Unifying �
 
 ### サードパーティコード
 
-`crates/openlogi-hidpp` は [`hidpp`](https://crates.io/crates/hidpp)（作者 [@lus](https://github.com/lus)）の vendored fork で、0BSD ライセンスです。
+`crates/roadie-hidpp` は [`hidpp`](https://crates.io/crates/hidpp)（作者 [@lus](https://github.com/lus)）の vendored fork で、0BSD ライセンスです。
 
 ### ロゴとブランドアセット
 
-OpenLogi のロゴをデザインしてくれた [@kubai087](https://github.com/kubai087) に感謝します。OpenLogi のロゴとアプリアイコン —— [`design/`](../design/) 配下のブランドアセット —— は © 2026 AprilNEA が全権利を留保しており、上記の MIT/Apache ライセンスの対象外です。[`design/LICENSE`](../design/LICENSE) を参照してください。コードをフォークしても OpenLogi の名称・ロゴ・アイコンの使用権は付与されません。事前の書面による許可なく、ご自身のプロジェクト、フォーク、配布物を表すために使用しないでください。
+OpenRoadie のロゴをデザインしてくれた [@kubai087](https://github.com/kubai087) に感謝します。OpenRoadie のロゴとアプリアイコン —— [`design/`](../design/) 配下のブランドアセット —— は © 2026 AprilNEA が全権利を留保しており、上記の MIT/Apache ライセンスの対象外です。[`design/LICENSE`](../design/LICENSE) を参照してください。コードをフォークしても OpenRoadie の名称・ロゴ・アイコンの使用権は付与されません。事前の書面による許可なく、ご自身のプロジェクト、フォーク、配布物を表すために使用しないでください。
 
 ---
 
 **Logitech とは無関係です。** 「Logitech」「MX Master」「Options+」は Logitech International S.A. の商標です。
-
-## リポジトリの活動
-
-![Repobeats analytics image](https://repobeats.axiom.co/api/embed/4a0b576a03e9d528ad31ccf4797a1286c045d021.svg "Repobeats analytics image")

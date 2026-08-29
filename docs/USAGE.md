@@ -1,45 +1,45 @@
 # Usage (CLI)
 
-The `openlogi` command-line tool. For install and configuration, see the
+The `roadie` command-line tool. For install and configuration, see the
 [README](../README.md). To check this build against your own peripherals, see
 [VERIFYING.md](VERIFYING.md).
 
 ```sh
-openlogi list                 # paired devices: slot, codename, kind, online, battery
-openlogi devices              # everything plugged in, whoever made it, and what it offers
-openlogi doctor               # why nothing is being found, and what to do about it
-openlogi assets sync          # pre-fetch device renders from the fastest available mirror
-openlogi diag features        # dump every HID++ feature the active device reports
-openlogi diag controls        # dump reprogrammable controls and capability flags
-openlogi diag dpi             # read → write → read-back → restore DPI (smoke test)
-openlogi diag smartshift      # toggle SmartShift and restore (smoke test)
-openlogi diag lighting ff0000 # solid colour for a wired RGB keyboard (any RRGGBB hex)
-openlogi streamdeck           # list attached Elgato Stream Decks
-openlogi streamdeck verify    # check the Stream Deck driver against your hardware
-openlogi streamdeck fill 0 ff8800   # fill the top-left key with a colour
-openlogi streamdeck image 0 icon.png # show a picture on the top-left key
-openlogi streamdeck label 0 "MUTE MIC"  # write a label, sized to fit
-openlogi streamdeck layouts             # the layouts you have saved, by name
-openlogi streamdeck example streaming   # start a layout called "streaming"
-openlogi streamdeck set streaming 0 --label "MUTE MIC"  # set a key, no editor needed
-openlogi streamdeck apply streaming     # apply it by name, from anywhere
-openlogi streamdeck run streaming       # apply it, then act on key presses
-openlogi via                  # QMK/VIA keyboards and macro pads attached
-openlogi via keymap 0         # print layer 0, key by key, with names not numbers
-openlogi via set 0 2 3 F13    # make one key send F13, confirmed by reading it back
-openlogi light list           # standalone lights (Litra) and what each can do
-openlogi light brightness 60  # set a light's brightness
-openlogi backlight status     # keyboard backlight state; `on` and `off` persist it
-openlogi snapshot shot.png    # capture one frame from a webcam
-openlogi mcp                  # serve the agent to an AI assistant over MCP (see below)
-openlogi profile export my-setup # save the whole setup — configuration and layouts
-openlogi profile inspect FILE # show what a profile holds, without applying it
-openlogi profile import FILE  # apply a profile, backing up the current one first
+roadie list                 # paired devices: slot, codename, kind, online, battery
+roadie devices              # everything plugged in, whoever made it, and what it offers
+roadie doctor               # why nothing is being found, and what to do about it
+roadie assets sync          # pre-fetch device renders from the fastest available mirror
+roadie diag features        # dump every HID++ feature the active device reports
+roadie diag controls        # dump reprogrammable controls and capability flags
+roadie diag dpi             # read → write → read-back → restore DPI (smoke test)
+roadie diag smartshift      # toggle SmartShift and restore (smoke test)
+roadie diag lighting ff0000 # solid colour for a wired RGB keyboard (any RRGGBB hex)
+roadie streamdeck           # list attached Elgato Stream Decks
+roadie streamdeck verify    # check the Stream Deck driver against your hardware
+roadie streamdeck fill 0 ff8800   # fill the top-left key with a colour
+roadie streamdeck image 0 icon.png # show a picture on the top-left key
+roadie streamdeck label 0 "MUTE MIC"  # write a label, sized to fit
+roadie streamdeck layouts             # the layouts you have saved, by name
+roadie streamdeck example streaming   # start a layout called "streaming"
+roadie streamdeck set streaming 0 --label "MUTE MIC"  # set a key, no editor needed
+roadie streamdeck apply streaming     # apply it by name, from anywhere
+roadie streamdeck run streaming       # apply it, then act on key presses
+roadie via                  # QMK/VIA keyboards and macro pads attached
+roadie via keymap 0         # print layer 0, key by key, with names not numbers
+roadie via set 0 2 3 F13    # make one key send F13, confirmed by reading it back
+roadie light list           # standalone lights (Litra) and what each can do
+roadie light brightness 60  # set a light's brightness
+roadie backlight status     # keyboard backlight state; `on` and `off` persist it
+roadie snapshot shot.png    # capture one frame from a webcam
+roadie mcp                  # serve the agent to an AI assistant over MCP (see below)
+roadie profile export my-setup # save the whole setup — configuration and layouts
+roadie profile inspect FILE # show what a profile holds, without applying it
+roadie profile import FILE  # apply a profile, backing up the current one first
 ```
 
 ## When nothing is found
 
-`openlogi doctor` is the command to run when something is not working. Every
+`roadie doctor` is the command to run when something is not working. Every
 other command here assumes it can reach your hardware; when it cannot, the most
 it can honestly say is "nothing found" — and that is the same sentence whether
 your desk is empty, a cable is out, or this program is not allowed to open the
@@ -51,7 +51,7 @@ anything was found, the background agent, where configuration lives, saved
 layouts — and for anything wrong, says what to do about it:
 
 ```console
-$ openlogi doctor
+$ roadie doctor
 FIX   Permission to open devices: 4 HID devices are attached and this program
       cannot open any of them. This is a permissions problem, not a hardware
       one — the devices are there.
@@ -60,16 +60,16 @@ One thing to fix:
 
 Permission to open devices: ...
   1. Install the udev rules this project ships: sudo cp
-     packaging/linux/udev/70-openlogi.rules /etc/udev/rules.d/
+     packaging/linux/udev/70-roadie.rules /etc/udev/rules.d/
   2. Those rules name the vendors this program drives, and the device(s) you
      cannot open are not among them. Put this line in
-     /etc/udev/rules.d/71-openlogi-local.rules — a separate file, so upgrading
+     /etc/udev/rules.d/71-roadie-local.rules — a separate file, so upgrading
      this program does not overwrite it:
   3.     SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0fd9", TAG+="uaccess"
   4. Reload the rules without rebooting: sudo udevadm control --reload-rules && sudo udevadm trigger
   5. Unplug the device and plug it back in — a rule applies when a device
      appears, so one already attached keeps the permissions it was given.
-  6. Run openlogi doctor again to confirm.
+  6. Run roadie doctor again to confirm.
 ```
 
 That third line is the point. The shipped rules name the vendors this program
@@ -98,7 +98,7 @@ the flag never changes how a script behaves.
 
 ## Everything plugged in
 
-`openlogi list` answers "which Logitech devices are paired". `openlogi
+`roadie list` answers "which Logitech devices are paired". `roadie
 devices` answers a different question: **what is on this desk, and what can
 this program do with each of it** — whoever made it.
 
@@ -111,7 +111,7 @@ sorts what it finds into three groups:
   with, so the listing is also the instructions.
 - **Wireless receivers** — a Unifying or Bolt receiver is supported, but it is
   a way in rather than a peripheral; the mice and keyboards paired to it are
-  what `openlogi list` shows. Filing it under "unsupported" would tell you your
+  what `roadie list` shows. Filing it under "unsupported" would tell you your
   mouse was not going to work, which is the opposite of the truth.
 - **Detected, not configurable by this build** — everything else. These are
   never hidden. A device the hub cannot drive is still a device you own, and
@@ -141,7 +141,7 @@ send you to check your cables.
 
 ## Stream Decks
 
-`openlogi streamdeck` lists every Stream Deck collection the OS reports;
+`roadie streamdeck` lists every Stream Deck collection the OS reports;
 `brightness`, `reset`, `watch`, `fill`, `image` and `clear` drive an attached
 device. `apply` and `run` work from a layout file.
 
@@ -168,21 +168,21 @@ index = 2
 image = "icons/camera.png"
 ```
 
-`openlogi streamdeck example streaming` writes one to start from, and
-`openlogi streamdeck apply streaming` applies it. Image paths are relative to
+`roadie streamdeck example streaming` writes one to start from, and
+`roadie streamdeck apply streaming` applies it. Image paths are relative to
 the layout file, so a layout and its icons travel together. Neither the example
 nor a parse error needs a device attached, so you can write and check a layout
 before the hardware arrives.
 
 ### Building a layout without a text editor
 
-You never have to open a layout file. `openlogi streamdeck set` writes one key
+You never have to open a layout file. `roadie streamdeck set` writes one key
 at a time:
 
 ```sh
-openlogi streamdeck set mydeck 0 --label "MUTE MIC" --background 802020
-openlogi streamdeck set mydeck 1 --label REC --colour ff4040 --action Copy
-openlogi streamdeck unset mydeck 1
+roadie streamdeck set mydeck 0 --label "MUTE MIC" --background 802020
+roadie streamdeck set mydeck 1 --label REC --colour ff4040 --action Copy
+roadie streamdeck unset mydeck 1
 ```
 
 There is no need to run `example` first — the first key you set *is* the
@@ -219,7 +219,7 @@ be a deliberate act of editing, not a flag on a convenience command.
 they parsed, so the comments you wrote, your blank lines, and the order you put
 things in all survive an edit. So do the file's line endings and its
 byte-order mark if it has one — a layout written on Windows stays a file written
-on Windows, rather than coming back with every line changed. That is the same choice OpenLogi already made
+on Windows, rather than coming back with every line changed. That is the same choice OpenRoadie already made
 for `config.toml`; layouts were simply missed.
 
 It matters most for the person least able to notice: a rewrite reports success,
@@ -239,7 +239,7 @@ in `layouts/` inside your configuration directory. Anything with a slash or a
 `.toml` on the end is a **path**, used as written — a layout kept in a git
 repository beside the project it belongs to is a perfectly good place for it.
 
-`openlogi streamdeck layouts` lists what you have saved. A layout name is a plain name — no slashes, and no control characters, because the name becomes the filename and the listing prints one per line. A file in that folder whose name breaks that rule is counted and reported rather than listed, so it cannot make the listing disagree with its own count. Naming layouts rather
+`roadie streamdeck layouts` lists what you have saved. A layout name is a plain name — no slashes, and no control characters, because the name becomes the filename and the listing prints one per line. A file in that folder whose name breaks that rule is counted and reported rather than listed, so it cannot make the listing disagree with its own count. Naming layouts rather
 than remembering paths is the smaller half of why the library exists; the
 larger half is that a profile bundle can then gather them, so moving to another
 computer moves your decks too. See portable profiles below.
@@ -265,9 +265,9 @@ label = "COPY"
 action = "Copy"
 ```
 
-`openlogi streamdeck apply` only paints the faces. Applying a layout that has
+`roadie streamdeck apply` only paints the faces. Applying a layout that has
 actions on it says so, because a deck that looks exactly right and does
-nothing is indistinguishable from a broken one. `openlogi streamdeck run
+nothing is indistinguishable from a broken one. `roadie streamdeck run
 deck.toml` applies the layout and then stays running: each time you press a
 bound key, its action fires. Actions come from the same catalogue every other
 device here uses, so a Stream Deck key and a mouse button are bound the same
@@ -296,7 +296,7 @@ before the device is even opened**: nothing is applied and nothing is bound.
 The refusal names each one and where it is, so you can read them before
 deciding. `--accept-actions` proceeds anyway, and is deliberately your
 decision rather than a default — it is the same rule, and the same list, that
-`openlogi profile import` applies to a profile from somewhere else. A layout
+`roadie profile import` applies to a profile from somewhere else. A layout
 file is a thing people will send each other, and a key that silently runs a
 command when pressed is exactly the shape a malicious one would take.
 
@@ -326,7 +326,7 @@ A picture that is not square is scaled
 to fit inside the key and centred on black rather than stretched to fill it —
 a wide logo arrives smaller, not squashed into a shape you did not choose.
 
-**`openlogi streamdeck verify` is worth running first.** It now checks the
+**`roadie streamdeck verify` is worth running first.** It now checks the
 write path as well as the read path: it dims and restores the screens, paints
 the top-left key orange, and then asks you to press that same key. If a
 *different* key turns orange, key numbering is wrong for that model; if the
@@ -343,7 +343,7 @@ you to press the top-left key and says whether that key arrived where the
 catalogue expects it:
 
 ```console
-$ openlogi streamdeck verify
+$ roadie streamdeck verify
 ...
 Saw: key 0 pressed (row 1, column 1)
 
@@ -359,8 +359,8 @@ from "an Elgato device is attached that this build does not recognize", and
 prints the product id a catalogue entry needs in the second case. Those look
 identical to a user and have completely different answers.
 
-Running `openlogi` with no subcommand defaults to `list`. Set
-`OPENLOGI_LOG=debug` for verbose tracing in the CLI, GUI, or agent.
+Running `roadie` with no subcommand defaults to `list`. Set
+`ROADIE_LOG=debug` for verbose tracing in the CLI, GUI, or agent.
 
 ## Output written to be heard
 
@@ -384,41 +384,41 @@ none — which is every machine this project is developed on.
 
 ## Lights, backlight, and snapshots
 
-Three commands inherited from upstream, listed here because `openlogi devices`
+Three commands inherited from upstream, listed here because `roadie devices`
 now points at them and a command it names should be one you can read about.
 
-`openlogi light` drives a standalone Logitech light such as a Litra: `list`
+`roadie light` drives a standalone Logitech light such as a Litra: `list`
 shows each light and the controls it advertises, and `on`, `off`, `brightness`
 and `temperature` change it. Brightness takes either a percentage or native
 lumens; temperature takes Kelvin.
 
-`openlogi backlight` reads or sets a keyboard's backlight over HID++, and `on`
+`roadie backlight` reads or sets a keyboard's backlight over HID++, and `on`
 and `off` are persistent — the keyboard keeps the setting rather than reverting
 when ambient light changes. `--device` picks between several paired keyboards
 by name.
 
-`openlogi snapshot` captures one frame from a webcam to a PNG, which is the
+`roadie snapshot` captures one frame from a webcam to a PNG, which is the
 quickest way to see what a camera setting actually did.
 
 ## QMK and VIA macro pads
 
-`openlogi via` reads and changes what each key sends on any QMK keyboard or
+`roadie via` reads and changes what each key sends on any QMK keyboard or
 macro pad whose firmware was built with VIA enabled. That is one implementation
 for hundreds of boards — the same bargain UVC gives us for cameras, and the
 reason "support every macro pad" is a tractable goal rather than a per-vendor
 slog.
 
-- `openlogi via` (or `via list`) — every attached board, and what each reports:
+- `roadie via` (or `via list`) — every attached board, and what each reports:
   its VIA protocol revision and how many keymap layers it holds. Matching the
   HID collection only makes a device a *candidate*; the protocol exchange this
-  performs is what confirms one, which is why `openlogi devices` files an
+  performs is what confirms one, which is why `roadie devices` files an
   unopened board under "probably configurable" rather than promising it works.
-- `openlogi via keymap [layer]` — print a whole layer, key by key. Unassigned
+- `roadie via keymap [layer]` — print a whole layer, key by key. Unassigned
   and pass-through positions are skipped and counted rather than printed: on
   any layer above the first they are nearly the whole matrix, and listing them
   would bury the keys that exist. The count at the end means nothing goes
   missing silently.
-- `openlogi via get <layer> <row> <column>` — one position.
+- `roadie via get <layer> <row> <column>` — one position.
 
 Reading a keymap is one USB round trip per position, and VIA gives no way to
 ask a board how big its matrix is — so the read covers an area you choose, and
@@ -426,7 +426,7 @@ stops at 32 by 32 however much more is asked for. That is roughly twice the
 largest edge any real board has. A read cut down says so, because a scan that
 quietly stopped short looks exactly like a keyboard with nothing on it.
 
-- `openlogi via set <layer> <row> <column> <key>` — assign a key.
+- `roadie via set <layer> <row> <column> <key>` — assign a key.
 
 Keys are named, not numbered: `F13`, `KC_F13`, `f13` and `0x0068` all work, and
 what comes back is `F13` rather than `0x0068`. A keymap dumped as numbers tells
@@ -475,10 +475,10 @@ project ships use `TAG+="uaccess"`, which grants both.
 
 ## Portable profiles
 
-`openlogi profile export` saves this machine's setup somewhere you can carry it
-— a USB stick, a network share, whatever you already trust. `openlogi profile
+`roadie profile export` saves this machine's setup somewhere you can carry it
+— a USB stick, a network share, whatever you already trust. `roadie profile
 import` applies it there, copying the existing configuration aside first so the
-change is always reversible. On a machine that has never run OpenLogi there is
+change is always reversible. On a machine that has never run OpenRoadie there is
 nothing to back up, and the import says so.
 
 ### One file, or the whole setup
@@ -487,11 +487,11 @@ Where you export to decides what you get, and the command tells you which it
 wrote:
 
 ```console
-$ openlogi profile export my-setup
+$ roadie profile export my-setup
 setup written to my-setup
   configuration: config.toml
   2 layout(s): streaming, work
-Copy the whole folder to another machine and apply it with: openlogi profile import my-setup
+Copy the whole folder to another machine and apply it with: roadie profile import my-setup
 ```
 
 A path ending in `.toml` writes the **configuration alone**, as one file:
@@ -524,7 +524,7 @@ settings. Import audits first and **refuses by default**, listing exactly what
 it found and where:
 
 ```console
-$ openlogi profile import theirs.toml
+$ roadie profile import theirs.toml
 this profile contains 2 action(s) that would run a program or type text on your
 machine. Nothing has been imported. Review them, then re-run accepting them if
 you trust the source:
@@ -534,7 +534,7 @@ you trust the source:
 
 The list of what counts as risky is not maintained by hand alone: a test reads every action variant out of the deserializer itself and fails until each one is classified as risky or reviewed-safe. An action added later that runs something would otherwise pass the audit silently, on the one code path whose whole job is refusing that.
 
-`openlogi profile inspect` shows the same report without applying anything, and
+`roadie profile inspect` shows the same report without applying anything, and
 `--accept-actions` on `import` is how you say you trust the source. Key chords
 are not flagged: they are the ordinary substance of a profile, and flagging
 every one would train you to wave the whole audit through.
@@ -544,7 +544,7 @@ read or parse failure, so a script can tell them apart.
 
 ## Model Context Protocol server
 
-`openlogi mcp` serves the running agent to an AI assistant over the Model
+`roadie mcp` serves the running agent to an AI assistant over the Model
 Context Protocol, so a device can be inspected and changed by asking for it in
 prose rather than through the GUI. It speaks newline-delimited JSON-RPC on
 stdin and stdout — the stdio transport MCP clients launch themselves — so it
@@ -556,8 +556,8 @@ Most clients take a JSON entry naming the command and its arguments,
 ```json
 {
   "mcpServers": {
-    "openlogi": {
-      "command": "openlogi",
+    "roadie": {
+      "command": "roadie",
       "args": ["mcp"]
     }
   }
@@ -565,7 +565,7 @@ Most clients take a JSON entry naming the command and its arguments,
 ```
 
 and clients that register servers through their own CLI instead take the same
-`openlogi mcp` command and argument. Use an absolute path to the binary if it is
+`roadie mcp` command and argument. Use an absolute path to the binary if it is
 not on the client's `PATH`, which is often narrower than a login shell's.
 
 The tools exposed are:
@@ -613,7 +613,7 @@ present but unconfigurable: a model told nothing about a device will say it is
 not connected, which is the one answer guaranteed to be wrong.
 
 The camera tools reach the device directly rather than through the agent, the
-same way `openlogi camera` does — UVC controls are a host-exposed class
+same way `roadie camera` does — UVC controls are a host-exposed class
 standard, not agent-owned state, so on macOS the grant that matters is the
 CLI's own. Enumeration there is deliberately **not** filtered by vendor: the
 same UVC registers answer on an Elgato, an Obsbot or a built-in camera, so
@@ -621,7 +621,7 @@ restricting the list to one manufacturer would hide devices that are in fact
 controllable.
 
 `diagnose` is what an assistant should reach for when a device the person says
-is plugged in does not appear. It hands back the same findings `openlogi
+is plugged in does not appear. It hands back the same findings `roadie
 doctor` prints, as data — and says plainly that the steps are for the person to
 carry out, since only they can install system rules or grant access. A model
 that reads "install the udev rules" as an instruction to itself will either
@@ -677,8 +677,8 @@ Everything runs through the same agent IPC the GUI and the rest of this CLI use
 agent is running reports that instead of failing, so the assistant can say what
 to start.
 
-Asset synchronization probes `assets.openlogi.org`, the versioned Cloudflare
+Asset synchronization probes `assets.roadie.org`, the versioned Cloudflare
 Pages release alias, and the pinned jsDelivr npm release concurrently. The first
 mirror with a valid catalog supplies every file for that synchronization run.
-Set `OPENLOGI_ASSETS` or pass `openlogi assets sync --base <URL>` to use one
+Set `ROADIE_ASSETS` or pass `roadie assets sync --base <URL>` to use one
 uniform asset origin instead of automatic mirror selection.

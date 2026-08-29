@@ -1,5 +1,5 @@
 #!/bin/sh
-# OpenLogi Linux uninstall script.
+# OpenRoadie Linux uninstall script.
 #
 # Removes everything install.sh put in place. Requires sudo for system paths.
 #
@@ -39,19 +39,19 @@ if command -v systemctl >/dev/null 2>&1; then
   # Set XDG_RUNTIME_DIR explicitly: sudo -u strips the environment so
   # systemctl --user cannot locate the user's D-Bus socket without it.
   sudo -u "$REAL_USER" XDG_RUNTIME_DIR="/run/user/${REAL_UID}" \
-    systemctl --user disable --now openlogi-agent.service 2>/dev/null || true
+    systemctl --user disable --now roadie-agent.service 2>/dev/null || true
 fi
 
 # ── remove binaries ───────────────────────────────────────────────────────────
 
 echo "Removing binaries …"
-sudo rm -f "${BINDIR}/openlogi" "${BINDIR}/openlogi-desktop" \
-  "${BINDIR}/openlogi-overlay" "${BINDIR}/openlogi-agent"
+sudo rm -f "${BINDIR}/roadie" "${BINDIR}/roadie-desktop" \
+  "${BINDIR}/roadie-overlay" "${BINDIR}/roadie-agent"
 
 # ── udev rules ────────────────────────────────────────────────────────────────
 
 echo "Removing udev rules …"
-sudo rm -f /etc/udev/rules.d/70-openlogi.rules
+sudo rm -f /etc/udev/rules.d/70-roadie.rules
 if command -v udevadm >/dev/null 2>&1; then
   sudo udevadm control --reload-rules
   sudo udevadm trigger --subsystem-match=hidraw
@@ -61,14 +61,14 @@ fi
 # ── systemd user unit ─────────────────────────────────────────────────────────
 
 echo "Removing systemd user unit …"
-sudo rm -f /usr/lib/systemd/user/openlogi-agent.service
+sudo rm -f /usr/lib/systemd/user/roadie-agent.service
 
 # ── desktop entry + icon ──────────────────────────────────────────────────────
 
 echo "Removing desktop entry and icon …"
-sudo rm -f /usr/share/applications/openlogi.desktop
+sudo rm -f /usr/share/applications/roadie.desktop
 for size in 1024 512 256 128 64 48 32 16; do
-  sudo rm -f "/usr/share/icons/hicolor/${size}x${size}/apps/openlogi.png"
+  sudo rm -f "/usr/share/icons/hicolor/${size}x${size}/apps/roadie.png"
 done
 
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
@@ -78,4 +78,4 @@ if command -v update-desktop-database >/dev/null 2>&1; then
   sudo update-desktop-database -q /usr/share/applications || true
 fi
 
-echo "OpenLogi uninstalled."
+echo "OpenRoadie uninstalled."

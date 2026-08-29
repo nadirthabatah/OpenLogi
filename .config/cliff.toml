@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 """
-# Keep-a-Changelog layout matching historical OpenLogi sections.
+# Keep-a-Changelog layout matching historical OpenRoadie sections.
 body = """
 ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
 

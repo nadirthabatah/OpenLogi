@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result, anyhow};
-use openlogi_core::brand;
+use roadie_core::brand;
 use xshell::{Shell, cmd};
 
 use super::identity::{Channel, Component};
@@ -32,16 +32,16 @@ pub(crate) struct Helper {
 pub(crate) const HELPERS: [Helper; 2] = [
     Helper {
         component: Component::Agent,
-        package: "openlogi-agent",
-        binary: "openlogi-agent",
-        info_plist: "crates/openlogi-desktop/bundle/agent-release/Info.plist",
+        package: "roadie-agent",
+        binary: "roadie-agent",
+        info_plist: "crates/roadie-desktop/bundle/agent-release/Info.plist",
         label: "agent helper",
     },
     Helper {
         component: Component::Overlay,
-        package: "openlogi-overlay",
-        binary: "openlogi-overlay",
-        info_plist: "crates/openlogi-desktop/bundle/overlay-release/Info.plist",
+        package: "roadie-overlay",
+        binary: "roadie-overlay",
+        info_plist: "crates/roadie-desktop/bundle/overlay-release/Info.plist",
         label: "Actions Ring overlay helper",
     },
 ];
@@ -55,11 +55,11 @@ pub(super) fn build_release_binaries(
 ) -> Result<()> {
     let sh = Shell::new()?;
     let _repo = sh.push_dir(root);
-    let mut targets = vec!["--package", "openlogi-desktop", "--bin", "openlogi-desktop"];
+    let mut targets = vec!["--package", "roadie-desktop", "--bin", "roadie-desktop"];
     for helper in &HELPERS {
         targets.extend(["--package", helper.package, "--bin", helper.binary]);
     }
-    targets.extend(["--package", "openlogi", "--bin", "openlogi"]);
+    targets.extend(["--package", "roadie", "--bin", "roadie"]);
     if let Some(target) = target {
         targets.extend(["--target", target]);
     }
@@ -78,7 +78,7 @@ pub(super) fn build_release_binaries(
 /// foreground the GUI from the agent's menu, and gives the agent a stable
 /// signed identity so its Accessibility (TCC) grant survives app updates.
 ///
-/// Every helper gets the GUI's icon, so each shows the OpenLogi mark rather than
+/// Every helper gets the GUI's icon, so each shows the OpenRoadie mark rather than
 /// a generic blank wherever macOS lists it — System Settings' Accessibility
 /// pane, Login Items. Icon generation already ran, so the icns is on disk.
 pub(super) fn embed_helpers(
@@ -87,7 +87,7 @@ pub(super) fn embed_helpers(
     app: &Path,
     channel: Channel,
 ) -> Result<()> {
-    let icon = root.join("crates/openlogi-desktop/icon/AppIcon.icns");
+    let icon = root.join("crates/roadie-desktop/icon/AppIcon.icns");
     ensure_file(&icon)?;
     for helper in &HELPERS {
         embed_helper(root, release_dir, app, helper, &icon, channel)?;
@@ -213,21 +213,21 @@ pub(crate) fn write_agent_launch_plist(app: &Path, channel: Channel) -> Result<(
 
 pub(super) fn embed_cli(release_dir: &Path, app: &Path) -> Result<()> {
     println!("==> cli (embed)");
-    let cli_bin = release_dir.join("openlogi");
+    let cli_bin = release_dir.join("roadie");
     ensure_file(&cli_bin)?;
 
     let macos = app.join("Contents/MacOS");
-    fs_err::copy(&cli_bin, macos.join("openlogi"))
+    fs_err::copy(&cli_bin, macos.join("roadie"))
         .with_context(|| "could not copy the CLI binary into the app bundle".to_string())?;
 
-    println!("    embedded {}", macos.join("openlogi").display());
+    println!("    embedded {}", macos.join("roadie").display());
     Ok(())
 }
 
 /// Every Mach-O the finished bundle must ship, for `channel`'s helper layout.
 fn required_bundle_binaries(app: &Path, channel: Channel) -> Vec<PathBuf> {
     let macos = app.join("Contents/MacOS");
-    let mut required = vec![macos.join("openlogi"), macos.join("openlogi-desktop")];
+    let mut required = vec![macos.join("roadie"), macos.join("roadie-desktop")];
     required.extend(HELPERS.iter().map(|helper| {
         helper
             .component

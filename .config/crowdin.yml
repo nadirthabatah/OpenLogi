@@ -28,8 +28,8 @@ export_languages:
   - ko
 
 files:
-  - source: "/crates/openlogi-ui/locales/en.yml"
-    translation: "/crates/openlogi-ui/locales/%locale%.yml"
+  - source: "/crates/roadie-ui/locales/en.yml"
+    translation: "/crates/roadie-ui/locales/%locale%.yml"
     type: "yaml"
     update_option: "update_as_unapproved"
     languages_mapping:

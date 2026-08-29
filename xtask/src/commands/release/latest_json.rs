@@ -9,12 +9,12 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 // The manifest advertises the identity the shipped bundle is stamped with, so
 // both come from one constant.
-use openlogi_core::brand::APP_ID;
+use roadie_core::brand::APP_ID;
 
 const CHANNEL: &str = "stable";
 const MACOS_MINIMUM_OS_VERSION: &str = "13.0";
 /// Windows 10+. Informational — the client updater doesn't gate on it today,
-/// and everything that can run OpenLogi reports at least 10.0.
+/// and everything that can run OpenRoadie reports at least 10.0.
 const WINDOWS_MINIMUM_OS_VERSION: &str = "10.0";
 
 #[derive(Parser)]
@@ -29,7 +29,7 @@ pub(crate) struct Args {
     #[arg(long, env = "GITHUB_REF_NAME")]
     tag: String,
     /// Public update base URL, for example `https://updates.openlogi.org`.
-    #[arg(long, env = "OPENLOGI_UPDATE_BASE_URL")]
+    #[arg(long, env = "ROADIE_UPDATE_BASE_URL")]
     base_url: String,
     /// Also emit the per-arch Windows `.msi`/`.zip` entries. Off by default so
     /// the manifest can never reference objects the release workflow's R2
@@ -102,7 +102,7 @@ pub(crate) fn run(args: &Args) -> Result<()> {
             .format(&Rfc3339)
             .context("could not format current timestamp")?,
         release_url: format!(
-            "https://github.com/AprilNEA/OpenLogi/releases/tag/{}",
+            "https://github.com/nadirthabatah/OpenLogi/releases/tag/{}",
             args.tag
         ),
         assets,

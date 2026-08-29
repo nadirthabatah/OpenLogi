@@ -1,0 +1,24 @@
+[package]
+name = "roadie"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OpenRoadie command-line interface — a local-first companion for Logitech HID++ peripherals."
+keywords = ["logitech", "hidpp", "hid", "mouse", "cli"]
+categories = ["command-line-utilities", "hardware-support"]
+readme = "../../README.md"
+
+[dependencies]
+roadie-cli = { path = "../roadie-cli", version = "0.8.1" }
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+[dev-dependencies]
+roadie-catalog = { path = "../roadie-catalog", version = "0.8.1" }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

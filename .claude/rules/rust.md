@@ -6,7 +6,7 @@ paths:
 
 # Rust standards
 
-Edition 2024, MSRV = current stable (1.98). OpenLogi ships as an app and no crate
+Edition 2024, MSRV = current stable (1.98). OpenRoadie ships as an app and no crate
 here has an external reverse dependency, so the floor exists only to give
 `cargo install` users a clear error — it tracks stable rather than trailing it.
 Reaching for a newly stabilized API is fine: raise `rust-version` and the `msrv`
@@ -14,9 +14,9 @@ CI matrix together, and run `devenv update rust-overlay` so the local toolchain
 matches CI. There is exactly **one** lint table, in the root `Cargo.toml`,
 and every crate inherits it with `[lints] workspace = true` — never a private copy, or
 the next lint added to the workspace silently skips that crate. A crate needing a
-different level opts out **in source** (the `openlogi-hook` platform modules carry
+different level opts out **in source** (the `roadie-hook` platform modules carry
 `#![allow(unsafe_code, reason = "…")]`), because Cargo rejects mixing `workspace = true`
-with local overrides. `openlogi-hidpp` inherits the table like everything else, hard
+with local overrides. `roadie-hidpp` inherits the table like everything else, hard
 fork or not.
 
 Workspace-wide clippy *configuration* lives in `clippy.toml` at the root. It currently
@@ -188,7 +188,7 @@ naming that trait's methods.
 
 ## Reproducing CI
 
-`openlogi:check` is the host-OS gate, not the pipeline. To run a `ci.yml` job
+`roadie:check` is the host-OS gate, not the pipeline. To run a `ci.yml` job
 locally: `cargo xtask ci --list` and `.claude/rules/ci.md`. Host
 clippy on macOS does not compile linux cfg; MSRV needs `RUSTUP_TOOLCHAIN`;
 cargo-deny is its own job.

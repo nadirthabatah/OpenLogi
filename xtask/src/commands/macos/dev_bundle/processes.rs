@@ -20,7 +20,7 @@ const EXIT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(3);
 const EXIT_POLL: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// The processes this checkout owns.
-const OURS: [&str; 2] = ["openlogi-agent", "openlogi-overlay"];
+const OURS: [&str; 2] = ["roadie-agent", "roadie-overlay"];
 
 /// Stop this checkout's leftovers, and refuse to share the machine with an
 /// agent from anywhere else.
@@ -28,7 +28,7 @@ const OURS: [&str; 2] = ["openlogi-agent", "openlogi-overlay"];
 /// An agent whose executable lives outside `app` and `target` is the
 /// developer's production install: the GUI would connect to *that* one and make
 /// GUI+agent testing meaningless, so it is reported rather than killed.
-/// `OPENLOGI_ALLOW_EXTERNAL_AGENT=1` says the developer meant it.
+/// `ROADIE_ALLOW_EXTERNAL_AGENT=1` says the developer meant it.
 pub(super) fn reap_leftovers(app: &Path, target: &Path) -> Result<()> {
     let mut system = System::new();
     system.refresh_processes_specifics(
@@ -51,13 +51,12 @@ pub(super) fn reap_leftovers(app: &Path, target: &Path) -> Result<()> {
         };
         if exe.starts_with(app) || exe.starts_with(target) {
             ours.push(*pid);
-        } else if name == "openlogi-agent" {
+        } else if name == "roadie-agent" {
             external.push((*pid, exe.to_path_buf()));
         }
     }
 
-    if !external.is_empty() && std::env::var("OPENLOGI_ALLOW_EXTERNAL_AGENT").as_deref() != Ok("1")
-    {
+    if !external.is_empty() && std::env::var("ROADIE_ALLOW_EXTERNAL_AGENT").as_deref() != Ok("1") {
         let listed = external
             .iter()
             .map(|(pid, exe)| format!("  pid {pid}: {}", exe.display()))
@@ -67,15 +66,15 @@ pub(super) fn reap_leftovers(app: &Path, target: &Path) -> Result<()> {
             crate::commands::macos::bundle::identity::Channel::Production,
         );
         bail!(
-            "an external openlogi-agent is already running.\n\n\
+            "an external roadie-agent is already running.\n\n\
              The dev GUI would connect to that agent instead of the freshly built dev\n\
              agent, which makes GUI+agent testing misleading. Stop it first: Quit from\n\
              its menu-bar icon, or\n\n  \
-             pkill -x openlogi-agent\n\n\
+             pkill -x roadie-agent\n\n\
              (for an install registered as a login item, also:\n  \
              launchctl bootout \"gui/$(id -u)/{service}\")\n\n\
              Running external agent(s):\n{listed}\n\n\
-             If this is intentional, rerun with OPENLOGI_ALLOW_EXTERNAL_AGENT=1."
+             If this is intentional, rerun with ROADIE_ALLOW_EXTERNAL_AGENT=1."
         );
     }
 

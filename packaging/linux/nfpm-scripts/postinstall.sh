@@ -22,5 +22,5 @@ if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database -q /usr/share/applications || true
 fi
 
-echo "OpenLogi installed. Enable the background agent for your user with:"
-echo "  systemctl --user enable --now openlogi-agent.service"
+echo "OpenRoadie installed. Enable the background agent for your user with:"
+echo "  systemctl --user enable --now roadie-agent.service"

@@ -1,52 +1,52 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/openlogi",
-    "crates/openlogi-core",
-    "crates/openlogi-device-registry",
-    "crates/openlogi-inject",
-    "crates/openlogi-hidpp",
-    "crates/openlogi-hidpp-derive",
-    "crates/openlogi-hid",
-    "crates/openlogi-device",
-    "crates/openlogi-streamdeck",
-    "crates/openlogi-catalog",
-    "crates/openlogi-via",
-    "crates/openlogi-camera",
-    "crates/openlogi-permissions",
-    "crates/openlogi-assets",
-    "crates/openlogi-cli",
-    "crates/openlogi-ipc",
-    "crates/openlogi-agent-core",
-    "crates/openlogi-agent",
-    "crates/openlogi-desktop",
-    "crates/openlogi-ui",
-    "crates/openlogi-overlay",
-    "crates/openlogi-hook",
+    "crates/roadie",
+    "crates/roadie-core",
+    "crates/roadie-device-registry",
+    "crates/roadie-inject",
+    "crates/roadie-hidpp",
+    "crates/roadie-hidpp-derive",
+    "crates/roadie-hid",
+    "crates/roadie-device",
+    "crates/roadie-streamdeck",
+    "crates/roadie-catalog",
+    "crates/roadie-via",
+    "crates/roadie-camera",
+    "crates/roadie-permissions",
+    "crates/roadie-assets",
+    "crates/roadie-cli",
+    "crates/roadie-ipc",
+    "crates/roadie-agent-core",
+    "crates/roadie-agent",
+    "crates/roadie-desktop",
+    "crates/roadie-ui",
+    "crates/roadie-overlay",
+    "crates/roadie-hook",
     "xtask",
 ]
 # The CLI used to be the root package, so a bare `cargo build` / `cargo run`
 # built it alone. Keep that: without this, a virtual workspace defaults to every
 # member, dragging GPUI's Metal shader toolchain into the simplest build there is.
-default-members = ["crates/openlogi"]
+default-members = ["crates/roadie"]
 
 [workspace.package]
 version = "0.8.1"
 edition = "2024"
-# Tracks current stable rather than trailing it. OpenLogi ships as an app —
+# Tracks current stable rather than trailing it. OpenRoadie ships as an app —
 # prebuilt installers, and no crate here has an external reverse dependency —
 # so a floor below stable buys nobody compatibility and only costs us APIs.
 # Raise this freely the day a release lands something worth using; the `msrv`
 # CI matrix keeps the number honest for `cargo install`.
 rust-version = "1.98"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/AprilNEA/OpenLogi"
-authors = ["AprilNEA <dev@aprilnea.me>"]
-description = "Lightweight, local-first alternative to Logitech Options+ for HID++ devices"
+repository = "https://github.com/nadirthabatah/OpenLogi"
+authors = ["AprilNEA <dev@aprilnea.me>", "Nadir Thabatah <nadirthabatah@gmail.com>"]
+description = "Local-first control for the peripherals on your desk: Logitech HID++, Elgato Stream Decks, QMK/VIA macro pads, and UVC webcams"
 
 [workspace.dependencies]
-hidpp = { package = "openlogi-hidpp", path = "crates/openlogi-hidpp", version = "0.8.1" }
-openlogi-device-registry = { path = "crates/openlogi-device-registry", version = "0.8.1" }
+hidpp = { package = "roadie-hidpp", path = "crates/roadie-hidpp", version = "0.8.1" }
+roadie-device-registry = { path = "crates/roadie-device-registry", version = "0.8.1" }
 async-hid = { package = "openlogi-async-hid", version = "=0.5.3-openlogi.1" }
 interprocess = { version = "2", features = ["tokio"] }
 # The agent <-> GUI RPC layer itself, over the `interprocess` transport above.

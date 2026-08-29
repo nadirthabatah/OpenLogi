@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-OpenLogi is under active development and has not reached a stable 1.0 release.
+OpenRoadie is under active development and has not reached a stable 1.0 release.
 Security fixes are provided for the latest public release and the current
 development branch.
 
@@ -19,7 +19,7 @@ unless the vulnerability is still present in the latest release or on `master`.
 
 Please report suspected vulnerabilities privately by emailing:
 
-`security@openlogi.org`
+`security@roadie.org`
 
 Do not open a public GitHub issue for a suspected vulnerability.
 
@@ -27,7 +27,7 @@ Useful reports include:
 
 - A short description of the issue and its impact.
 - Steps to reproduce, proof-of-concept code, or affected configuration.
-- The OpenLogi version or commit, operating system version, device model, and
+- The OpenRoadie version or commit, operating system version, device model, and
   connection type.
 - Relevant logs or screenshots with private data removed.
 - Whether the issue is already public or shared with anyone else.
@@ -59,4 +59,4 @@ a fix before publicly disclosing a vulnerability. Once a fix is available, we ma
 publish a security advisory, release notes, or upgrade guidance depending on the
 severity and user impact.
 
-OpenLogi does not currently operate a paid bug bounty program.
+OpenRoadie does not currently operate a paid bug bounty program.

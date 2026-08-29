@@ -1,6 +1,6 @@
-# OpenLogi — Agent Guide
+# OpenRoadie — Agent Guide
 
-OpenLogi is a native, local-first alternative to Logitech Options+ written in Rust:
+OpenRoadie is a native, local-first alternative to Logitech Options+ written in Rust:
 button remapping, DPI, SmartShift, and per-app profiles for Logitech HID++ devices
 (Bolt/Unifying receiver, Bluetooth-direct, wired) — no account, no telemetry, plain-TOML
 config. macOS and Linux are first-class; Windows is a young but shipping port.
@@ -20,37 +20,37 @@ sits beneath both.
 
 | Crate | Role |
 |---|---|
-| `crates/openlogi` | The CLI binary — thin wrapper over `openlogi-cli` |
-| `crates/openlogi-core` | Pure types: TOML config, device model, action catalog, locale negotiation. No I/O, no async (feature-gated host reads: `fs`, `locale`) |
-| `crates/openlogi-device-registry` | Pure hardware identity registry: receiver protocols and standalone-device driver metadata |
-| `crates/openlogi-hidpp` | Vendored fork of the `hidpp` protocol crate (**lib name `hidpp`**, 0BSD) |
-| `crates/openlogi-device` | The HID++ device layer: enumeration, probing, writes, sessions, pairing. Knows no host — expressed against `HidBackend` |
-| `crates/openlogi-hid` | That layer wired to this host: `async-hid` transport, macOS Input Monitoring, the on-disk probe cache |
-| `crates/openlogi-assets` | Device-render registry + cached fetch from OpenLogi asset mirrors |
-| `crates/openlogi-cli` | `clap` command tree: `list`, `assets`, `diag` |
-| `crates/openlogi-hook` | OS input capture: CGEventTap / evdev+uinput / WH_MOUSE_LL |
-| `crates/openlogi-inject` | OS input synthesis: CGEvent / uinput+MPRIS / SendInput |
-| `crates/openlogi-agent-core` | Shared agent orchestration: hook runtime, HID++ writes, DPI cycle, Actions Ring session state |
-| `crates/openlogi-ipc` | The tarpc IPC contract (`src/ipc.rs`) + its local-socket transport, shared by agent and GUI |
-| `crates/openlogi-agent` | The `openlogi-agent` binary — hook + device I/O server |
-| `crates/openlogi-permissions` | Privacy-permission status + System-Settings deep links: macOS TCC reads, Linux device-file probes. Reads only — never prompts |
-| `crates/openlogi-ui` | Presentation shared by the two GPUI processes: ring geometry/icons, the GPUI asset source, the shared locale catalogs. Depends on `gpui` but **not** `gpui-component` |
-| `crates/openlogi-desktop` | GPUI + gpui-component desktop app — polls the agent, no device I/O |
-| `crates/openlogi-overlay` | The `openlogi-overlay` binary — cursor-centred Actions Ring, a pure IPC client |
+| `crates/roadie` | The CLI binary — thin wrapper over `roadie-cli` |
+| `crates/roadie-core` | Pure types: TOML config, device model, action catalog, locale negotiation. No I/O, no async (feature-gated host reads: `fs`, `locale`) |
+| `crates/roadie-device-registry` | Pure hardware identity registry: receiver protocols and standalone-device driver metadata |
+| `crates/roadie-hidpp` | Vendored fork of the `hidpp` protocol crate (**lib name `hidpp`**, 0BSD) |
+| `crates/roadie-device` | The HID++ device layer: enumeration, probing, writes, sessions, pairing. Knows no host — expressed against `HidBackend` |
+| `crates/roadie-hid` | That layer wired to this host: `async-hid` transport, macOS Input Monitoring, the on-disk probe cache |
+| `crates/roadie-assets` | Device-render registry + cached fetch from OpenRoadie asset mirrors |
+| `crates/roadie-cli` | `clap` command tree: `list`, `assets`, `diag` |
+| `crates/roadie-hook` | OS input capture: CGEventTap / evdev+uinput / WH_MOUSE_LL |
+| `crates/roadie-inject` | OS input synthesis: CGEvent / uinput+MPRIS / SendInput |
+| `crates/roadie-agent-core` | Shared agent orchestration: hook runtime, HID++ writes, DPI cycle, Actions Ring session state |
+| `crates/roadie-ipc` | The tarpc IPC contract (`src/ipc.rs`) + its local-socket transport, shared by agent and GUI |
+| `crates/roadie-agent` | The `roadie-agent` binary — hook + device I/O server |
+| `crates/roadie-permissions` | Privacy-permission status + System-Settings deep links: macOS TCC reads, Linux device-file probes. Reads only — never prompts |
+| `crates/roadie-ui` | Presentation shared by the two GPUI processes: ring geometry/icons, the GPUI asset source, the shared locale catalogs. Depends on `gpui` but **not** `gpui-component` |
+| `crates/roadie-desktop` | GPUI + gpui-component desktop app — polls the agent, no device I/O |
+| `crates/roadie-overlay` | The `roadie-overlay` binary — cursor-centred Actions Ring, a pure IPC client |
 | `xtask` | `cargo xtask` maintenance: bundling, packaging, release manifest |
 
 - GUI ↔ agent speak tarpc/bincode over an `interprocess` local socket. The wire format
-  is versioned and **append-only** — read `crates/openlogi-ipc/AGENTS.md` before touching
+  is versioned and **append-only** — read `crates/roadie-ipc/AGENTS.md` before touching
   it.
 - Three processes ship in the bundle — GUI, agent, overlay — and the overlay is a
-  *sibling* of the GUI, not a part of it: it links `openlogi-ui`, never
-  `openlogi-desktop`. Anything both need goes in `openlogi-ui`, and every dependency
+  *sibling* of the GUI, not a part of it: it links `roadie-ui`, never
+  `roadie-desktop`. Anything both need goes in `roadie-ui`, and every dependency
   added there lands in the overlay too (`.claude/rules/gui.md` has the rule).
 - Platform code is cfg-gated per crate (`[target.'cfg(target_os = …)'.dependencies]`).
   `.claude/rules/objc-ffi.md` is the contract for the workspace's macOS native FFI and
   indexes every file that carries any — read it before editing one. That surface spans
   seven crates: the agent's tray, the camera backends, the hook, the injector, the
-  overlay, `openlogi-permissions`, and one file in the GUI.
+  overlay, `roadie-permissions`, and one file in the GUI.
 
 ## Build, run, verify
 
@@ -61,9 +61,9 @@ inside the shell — run from the repo root (or `direnv exec . …`), including
 git (the hooks need cargo):
 
 ```sh
-cargo check -p openlogi-core
+cargo check -p roadie-core
 # when cargo is only inside devenv:
-direnv exec . cargo check -p openlogi-core
+direnv exec . cargo check -p roadie-core
 direnv exec . git commit …
 ```
 
@@ -107,7 +107,7 @@ For a Rust-bearing diff, derive the **affected package set** from the final tree
 every changed workspace package plus every workspace package that depends on one of
 them, transitively. Run `cargo tree --workspace --target all --invert <changed>` for
 each changed package and take the union of workspace packages in the output. Count
-that set, not edited crate directories — changing only `openlogi-core` still affects
+that set, not edited crate directories — changing only `roadie-core` still affects
 much of the application. When the set is uncertain, use the full tier.
 
 **Affected-package tier** — allowed only when all of these are true:
@@ -142,9 +142,9 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps \
-  --document-private-items --exclude openlogi-ui --exclude openlogi-desktop \
-  --exclude openlogi-overlay --exclude openlogi-agent
-# or: devenv tasks run openlogi:check
+  --document-private-items --exclude roadie-ui --exclude roadie-desktop \
+  --exclude roadie-overlay --exclude roadie-agent
+# or: devenv tasks run roadie:check
 # every CI job this host can reproduce: cargo xtask ci
 ```
 
@@ -171,7 +171,7 @@ lint). macOS-green is not that matrix. To run every job this machine can reprodu
 cargo xtask ci
 cargo xtask ci --list           # job → command table
 cargo xtask ci rustfmt clippy   # one job, names match CI
-# or: devenv tasks run openlogi:ci
+# or: devenv tasks run roadie:ci
 ```
 
 The runner sets `RUSTFLAGS=-D warnings` the way CI does. A skipped job (wrong
@@ -196,17 +196,17 @@ backstop, not a substitute for running the gate yourself after a rebase.
    cross-lint or hand-audit against master — macOS-green proves nothing there; see
    `.claude/rules/cross-platform.md`.
 5. If wire types changed: `PROTOCOL_VERSION` bumped and
-   `cargo test -p openlogi-ipc --test wire_format` green — see
-   `crates/openlogi-ipc/AGENTS.md`.
-6. If locales changed: every `crates/openlogi-ui/locales/*.yml` carries the same keys
+   `cargo test -p roadie-ipc --test wire_format` green — see
+   `crates/roadie-ipc/AGENTS.md`.
+6. If locales changed: every `crates/roadie-ui/locales/*.yml` carries the same keys
    as `en.yml` (new keys at the same position); run
-   `cargo test -p openlogi-desktop i18n` — see `.claude/rules/i18n.md`.
+   `cargo test -p roadie-desktop i18n` — see `.claude/rules/i18n.md`.
 7. Only then `git push` / force-push to the PR branch.
 
 ### Running the app
 
-- Dev-run with `cargo run -p openlogi-desktop` — a cargo runner wraps the build into
-  `target/dev/OpenLogi.app` with the same identity, helper and plist tables packaging
+- Dev-run with `cargo run -p roadie-desktop` — a cargo runner wraps the build into
+  `target/dev/OpenRoadie.app` with the same identity, helper and plist tables packaging
   uses. The macOS GUI build needs full Xcode for GPUI's Metal shaders; devenv sets the
   env when present (`direnv reload` if the shader compile fails there).
 - `cargo build` does NOT refresh that bundle, and a second instance exits on the
@@ -217,8 +217,8 @@ backstop, not a substitute for running the gate yourself after a rebase.
   and a surviving agent relaunches itself ~20 s later — then starts the freshly
   built agent and waits for its socket, so the GUI's first IPC connect succeeds
   instead of exercising the production spawn-on-unreachable fallback.
-  `OPENLOGI_DEV_AGENT=0` opts out of all of it.
-- No hardware attached? `cargo run -p openlogi-agent --bin openlogi-agent-mock` serves
+  `ROADIE_DEV_AGENT=0` opts out of all of it.
+- No hardware attached? `cargo run -p roadie-agent --bin roadie-agent-mock` serves
   a scripted inventory over the dev IPC socket, so the GUI runs unmodified and the
   production app stays untouched.
 - Mechanics, dev profiles, and the mock's scope: `docs/DEVELOPMENT.md`.
@@ -300,16 +300,16 @@ before editing that area.
 |---|---|
 | reproducing CI jobs locally (every `ci.yml` job → command) | `.claude/rules/ci.md` |
 | any `*.rs` / `Cargo.toml` (workspace Rust standards) | `.claude/rules/rust.md` |
-| `crates/openlogi-desktop/**`, `crates/openlogi-ui/**`, `crates/openlogi-overlay/**` (GPUI) | `.claude/rules/gui.md` |
-| `crates/openlogi-desktop/**` (that crate's own contract and map) | `crates/openlogi-desktop/AGENTS.md` |
-| `crates/openlogi-ui/locales/**`, `openlogi-ui/src/locale.rs`, `openlogi-desktop/src/services/i18n.rs` | `.claude/rules/i18n.md` |
-| `crates/openlogi-ipc/**`, plus every crate whose serde types ride the wire (`openlogi-agent-core`, `openlogi-agent`, `openlogi-core`, `openlogi-hid`) | `crates/openlogi-ipc/AGENTS.md` |
-| `crates/openlogi-hook/**`, `crates/openlogi-inject/**`, `crates/openlogi-hid/**` (cfg-gated platform code) | `.claude/rules/cross-platform.md` |
-| `crates/openlogi-hidpp/**` (hard fork of `hidpp`) | `crates/openlogi-hidpp/AGENTS.md` |
-| `crates/openlogi-device/**`, `crates/openlogi-hid/**` (the HID++ layer seam) | `crates/openlogi-device/AGENTS.md` |
-| `crates/openlogi-hook/**` (event taps) | `crates/openlogi-hook/AGENTS.md` |
+| `crates/roadie-desktop/**`, `crates/roadie-ui/**`, `crates/roadie-overlay/**` (GPUI) | `.claude/rules/gui.md` |
+| `crates/roadie-desktop/**` (that crate's own contract and map) | `crates/roadie-desktop/AGENTS.md` |
+| `crates/roadie-ui/locales/**`, `roadie-ui/src/locale.rs`, `roadie-desktop/src/services/i18n.rs` | `.claude/rules/i18n.md` |
+| `crates/roadie-ipc/**`, plus every crate whose serde types ride the wire (`roadie-agent-core`, `roadie-agent`, `roadie-core`, `roadie-hid`) | `crates/roadie-ipc/AGENTS.md` |
+| `crates/roadie-hook/**`, `crates/roadie-inject/**`, `crates/roadie-hid/**` (cfg-gated platform code) | `.claude/rules/cross-platform.md` |
+| `crates/roadie-hidpp/**` (hard fork of `hidpp`) | `crates/roadie-hidpp/AGENTS.md` |
+| `crates/roadie-device/**`, `crates/roadie-hid/**` (the HID++ layer seam) | `crates/roadie-device/AGENTS.md` |
+| `crates/roadie-hook/**` (event taps) | `crates/roadie-hook/AGENTS.md` |
 | `xtask/**`, `packaging/**`, `.github/scripts/**` | `xtask/AGENTS.md` (+ `xtask/README.md`) |
-| macOS native FFI wherever it lives — `openlogi-{agent,camera,hook,inject,overlay,permissions}` + `openlogi-desktop/src/platform/**` | `.claude/rules/objc-ffi.md` |
+| macOS native FFI wherever it lives — `roadie-{agent,camera,hook,inject,overlay,permissions}` + `roadie-desktop/src/platform/**` | `.claude/rules/objc-ffi.md` |
 
 ## Task skills — invoke when the task matches, not when a path matches
 
@@ -320,7 +320,7 @@ should read the `SKILL.md` when the task matches.
 
 | Task | Skill |
 |---|---|
-| a macOS report of no devices / "Failed to open device" / which permission to grant, and any change to the permission, helper-launch, or bundle-signing code | `.claude/skills/openlogi-macos-permissions/SKILL.md` |
+| a macOS report of no devices / "Failed to open device" / which permission to grant, and any change to the permission, helper-launch, or bundle-signing code | `.claude/skills/roadie-macos-permissions/SKILL.md` |
 
 Everything else under `.claude/skills/` is a per-developer symlink into
 `.agents/skills/` and is not part of the project — see `.gitignore`.

@@ -1,5 +1,5 @@
 {
-  description = "OpenLogi — local-first companion for Logitech HID++ peripherals";
+  description = "OpenRoadie — local-first companion for Logitech HID++ peripherals";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -44,7 +44,7 @@
         let
           lib = nixpkgs.lib;
           pkgs = nixpkgs.legacyPackages.${system};
-          package = self.packages.${system}.openlogi;
+          package = self.packages.${system}.roadie;
           evaluate =
             launchAtLogin:
             (lib.nixosSystem {
@@ -52,7 +52,7 @@
               modules = [
                 self.nixosModules.default
                 {
-                  programs.openlogi = {
+                  programs.roadie = {
                     enable = true;
                     inherit launchAtLogin;
                   };
@@ -65,15 +65,15 @@
         in
         assert lib.elem package enabled.environment.systemPackages;
         assert lib.elem package enabled.services.udev.packages;
-        assert enabled.systemd.user.services.openlogi-agent.wantedBy == [ "graphical-session.target" ];
-        assert manual.systemd.user.services.openlogi-agent.wantedBy == [ ];
-        assert enabled.systemd.user.services.openlogi-agent.after == [ "graphical-session.target" ];
-        assert enabled.systemd.user.services.openlogi-agent.partOf == [ "graphical-session.target" ];
-        assert manual.systemd.user.services.openlogi-agent.partOf == [ ];
+        assert enabled.systemd.user.services.roadie-agent.wantedBy == [ "graphical-session.target" ];
+        assert manual.systemd.user.services.roadie-agent.wantedBy == [ ];
+        assert enabled.systemd.user.services.roadie-agent.after == [ "graphical-session.target" ];
+        assert enabled.systemd.user.services.roadie-agent.partOf == [ "graphical-session.target" ];
+        assert manual.systemd.user.services.roadie-agent.partOf == [ ];
         assert
-          enabled.systemd.user.services.openlogi-agent.serviceConfig.ExecStart
-          == "${package}/bin/openlogi-agent";
-        pkgs.runCommand "openlogi-nixos-module-check" { } ''
+          enabled.systemd.user.services.roadie-agent.serviceConfig.ExecStart
+          == "${package}/bin/roadie-agent";
+        pkgs.runCommand "roadie-nixos-module-check" { } ''
           touch "$out"
         '';
     in
@@ -81,23 +81,23 @@
       packages = forAllSystems (
         system:
         let
-          openlogi = packageFor system;
+          roadie = packageFor system;
         in
         {
-          inherit openlogi;
-          default = openlogi;
+          inherit roadie;
+          default = roadie;
         }
       );
 
       checks = forAllSystems (system: {
-        package = self.packages.${system}.openlogi;
+        package = self.packages.${system}.roadie;
         nixos-module = moduleCheckFor system;
       });
 
       formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt);
 
       nixosModules = {
-        openlogi =
+        roadie =
           {
             lib,
             pkgs,
@@ -105,9 +105,9 @@
           }:
           {
             imports = [ ./packaging/linux/nixos-module.nix ];
-            programs.openlogi.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.openlogi;
+            programs.roadie.package = lib.mkDefault self.packages.${pkgs.stdenv.hostPlatform.system}.roadie;
           };
-        default = self.nixosModules.openlogi;
+        default = self.nixosModules.roadie;
       };
     };
 }

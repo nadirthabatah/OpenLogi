@@ -1,0 +1,52 @@
+[package]
+name = "roadie-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Implementation library for the OpenRoadie CLI (the `roadie` binary)."
+keywords = ["logitech", "hidpp", "hid", "mouse", "cli"]
+categories = ["command-line-utilities", "hardware-support"]
+
+[dependencies]
+roadie-core = { path = "../roadie-core", version = "0.8.1" }
+roadie-device-registry = { path = "../roadie-device-registry", version = "0.8.1" }
+roadie-catalog = { path = "../roadie-catalog", version = "0.8.1" }
+roadie-via = { path = "../roadie-via", version = "0.8.1" }
+roadie-hid = { path = "../roadie-hid", version = "0.8.1" }
+roadie-inject = { path = "../roadie-inject", version = "0.8.1" }
+roadie-streamdeck = { path = "../roadie-streamdeck", version = "0.8.1", features = [
+    "render",
+] }
+# Reading whatever picture a user points at; the encoding for the device
+# itself is roadie-streamdeck's job.
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+    "png",
+    "gif",
+    "bmp",
+] }
+roadie-camera = { path = "../roadie-camera", version = "0.8.1" }
+roadie-assets = { path = "../roadie-assets", version = "0.8.1" }
+roadie-ipc = { path = "../roadie-ipc", version = "0.8.1" }
+tarpc = { workspace = true }
+png = "0.17"
+clap = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+atomic-write-file = { workspace = true }
+toml = { workspace = true }
+toml_edit = "0.22"
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "sync", "time", "io-std", "io-util"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

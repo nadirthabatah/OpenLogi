@@ -1,4 +1,4 @@
-# Installing OpenLogi on Linux
+# Installing OpenRoadie on Linux
 
 > [!NOTE]
 > Linux support is in active development. HID++ device enumeration supports
@@ -7,7 +7,7 @@
 
 ## Prerequisites
 
-- **Quit Solaar** (or any other Logitech manager) before starting OpenLogi — the
+- **Quit Solaar** (or any other Logitech manager) before starting OpenRoadie — the
   two applications fight over HID++ access.
 - A kernel with `hidraw` and `uinput` module support (standard on all major
   distros).
@@ -24,20 +24,20 @@ rules required for device access and manages the agent's user service.
 ```nix
 {
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  inputs.openlogi = {
-    url = "github:AprilNEA/OpenLogi";
+  inputs.roadie = {
+    url = "github:AprilNEA/OpenRoadie";
     inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { nixpkgs, openlogi, ... }: {
+  outputs = { nixpkgs, roadie, ... }: {
     nixosConfigurations.my-host = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux"; # or aarch64-linux
       modules = [
-        openlogi.nixosModules.default
+        roadie.nixosModules.default
         {
-          programs.openlogi = {
+          programs.roadie = {
             enable = true;
-            # Starts openlogi-agent with graphical-session.target by default.
+            # Starts roadie-agent with graphical-session.target by default.
             launchAtLogin = true;
           };
         }
@@ -47,14 +47,14 @@ rules required for device access and manages the agent's user service.
 }
 ```
 
-Set `programs.openlogi.launchAtLogin = false` to install the package and udev
+Set `programs.roadie.launchAtLogin = false` to install the package and udev
 rules without automatically starting the agent. It remains available as
-`systemctl --user start openlogi-agent.service`.
+`systemctl --user start roadie-agent.service`.
 
 For a build without installing the module:
 
 ```sh
-nix build github:AprilNEA/OpenLogi#openlogi
+nix build github:AprilNEA/OpenRoadie#roadie
 ```
 
 ## Build from source
@@ -66,22 +66,22 @@ from source instead, use the stable Rust toolchain:
 
 ```sh
 git clone https://github.com/AprilNEA/OpenLogi
-cd OpenLogi
-cargo build --release -p openlogi -p openlogi-desktop -p openlogi-agent
+cd OpenRoadie
+cargo build --release -p roadie -p roadie-desktop -p roadie-agent
 ```
 
 Four production executables land in `target/release/`:
 
 | Binary | Role |
 |---|---|
-| `openlogi` | CLI — inventory, diagnostics, asset sync |
-| `openlogi-desktop` | Desktop GUI |
-| `openlogi-overlay` | Actions Ring overlay helper |
-| `openlogi-agent` | Background agent — HID++ loop, input hook |
+| `roadie` | CLI — inventory, diagnostics, asset sync |
+| `roadie-desktop` | Desktop GUI |
+| `roadie-overlay` | Actions Ring overlay helper |
+| `roadie-agent` | Background agent — HID++ loop, input hook |
 
 ## Device access: udev rules
 
-OpenLogi needs:
+OpenRoadie needs:
 
 - **Write access to `/dev/uinput`** — to create the virtual input device for
   button remapping.
@@ -96,7 +96,7 @@ Install the bundled udev rules to grant access to the active-seat user without
 requiring `sudo` or group membership (requires `systemd-logind`):
 
 ```sh
-sudo cp packaging/linux/udev/70-openlogi.rules /etc/udev/rules.d/
+sudo cp packaging/linux/udev/70-roadie.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
@@ -105,7 +105,7 @@ Verify access (should open without error):
 
 ```sh
 # Check uinput
-openlogi-agent --check-uinput 2>/dev/null || \
+roadie-agent --check-uinput 2>/dev/null || \
     test -w /dev/uinput && echo "uinput OK"
 
 # Check a hidraw node
@@ -156,25 +156,25 @@ packaging/linux/uninstall.sh
 
 ## Autostart (launch at login)
 
-The background agent (`openlogi-agent`) must be running for the GUI and CLI to
+The background agent (`roadie-agent`) must be running for the GUI and CLI to
 show connected devices. Enable it for your user session:
 
 ```sh
-systemctl --user enable --now openlogi-agent.service
+systemctl --user enable --now roadie-agent.service
 ```
 
 Alternatively, toggle **Settings → General → Launch at login** in the GUI — it
-writes the unit to `~/.config/systemd/user/openlogi-agent.service`
+writes the unit to `~/.config/systemd/user/roadie-agent.service`
 automatically.
 
 ## Verify the installation
 
 ```sh
 # List connected Logitech devices:
-openlogi list
+roadie list
 
 # Launch the GUI:
-openlogi-desktop
+roadie-desktop
 ```
 
 ## Known limitations

@@ -1,34 +1,17 @@
 > [!WARNING]
-> **OpenLogi는 활발히 개발 중**이며 아직 안정 단계가 아닙니다 — 기능과 설정이 변경될 수 있습니다. 저장소에 **Star** ⭐ 와 **Watch** 👀 를 눌러 두면 새 릴리스가 나올 때 알림을 받을 수 있습니다.
+> **OpenRoadie는 활발히 개발 중**이며 아직 안정 단계가 아닙니다 — 기능과 설정이 변경될 수 있습니다. 저장소에 **Star** ⭐ 와 **Watch** 👀 를 눌러 두면 새 릴리스가 나올 때 알림을 받을 수 있습니다.
 
 <h4 align="right"><a href="../README.md">English</a> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.ja.md">日本語</a> | <a href="README.de.md">Deutsch</a> | <a href="README.fr.md">Français</a> | <strong>한국어</strong></h4>
 
-<p align="center">
-    <img src="https://assets.openlogi.org/brand/openlogi-icon.png" width="138" alt="OpenLogi"/>
-</p>
 
-<h1 align="center">OpenLogi</h1>
+<h1 align="center">OpenRoadie</h1>
+<p align="center">OpenRoadie is a fork of <a href="https://github.com/AprilNEA/OpenLogi">OpenLogi</a> by @AprilNEA.</p>
 <p align="center"><strong>⚡️ Rust로 작성된 네이티브 로컬 우선 Logitech Options+ 대안 🦀<br/>HID++와 UVC로 Logitech 마우스·키보드·웹캠의 모든 기능을 끌어냅니다</strong></p>
 
 
-<div align="center">
-    <a href="https://twitter.com/AprilNEA" target="_blank">
-    <img alt="twitter" src="https://img.shields.io/badge/follow-AprilNEA-green?style=social&logo=Twitter"></a>
-    <a href="https://t.me/+VDtkR5OSAT04NzVh" target="_blank">
-    <img alt="telegram" src="https://img.shields.io/badge/chat-telegram-blueviolet?style=flat&logo=Telegram"></a>
-    <a href="https://github.com/AprilNEA/OpenLogi/releases" target="_blank">
-    <img alt="GitHub downloads" src="https://img.shields.io/github/downloads/AprilNEA/OpenLogi/total.svg?style=flat"></a>
-    <a href="https://github.com/AprilNEA/OpenLogi/commits" target="_blank">
-    <img alt="GitHub commit" src="https://img.shields.io/github/commit-activity/m/AprilNEA/OpenLogi?style=flat"></a>
-    <img alt="Hits" src="https://hits.aprilnea.com/hits?url=https://github.com/aprilnea/openlogi">
-</div>
 
-<p align="center">
-    <a href="https://trendshift.io/repositories/42303" target="_blank">
-    <img src="https://trendshift.io/api/badge/trendshift/repositories/42303/daily?language=Rust" alt="AprilNEA%2FOpenLogi | Trendshift" width="250" height="55"/></a>
-</p>
 
-> **Options+가 지긋지긋하다면? OpenLogi를 써 보세요.**
+> **Options+가 지긋지긋하다면? OpenRoadie를 써 보세요.**
 
 macOS, Linux, Windows를 지원합니다.
 
@@ -36,10 +19,10 @@ macOS, Linux, Windows를 지원합니다.
 
 ## Options+ 그 너머
 
-OpenLogi는 되고 Options+는 안 되는 것들:
+OpenRoadie는 되고 Options+는 안 되는 것들:
 
 - **가볍게 유지.** 네이티브 Rust + GPUI.
-- **Linux 지원.** Linux는 OpenLogi의 일급 플랫폼입니다.
+- **Linux 지원.** Linux는 OpenRoadie의 일급 플랫폼입니다.
 - **제스처 버튼 자유 지정.** 아무 물리 버튼에나 제스처 역할을 맡기거나, 제스처를 아예 끌 수 있습니다.
 - **순수 텍스트 설정.** 모든 설정이 TOML 파일 하나에 담겨 원하는 방법으로 기기 간 동기화할 수 있습니다.
 - **스크립트 가능.** GUI 외에 진짜 CLI도 제공합니다.
@@ -83,22 +66,22 @@ OpenLogi는 되고 Options+는 안 되는 것들:
 
 macOS 13 이상이 필요합니다.
 
-[최신 릴리스](https://github.com/AprilNEA/OpenLogi/releases/latest)에서 서명·공증된 `.dmg`를 내려받아 `OpenLogi.app`을 `/Applications`로 드래그하세요.
+[최신 릴리스](https://github.com/AprilNEA/OpenLogi/releases/latest)에서 서명·공증된 `.dmg`를 내려받아 `OpenRoadie.app`을 `/Applications`로 드래그하세요.
 
 또는 [Homebrew](https://brew.sh)로 설치:
 
 ```sh
-brew install --cask openlogi
+brew install --cask roadie
 ```
 
 공식 Homebrew cask가 기본 설치 경로입니다. 대신 `aprilnea/tap`으로 GitHub 최신 릴리스를 명시적으로 따라가려면:
 
 ```sh
 brew tap aprilnea/tap
-brew install --cask aprilnea/tap/openlogi@latest
+brew install --cask aprilnea/tap/roadie@latest
 ```
 
-`openlogi@latest`는 OpenLogi 릴리스 워크플로가 관리하며 공식 cask의 autobump보다 먼저 갱신될 수 있습니다. `openlogi`와 `openlogi@latest` 중 하나만 설치하세요.
+`roadie@latest`는 OpenRoadie 릴리스 워크플로가 관리하며 공식 cask의 autobump보다 먼저 갱신될 수 있습니다. `roadie`와 `roadie@latest` 중 하나만 설치하세요.
 
 ### Linux
 
@@ -106,13 +89,13 @@ brew install --cask aprilnea/tap/openlogi@latest
 
 ```sh
 # Debian / Ubuntu
-sudo dpkg -i openlogi_*.deb
+sudo dpkg -i roadie_*.deb
 
 # Fedora / RHEL
-sudo rpm -i openlogi-*.rpm
+sudo rpm -i roadie-*.rpm
 
 # Arch Linux
-sudo pacman -U openlogi-*.pkg.tar.zst
+sudo pacman -U roadie-*.pkg.tar.zst
 ```
 
 패키지는 `x86_64`/`amd64`와 `arm64`/`aarch64` 두 아키텍처로 제공됩니다.
@@ -120,14 +103,14 @@ sudo pacman -U openlogi-*.pkg.tar.zst
 패키지는 `sudo` 없이 `/dev/hidraw*`와 `/dev/uinput`에 접근할 수 있게 해 주는 udev 규칙을 설치합니다. 설치 후 사용자용 백그라운드 에이전트를 활성화하세요:
 
 ```sh
-systemctl --user enable --now openlogi-agent.service
+systemctl --user enable --now roadie-agent.service
 ```
 
 수동 / 소스 설치와 systemd가 없는 배포판은 [INSTALL-linux.md](INSTALL-linux.md)를 참고하세요.
 
 ### Windows
 
-각 릴리스에는 서명된 휴대용 `.zip` 아카이브와 사용자별 `.msi` 설치 파일(x86_64 및 arm64)이 포함됩니다. 둘 다 GUI(`OpenLogi.exe`)와 모든 기기 I/O를 소유하는 백그라운드 agent(`openlogi-agent.exe`)를 함께 제공합니다. 휴대용 zip을 사용할 때 두 파일을 같은 위치에 두지 않으면 GUI가 연결할 대상이 없습니다.
+각 릴리스에는 서명된 휴대용 `.zip` 아카이브와 사용자별 `.msi` 설치 파일(x86_64 및 arm64)이 포함됩니다. 둘 다 GUI(`OpenRoadie.exe`)와 모든 기기 I/O를 소유하는 백그라운드 agent(`roadie-agent.exe`)를 함께 제공합니다. 휴대용 zip을 사용할 때 두 파일을 같은 위치에 두지 않으면 GUI가 연결할 대상이 없습니다.
 
 Windows 지원은 정상 작동하며 유선 키보드와 Unifying 수신기 마우스를 사용해 MSI 설치, 인플레이스 업그레이드, 제거까지 Windows 11 실제 하드웨어에서 엔드투엔드 검증했습니다. macOS 포트보다 최신이므로 문제가 있으면 [제보](https://github.com/AprilNEA/OpenLogi/issues)해 주세요. agent는 시스템 트레이 아이콘(메인 창 표시 / 종료)을 표시하므로 메인 창을 닫은 뒤에도 앱에 접근할 수 있습니다. Windows에서 비활성화하려면 TOML `[app_settings]` 블록에 `show_in_menu_bar = false`를 설정하고 agent를 다시 시작하세요. GUI 토글은 현재 macOS 전용입니다.
 
@@ -162,16 +145,12 @@ Windows 지원은 정상 작동하며 유선 키보드와 Unifying 수신기 마
 
 ### 서드파티 코드
 
-`crates/openlogi-hidpp`는 [`hidpp`](https://crates.io/crates/hidpp)([@lus](https://github.com/lus) 제작)의 vendored fork이며, 0BSD 라이선스를 따릅니다.
+`crates/roadie-hidpp`는 [`hidpp`](https://crates.io/crates/hidpp)([@lus](https://github.com/lus) 제작)의 vendored fork이며, 0BSD 라이선스를 따릅니다.
 
 ### 로고 및 브랜드 자산
 
-OpenLogi 로고를 디자인해 준 [@kubai087](https://github.com/kubai087)에게 감사드립니다. OpenLogi 로고와 앱 아이콘 — [`design/`](../design/) 아래의 브랜드 자산 — 은 © 2026 AprilNEA가 모든 권리를 보유하며, 위 MIT/Apache 라이선스의 적용을 받지 않습니다. [`design/LICENSE`](../design/LICENSE)를 참고하세요. 코드를 포크해도 OpenLogi 이름·로고·아이콘에 대한 권리는 부여되지 않습니다. 사전 서면 허가 없이 자신의 프로젝트, 포크, 배포판을 나타내는 데 사용하지 마세요.
+OpenRoadie 로고를 디자인해 준 [@kubai087](https://github.com/kubai087)에게 감사드립니다. OpenRoadie 로고와 앱 아이콘 — [`design/`](../design/) 아래의 브랜드 자산 — 은 © 2026 AprilNEA가 모든 권리를 보유하며, 위 MIT/Apache 라이선스의 적용을 받지 않습니다. [`design/LICENSE`](../design/LICENSE)를 참고하세요. 코드를 포크해도 OpenRoadie 이름·로고·아이콘에 대한 권리는 부여되지 않습니다. 사전 서면 허가 없이 자신의 프로젝트, 포크, 배포판을 나타내는 데 사용하지 마세요.
 
 ---
 
 **Logitech과 무관합니다.** "Logitech", "MX Master", "Options+"는 Logitech International S.A.의 상표입니다.
-
-## 저장소 활동
-
-![Repobeats analytics image](https://repobeats.axiom.co/api/embed/4a0b576a03e9d528ad31ccf4797a1286c045d021.svg "Repobeats analytics image")

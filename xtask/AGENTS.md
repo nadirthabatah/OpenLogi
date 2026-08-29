@@ -9,36 +9,36 @@
   `unwrap_used`/`expect_used` warns run with `-D warnings` — use `?` and combinators,
   not `unwrap`/`expect`, even in "script" code.
 - App icon: the master is the **committed** Icon Composer document
-  `design/icon/openlogi.icon` (its `icon.json` plus the artwork it names);
+  `design/icon/roadie.icon` (its `icon.json` plus the artwork it names);
   `cargo xtask macos icon` compiles it with `actool` into `AppIcon.icns` (what
   macOS 13–25 draw, and what every helper bundle ships) and `Assets.car` (what
   macOS 26 composes the layered icon from — the app carries it, the helpers do
   not). `actool` names its outputs after the document, so the compile stages a
   copy called `AppIcon.icon`; it ships with Xcode (not the command line tools)
   and has to be **Xcode 26 or newer**, since that is where Icon Composer
-  documents arrived. `OPENLOGI_DEVELOPER_DIR` picks which Xcode every macOS
+  documents arrived. `ROADIE_DEVELOPER_DIR` picks which Xcode every macOS
   build command runs under — `build.yml` pins it so both native and
   cross-compiled distribution targets use the same Icon Composer-capable SDK.
-  `design/icon/openlogi.png` stays the master for Linux packaging and the GUI's
-  embedded logo, and `openlogi.ico` for the Windows executables. The icon set
+  `design/icon/roadie.png` stays the master for Linux packaging and the GUI's
+  embedded logo, and `roadie.ico` for the Windows executables. The icon set
   itself lives in `xtask/src/icon.rs` (`AppIcon` plus the `IconPipeline` trait a
   platform implements); `icon/macos.rs` is the only implementation so far — add
   one there rather than growing a second icon vocabulary when Windows or Linux
   needs a build step. The build never
   fetches the icon from the CDN — a build-time fetch was tried and deliberately
   reverted; don't reintroduce it. After changing the icon, macOS caches by bundle
-  path: `touch target/dev/OpenLogi.app && killall Dock` to see it.
+  path: `touch target/dev/OpenRoadie.app && killall Dock` to see it.
 - Package contents are declarative, not coded: Linux `.deb`/`.rpm` in
   `packaging/linux/nfpm.yaml` (plus udev rules, systemd unit, desktop entry beside it),
-  Windows MSI in `packaging/windows/OpenLogi.wxs`. Packaging env overrides
-  (`OPENLOGI_SIGN_IDENTITY`, `OPENLOGI_BUNDLE_ASSETS`, `PKG_ARCH`, …) are documented in
+  Windows MSI in `packaging/windows/OpenRoadie.wxs`. Packaging env overrides
+  (`ROADIE_SIGN_IDENTITY`, `ROADIE_BUNDLE_ASSETS`, `PKG_ARCH`, …) are documented in
   `docs/DEVELOPMENT.md`.
 - `cargo xtask ci` is the local CI runner (`xtask/src/commands/ci/`). Facts about a
   job — CI name, the names it answers to, the hosts CI gives it, whether a bare run
   includes it — are one `Spec` row returned from one match in `ci/jobs.rs`; behaviour
   is `ci/jobs/steps.rs`. Host gating is a runtime `Host` value, not `cfg!`, so which
   job skips where is data a test reads. It is also the only place the Windows
-  cross-lint crate list lives — `devenv.nix`'s `openlogi:check-windows` calls it
+  cross-lint crate list lives — `devenv.nix`'s `roadie:check-windows` calls it
   rather than repeating the `-p` flags. Adding a job to `ci.yml` means a `Job`
   variant + `Spec` row, its steps, and a row in `.claude/rules/ci.md`; `--list`
   renders itself from the rows. It does not repeat the commands — `--dry-run`

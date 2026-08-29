@@ -1,20 +1,20 @@
 ---
 paths:
-  - "crates/openlogi-desktop/src/platform/**"
-  - "crates/openlogi-overlay/src/platform.rs"
-  - "crates/openlogi-permissions/**"
-  - "crates/openlogi-camera/**"
-  - "crates/openlogi-agent/src/tray.rs"
-  - "crates/openlogi-agent/src/status_item.rs"
-  - "crates/openlogi-agent-core/src/watchers/camera.rs"
-  - "crates/openlogi-hook/src/macos.rs"
-  - "crates/openlogi-inject/src/inject/macos.rs"
-  - "crates/openlogi-hid/src/permissions.rs"
+  - "crates/roadie-desktop/src/platform/**"
+  - "crates/roadie-overlay/src/platform.rs"
+  - "crates/roadie-permissions/**"
+  - "crates/roadie-camera/**"
+  - "crates/roadie-agent/src/tray.rs"
+  - "crates/roadie-agent/src/status_item.rs"
+  - "crates/roadie-agent-core/src/watchers/camera.rs"
+  - "crates/roadie-hook/src/macos.rs"
+  - "crates/roadie-inject/src/inject/macos.rs"
+  - "crates/roadie-hid/src/permissions.rs"
 ---
 
 # macOS native FFI
 
-OpenLogi's Objective-C FFI runs on **`objc2`** (0.6 / framework crates 0.3):
+OpenRoadie's Objective-C FFI runs on **`objc2`** (0.6 / framework crates 0.3):
 `Retained<T>` smart pointers, typed framework objects, `define_class!` for
 subclasses. It is spread across crates rather than one directory — the GUI owns
 almost none of it. The whole workspace's native macOS surface is exactly these
@@ -22,19 +22,19 @@ files; **keep this table in sync when you add or move one**:
 
 | File | What it carries |
 |---|---|
-| `openlogi-agent/src/status_item.rs` | safe `objc2` wrappers over `NSStatusItem` / `NSMenu` / `NSMenuItem` |
-| `openlogi-agent/src/tray.rs` | the menu-bar semantics, `MenuTarget` + `ResumeTarget` (`define_class!`), the Accessory `NSApplication` loop, `NSWorkspace` resume notifications |
-| `openlogi-agent-core/src/watchers/camera.rs` | the CoreMediaIO "camera is running" property read |
-| `openlogi-camera/src/capture.rs` | `AVCaptureSession` capture + the `define_class!` frame delegate, and the Camera TCC prompt |
-| `openlogi-camera/src/macos.rs` | `AVCaptureDevice` enumeration (`class!` + `msg_send!`) |
-| `openlogi-camera/src/uvc.rs`, `.../uvc/iokit.rs` | IOKit USB / UVC control transfers; every `unsafe` in the macOS UVC backend lives in `iokit.rs` |
-| `openlogi-desktop/src/platform/registration/macos.rs` | `SMAppService` registration of the agent's launchd service (the login-item side of the agent lifecycle; the GUI must own it — the API resolves the plist against the calling app's bundle) |
-| `openlogi-desktop/src/platform/os.rs` | `NSProcessInfo` OS version + the `NSAppearance` titlebar sync |
-| `openlogi-hid/src/permissions.rs` | `IOHIDCheckAccess` / `IOHIDRequestAccess` (the prompting half of Input Monitoring) |
-| `openlogi-hook/src/macos.rs` | the CGEventTap (on `core-graphics`, see below), the `NSWorkspace` frontmost-app read, the Accessibility-trust check/prompt, and the HID sender-id lookup |
-| `openlogi-inject/src/inject/macos.rs` | CGEvent synthesis, media-key `NSEvent`s, raw `AXUIElement` navigation, and the `dlopen`'d private SPIs |
-| `openlogi-overlay/src/platform.rs` | the Actions Ring helper's window policy: accessory activation, non-activating panel, the `NSEvent` global click-away monitor (`block2`), and `CGGetActiveDisplayList` / `CGDisplayBounds` |
-| `openlogi-permissions/src/macos.rs` | non-prompting permission reads + System-Settings deep links; `+[CBManager authorization]` via an `AnyClass` lookup |
+| `roadie-agent/src/status_item.rs` | safe `objc2` wrappers over `NSStatusItem` / `NSMenu` / `NSMenuItem` |
+| `roadie-agent/src/tray.rs` | the menu-bar semantics, `MenuTarget` + `ResumeTarget` (`define_class!`), the Accessory `NSApplication` loop, `NSWorkspace` resume notifications |
+| `roadie-agent-core/src/watchers/camera.rs` | the CoreMediaIO "camera is running" property read |
+| `roadie-camera/src/capture.rs` | `AVCaptureSession` capture + the `define_class!` frame delegate, and the Camera TCC prompt |
+| `roadie-camera/src/macos.rs` | `AVCaptureDevice` enumeration (`class!` + `msg_send!`) |
+| `roadie-camera/src/uvc.rs`, `.../uvc/iokit.rs` | IOKit USB / UVC control transfers; every `unsafe` in the macOS UVC backend lives in `iokit.rs` |
+| `roadie-desktop/src/platform/registration/macos.rs` | `SMAppService` registration of the agent's launchd service (the login-item side of the agent lifecycle; the GUI must own it — the API resolves the plist against the calling app's bundle) |
+| `roadie-desktop/src/platform/os.rs` | `NSProcessInfo` OS version + the `NSAppearance` titlebar sync |
+| `roadie-hid/src/permissions.rs` | `IOHIDCheckAccess` / `IOHIDRequestAccess` (the prompting half of Input Monitoring) |
+| `roadie-hook/src/macos.rs` | the CGEventTap (on `core-graphics`, see below), the `NSWorkspace` frontmost-app read, the Accessibility-trust check/prompt, and the HID sender-id lookup |
+| `roadie-inject/src/inject/macos.rs` | CGEvent synthesis, media-key `NSEvent`s, raw `AXUIElement` navigation, and the `dlopen`'d private SPIs |
+| `roadie-overlay/src/platform.rs` | the Actions Ring helper's window policy: accessory activation, non-activating panel, the `NSEvent` global click-away monitor (`block2`), and `CGGetActiveDisplayList` / `CGDisplayBounds` |
+| `roadie-permissions/src/macos.rs` | non-prompting permission reads + System-Settings deep links; `+[CBManager authorization]` via an `AnyClass` lookup |
 
 Every rule below binds all of them, whichever crate they live in.
 
@@ -42,16 +42,16 @@ Spawning the agent under its own macOS TCC identity (so its Accessibility /
 Input-Monitoring grants aren't attributed to the GUI, issue #214) lives in the
 external [`disclaim`](https://crates.io/crates/disclaim) crate — `posix_spawn` +
 the private `responsibility_spawnattrs_setdisclaim`, not ObjC.
-`openlogi-desktop/src/services/ipc/launch.rs`'s `spawn_agent` uses it; there is no
+`roadie-desktop/src/services/ipc/launch.rs`'s `spawn_agent` uses it; there is no
 in-tree FFI for it. Likewise, installed-application discovery and icon
 rendering for per-app profiles live in the external
 [`appcatalog`](https://crates.io/crates/appcatalog) crate (`NSWorkspace` +
-`NSBitmapImageRep` there, not here); `openlogi-desktop/src/platform/app_icon.rs`
+`NSBitmapImageRep` there, not here); `roadie-desktop/src/platform/app_icon.rs`
 only wraps its PNG bytes into a `gpui::Image`.
 
-The rest of `openlogi-desktop/src/platform/` (`updater.rs`, on `gpui_updater`)
-carries **no** ObjC FFI — don't add any. Neither do `openlogi-core`'s
-`single_instance.rs` (fs4 lock) or `openlogi-agent`'s `autostart/macos.rs`
+The rest of `roadie-desktop/src/platform/` (`updater.rs`, on `gpui_updater`)
+carries **no** ObjC FFI — don't add any. Neither do `roadie-core`'s
+`single_instance.rs` (fs4 lock) or `roadie-agent`'s `autostart/macos.rs`
 (legacy-plist cleanup via `std::fs`).
 
 ## Ownership: `Retained<T>`, never raw `id`
@@ -72,7 +72,7 @@ every 2 s tray refresh under the old `cocoa`/`objc` 0.x path).
 - **Never** call manual `retain`/`release`/`autorelease`, add raw `cocoa`/`objc`
   0.x, or build a bespoke retain/release helper layer — that re-derives
   `Retained<T>`, worse. The one exception is the raw AX navigation in
-  `openlogi-inject` (see below), which is on the migrate-when-touched list.
+  `roadie-inject` (see below), which is on the migrate-when-touched list.
 
 ## Thread affinity is in the type system
 
@@ -93,7 +93,7 @@ every 2 s tray refresh under the old `cocoa`/`objc` 0.x path).
   the status item, its `MenuTarget` and the `ResumeTarget` are bound as locals
   that outlive `NSApplication::run()`. They must stay bound — menu items
   reference their target *weakly*, and the notification center does the same.
-- `openlogi-camera`'s frame delegate is deliberately the opposite: an
+- `roadie-camera`'s frame delegate is deliberately the opposite: an
   `NSObject` subclass with no `thread_kind`, because AVFoundation drives it on
   a background dispatch queue. Its one ivar is the owning session's
   `Arc<FrameSink>` (`Send + Sync`), so which session a frame belongs to is
@@ -109,10 +109,10 @@ is its own framework call, so "the TCC layer" is just this table:
 
 | Permission | Crate | Symbol | Read / prompt |
 |---|---|---|---|
-| Accessibility | `objc2-application-services` (`HIServices` + `AXUIElement`) | `AXIsProcessTrusted` / `AXIsProcessTrustedWithOptions` | both in `openlogi-hook` |
-| Input Monitoring / Post Event | `objc2-io-kit` (`hidsystem`) | `IOHIDCheckAccess` / `IOHIDRequestAccess` | read in `openlogi-permissions`, prompt in `openlogi-hid` |
-| Bluetooth | `objc2` class lookup (see below) | `+[CBManager authorization]` | `openlogi-permissions` |
-| Camera / microphone | `openlogi-camera` (`capture.rs`) | `+[AVCaptureDevice authorizationStatusForMediaType:]` / `requestAccessForMediaType:` | `openlogi-camera` |
+| Accessibility | `objc2-application-services` (`HIServices` + `AXUIElement`) | `AXIsProcessTrusted` / `AXIsProcessTrustedWithOptions` | both in `roadie-hook` |
+| Input Monitoring / Post Event | `objc2-io-kit` (`hidsystem`) | `IOHIDCheckAccess` / `IOHIDRequestAccess` | read in `roadie-permissions`, prompt in `roadie-hid` |
+| Bluetooth | `objc2` class lookup (see below) | `+[CBManager authorization]` | `roadie-permissions` |
+| Camera / microphone | `roadie-camera` (`capture.rs`) | `+[AVCaptureDevice authorizationStatusForMediaType:]` / `requestAccessForMediaType:` | `roadie-camera` |
 | Screen Recording (unused) | `objc2-core-graphics` | `CGPreflightScreenCaptureAccess` | — |
 | Full Disk Access (unused) | — | no API; only a probe of a protected path | — |
 
@@ -169,23 +169,23 @@ Typed framework crates are the default; a hand-written `unsafe extern "C"` block
 is allowed **only** for symbols objc2 has no bindings for, and it stays next to
 its single user. The current set, all deliberate:
 
-- `openlogi-hook`: `CGEventCopyIOHIDEvent` / `IOHIDEventGetSenderID` —
+- `roadie-hook`: `CGEventCopyIOHIDEvent` / `IOHIDEventGetSenderID` —
   undocumented, no bindings anywhere.
-- `openlogi-camera`: the AVFoundation / CoreMedia / CoreVideo / CoreFoundation
+- `roadie-camera`: the AVFoundation / CoreMedia / CoreVideo / CoreFoundation
   statics and functions its capture and enumeration paths need
   (`AVMediaTypeVideo`, `CMSampleBufferGetImageBuffer`, the `CVPixelBuffer`
   accessors, `CFRunLoopRunInMode`, `dispatch_queue_create`) — AVFoundation has no
   typed framework crate in the tree.
-- `openlogi-agent-core/src/watchers/camera.rs`: the CoreMediaIO property API —
+- `roadie-agent-core/src/watchers/camera.rs`: the CoreMediaIO property API —
   same reason.
-- `openlogi-inject`: the `AXUIElement` subset it navigates with, plus
+- `roadie-inject`: the `AXUIElement` subset it navigates with, plus
   `CFRetain`/`CFRelease`, and the `dlopen`/`dlsym`-resolved private SPIs
   (`CoreDockSendNotification`, the CGS symbolic-hotkey trio).
 - the `disclaim` crate: `responsibility_spawnattrs_setdisclaim` (private SPI).
 
 Two of those are on the migrate-when-touched list rather than permanent:
-`openlogi-inject`'s raw AX navigation with its manual `CFRetain`/`CFRelease`
-belongs in `objc2-application-services`, and `openlogi-camera`'s
+`roadie-inject`'s raw AX navigation with its manual `CFRetain`/`CFRelease`
+belongs in `objc2-application-services`, and `roadie-camera`'s
 `AVAuthorizationStatus` integers belong in `objc2-av-foundation`. Don't copy
 either pattern into new code.
 
@@ -207,7 +207,7 @@ under a `SAFETY` comment. Where it currently lives on macOS:
   (the borrow is tied to the pool).
 - `permissions/macos.rs` — the CoreBluetooth force-link and the `CBManager`
   class-method send. `IOHIDCheckAccess` needs none: `objc2-io-kit` exposes it as
-  a safe fn, in `openlogi-permissions` and `openlogi-hid` alike.
+  a safe fn, in `roadie-permissions` and `roadie-hid` alike.
 - `overlay/platform.rs` — `NSEvent::removeMonitor` and the
   `CGGetActiveDisplayList` / `CGDisplayBounds` pair.
 - `desktop/platform/os.rs` — reading AppKit's `NSAppearanceName` statics to set
@@ -221,7 +221,7 @@ under a `SAFETY` comment. Where it currently lives on macOS:
 
 ## CGEventTap stays on `core-graphics` — on purpose
 
-The event tap in `openlogi-hook/src/macos.rs` is **not** migrated.
+The event tap in `roadie-hook/src/macos.rs` is **not** migrated.
 `objc2-core-graphics` 0.3 *does* expose `CGEvent::tap_create`/`tap_enable` (it's
 not an availability gap), but the tap's Accessibility-revoke **freeze-hazard**
 state machine (the 500 ms run-loop slice + self-disable on its own thread) is
@@ -235,12 +235,12 @@ code on a bare thread does, because the framework still autoreleases internal
 temporaries. The three places that keep an explicit `objc2::rc::autoreleasepool`,
 and the only ones that should:
 
-- `openlogi-hook`'s `frontmost_application` — a watcher thread with no run loop,
+- `roadie-hook`'s `frontmost_application` — a watcher thread with no run loop,
   and `to_str` borrows its UTF-8 view from the pool (both the bundle id and the
   localized name).
-- `openlogi-inject`'s `post_media_key` — the hook/gesture dispatch threads, where
+- `roadie-inject`'s `post_media_key` — the hook/gesture dispatch threads, where
   both the `NSEvent` creation and the `CGEvent` getter autorelease temporaries.
-- `openlogi-camera`'s device enumeration — every `AVCaptureDevice` string is
+- `roadie-camera`'s device enumeration — every `AVCaptureDevice` string is
   copied out before the pool drains, so no `Retained<T>` escapes it.
 
 ## Dependencies

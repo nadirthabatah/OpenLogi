@@ -6,18 +6,18 @@
 }:
 
 let
-  cfg = config.programs.openlogi;
+  cfg = config.programs.roadie;
 in
 {
-  options.programs.openlogi = {
-    enable = lib.mkEnableOption "OpenLogi, a local-first Logitech device manager";
+  options.programs.roadie = {
+    enable = lib.mkEnableOption "OpenRoadie, a local-first Logitech device manager";
 
-    package = lib.mkPackageOption pkgs "openlogi" { };
+    package = lib.mkPackageOption pkgs "roadie" { };
 
     launchAtLogin = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Whether to start the OpenLogi agent with graphical sessions.";
+      description = "Whether to start the OpenRoadie agent with graphical sessions.";
     };
   };
 
@@ -25,14 +25,14 @@ in
     environment.systemPackages = [ cfg.package ];
     services.udev.packages = [ cfg.package ];
 
-    systemd.user.services.openlogi-agent = {
-      description = "OpenLogi background agent";
+    systemd.user.services.roadie-agent = {
+      description = "OpenRoadie background agent";
       wantedBy = lib.optionals cfg.launchAtLogin [ "graphical-session.target" ];
       after = [ "graphical-session.target" ];
       partOf = lib.optionals cfg.launchAtLogin [ "graphical-session.target" ];
 
       serviceConfig = {
-        ExecStart = lib.getExe' cfg.package "openlogi-agent";
+        ExecStart = lib.getExe' cfg.package "roadie-agent";
         Restart = "on-failure";
         RestartSec = 5;
       };

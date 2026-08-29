@@ -1,0 +1,17 @@
+[package]
+name = "roadie-via"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Pure VIA/QMK wire protocol: command framing, keymap and macro access, and keycode names. No host I/O."
+keywords = ["via", "qmk", "keyboard", "macropad", "protocol"]
+categories = ["hardware-support", "encoding"]
+
+[dependencies]
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

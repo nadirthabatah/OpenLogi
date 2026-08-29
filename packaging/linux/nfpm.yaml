@@ -1,4 +1,4 @@
-# nfpm package descriptor for OpenLogi Linux packages (.deb / .rpm / .pkg.tar.zst).
+# nfpm package descriptor for OpenRoadie Linux packages (.deb / .rpm / .pkg.tar.zst).
 #
 # Build with the xtask:
 #   cargo run -p xtask -- linux package
@@ -8,7 +8,7 @@
 #   VERSION=0.6.0 PKG_ARCH=arm64 nfpm package --packager rpm --target target/release
 #   VERSION=0.6.0 PKG_ARCH=amd64 nfpm package --packager archlinux --target target/release
 
-name: openlogi
+name: roadie
 version: "${VERSION}"
 arch: "${PKG_ARCH}"
 maintainer: AprilNEA <dev@aprilnea.me>
@@ -21,41 +21,41 @@ license: Apache-2.0 OR MIT
 
 contents:
   # ── binaries ────────────────────────────────────────────────────────────────
-  - src: target/release/openlogi
-    dst: /usr/bin/openlogi
+  - src: target/release/roadie
+    dst: /usr/bin/roadie
     file_info:
       mode: 0755
 
-  - src: target/release/openlogi-desktop
-    dst: /usr/bin/openlogi-desktop
+  - src: target/release/roadie-desktop
+    dst: /usr/bin/roadie-desktop
     file_info:
       mode: 0755
 
-  - src: target/release/openlogi-overlay
-    dst: /usr/bin/openlogi-overlay
+  - src: target/release/roadie-overlay
+    dst: /usr/bin/roadie-overlay
     file_info:
       mode: 0755
 
-  - src: target/release/openlogi-agent
-    dst: /usr/bin/openlogi-agent
+  - src: target/release/roadie-agent
+    dst: /usr/bin/roadie-agent
     file_info:
       mode: 0755
 
   # ── udev rules ──────────────────────────────────────────────────────────────
-  - src: packaging/linux/udev/70-openlogi.rules
-    dst: /etc/udev/rules.d/70-openlogi.rules
+  - src: packaging/linux/udev/70-roadie.rules
+    dst: /etc/udev/rules.d/70-roadie.rules
     file_info:
       mode: 0644
 
   # ── systemd user unit ───────────────────────────────────────────────────────
-  - src: packaging/linux/systemd/openlogi-agent.service
-    dst: /usr/lib/systemd/user/openlogi-agent.service
+  - src: packaging/linux/systemd/roadie-agent.service
+    dst: /usr/lib/systemd/user/roadie-agent.service
     file_info:
       mode: 0644
 
   # ── XDG desktop entry ───────────────────────────────────────────────────────
-  - src: packaging/linux/desktop/openlogi.desktop
-    dst: /usr/share/applications/openlogi.desktop
+  - src: packaging/linux/desktop/roadie.desktop
+    dst: /usr/share/applications/roadie.desktop
     file_info:
       mode: 0644
 
@@ -64,46 +64,46 @@ contents:
   # `hicolor/index.theme` stops at 512x512, so a launcher that resolves icons
   # by theme index (KDE's kbuildsycoca, most GTK launchers) finds nothing at
   # all when only `1024x1024/apps` is installed.
-  - src: design/icon/openlogi.png
-    dst: /usr/share/icons/hicolor/1024x1024/apps/openlogi.png
+  - src: design/icon/roadie.png
+    dst: /usr/share/icons/hicolor/1024x1024/apps/roadie.png
     file_info:
       mode: 0644
-  - src: design/icon/openlogi-512.png
-    dst: /usr/share/icons/hicolor/512x512/apps/openlogi.png
+  - src: design/icon/roadie-512.png
+    dst: /usr/share/icons/hicolor/512x512/apps/roadie.png
     file_info:
       mode: 0644
-  - src: design/icon/openlogi-256.png
-    dst: /usr/share/icons/hicolor/256x256/apps/openlogi.png
+  - src: design/icon/roadie-256.png
+    dst: /usr/share/icons/hicolor/256x256/apps/roadie.png
     file_info:
       mode: 0644
-  - src: design/icon/openlogi-128.png
-    dst: /usr/share/icons/hicolor/128x128/apps/openlogi.png
+  - src: design/icon/roadie-128.png
+    dst: /usr/share/icons/hicolor/128x128/apps/roadie.png
     file_info:
       mode: 0644
-  - src: design/icon/openlogi-64.png
-    dst: /usr/share/icons/hicolor/64x64/apps/openlogi.png
+  - src: design/icon/roadie-64.png
+    dst: /usr/share/icons/hicolor/64x64/apps/roadie.png
     file_info:
       mode: 0644
-  - src: design/icon/openlogi-48.png
-    dst: /usr/share/icons/hicolor/48x48/apps/openlogi.png
+  - src: design/icon/roadie-48.png
+    dst: /usr/share/icons/hicolor/48x48/apps/roadie.png
     file_info:
       mode: 0644
-  - src: design/icon/openlogi-32.png
-    dst: /usr/share/icons/hicolor/32x32/apps/openlogi.png
+  - src: design/icon/roadie-32.png
+    dst: /usr/share/icons/hicolor/32x32/apps/roadie.png
     file_info:
       mode: 0644
-  - src: design/icon/openlogi-16.png
-    dst: /usr/share/icons/hicolor/16x16/apps/openlogi.png
+  - src: design/icon/roadie-16.png
+    dst: /usr/share/icons/hicolor/16x16/apps/roadie.png
     file_info:
       mode: 0644
 
   - src: LICENSE-APACHE
-    dst: /usr/share/licenses/openlogi/LICENSE-APACHE
+    dst: /usr/share/licenses/roadie/LICENSE-APACHE
     file_info:
       mode: 0644
 
   - src: LICENSE-MIT
-    dst: /usr/share/licenses/openlogi/LICENSE-MIT
+    dst: /usr/share/licenses/roadie/LICENSE-MIT
     file_info:
       mode: 0644
 

@@ -3,7 +3,11 @@ use super::*;
 #[test]
 fn collect_assets_requires_minisign_signature_for_each_dmg() {
     let dist = tempfile::tempdir().unwrap();
-    fs_err::write(dist.path().join("OpenLogi-v1.2.3-macos-arm64.dmg"), b"dmg").unwrap();
+    fs_err::write(
+        dist.path().join("OpenRoadie-v1.2.3-macos-arm64.dmg"),
+        b"dmg",
+    )
+    .unwrap();
 
     assert!(
         collect_assets(
@@ -18,9 +22,14 @@ fn collect_assets_requires_minisign_signature_for_each_dmg() {
 #[test]
 fn collect_assets_publishes_signature_url() {
     let dist = tempfile::tempdir().unwrap();
-    fs_err::write(dist.path().join("OpenLogi-v1.2.3-macos-arm64.dmg"), b"dmg").unwrap();
     fs_err::write(
-        dist.path().join("OpenLogi-v1.2.3-macos-arm64.dmg.minisig"),
+        dist.path().join("OpenRoadie-v1.2.3-macos-arm64.dmg"),
+        b"dmg",
+    )
+    .unwrap();
+    fs_err::write(
+        dist.path()
+            .join("OpenRoadie-v1.2.3-macos-arm64.dmg.minisig"),
         b"signature",
     )
     .unwrap();
@@ -34,7 +43,7 @@ fn collect_assets_publishes_signature_url() {
 
     assert_eq!(
         assets[0].signature_url,
-        "https://updates.example/releases/v1.2.3/OpenLogi-v1.2.3-macos-arm64.dmg.minisig"
+        "https://updates.example/releases/v1.2.3/OpenRoadie-v1.2.3-macos-arm64.dmg.minisig"
     );
 }
 
@@ -44,8 +53,8 @@ fn collect_assets_skips_windows_artifacts_unless_opted_in() {
     // the release workflow's R2 upload step doesn't ship.
     let dist = tempfile::tempdir().unwrap();
     for name in [
-        "OpenLogi-v1.2.3-windows-x86_64.msi",
-        "OpenLogi-v1.2.3-windows-x86_64.zip",
+        "OpenRoadie-v1.2.3-windows-x86_64.msi",
+        "OpenRoadie-v1.2.3-windows-x86_64.zip",
     ] {
         fs_err::write(dist.path().join(name), b"artifact").unwrap();
         fs_err::write(dist.path().join(format!("{name}.minisig")), b"signature").unwrap();
@@ -65,9 +74,9 @@ fn collect_assets_skips_windows_artifacts_unless_opted_in() {
 fn collect_assets_includes_windows_msi_and_zip_per_arch() {
     let dist = tempfile::tempdir().unwrap();
     for name in [
-        "OpenLogi-v1.2.3-windows-x86_64.msi",
-        "OpenLogi-v1.2.3-windows-arm64.msi",
-        "OpenLogi-v1.2.3-windows-x86_64.zip",
+        "OpenRoadie-v1.2.3-windows-x86_64.msi",
+        "OpenRoadie-v1.2.3-windows-arm64.msi",
+        "OpenRoadie-v1.2.3-windows-x86_64.zip",
     ] {
         fs_err::write(dist.path().join(name), b"artifact").unwrap();
         fs_err::write(dist.path().join(format!("{name}.minisig")), b"signature").unwrap();
@@ -95,8 +104,8 @@ fn collect_assets_includes_windows_msi_and_zip_per_arch() {
 fn collect_assets_skips_linux_packages_and_foreign_archives() {
     let dist = tempfile::tempdir().unwrap();
     for name in [
-        "openlogi-v1.2.3-linux-amd64.deb",
-        "openlogi-v1.2.3-linux-amd64.rpm",
+        "roadie-v1.2.3-linux-amd64.deb",
+        "roadie-v1.2.3-linux-amd64.rpm",
         "not-an-artifact.zip",
         "SHA256SUMS",
     ] {

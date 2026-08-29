@@ -2,7 +2,7 @@
 
 ## Our Pledge
 
-We as members, contributors, and leaders of OpenLogi pledge to make
+We as members, contributors, and leaders of OpenRoadie pledge to make
 participation in our community a harassment-free experience for everyone,
 regardless of age, body size, visible or invisible disability, ethnicity, sex
 characteristics, gender identity and expression, level of experience, education,
@@ -24,7 +24,7 @@ community include:
   and learning from the experience.
 - Focusing on what is best not just for us as individuals, but for the overall
   community.
-- Keeping technical discussions specific, actionable, and relevant to OpenLogi's
+- Keeping technical discussions specific, actionable, and relevant to OpenRoadie's
   project goals.
 - Respecting user privacy when sharing logs, device information, screenshots, or
   configuration files.
@@ -58,12 +58,12 @@ reasons for moderation decisions when appropriate.
 
 ## Scope
 
-This Code of Conduct applies within all OpenLogi community spaces, including
+This Code of Conduct applies within all OpenRoadie community spaces, including
 GitHub issues, pull requests, discussions, comments, community chat rooms,
 social channels, release announcement threads, and project events.
 
 This Code of Conduct also applies when an individual is officially representing
-the OpenLogi community in public spaces. Examples of representing the community
+the OpenRoadie community in public spaces. Examples of representing the community
 include using an official project email address, posting via an official social
 media account, or acting as an appointed representative at an online or offline
 event.
@@ -73,7 +73,7 @@ event.
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement at:
 
-`conduct@openlogi.org`
+`conduct@roadie.org`
 
 All complaints will be reviewed and investigated promptly and fairly. Community
 leaders are obligated to respect the privacy and security of the reporter of any

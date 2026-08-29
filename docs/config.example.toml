@@ -1,4 +1,4 @@
-# OpenLogi configuration example. Copy only the sections you need.
+# OpenRoadie configuration example. Copy only the sections you need.
 schema_version = 6
 selected_device = "receiver:aabbccdd:slot:1"
 
@@ -17,8 +17,8 @@ thumbwheel_sensitivity = 14
 appearance = "system"
 ui_scale = "normal"
 device_view_mode = "grid"
-# macOS only: "openlogi" (the signed icon) or "prism".
-app_icon = "openlogi"
+# macOS only: "roadie" (the signed icon) or "prism".
+app_icon = "roadie"
 
 [devices."receiver:aabbccdd:slot:1"]
 custom_name = "Office mouse"
