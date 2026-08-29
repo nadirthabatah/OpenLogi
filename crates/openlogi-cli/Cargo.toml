@@ -13,7 +13,17 @@ categories = ["command-line-utilities", "hardware-support"]
 [dependencies]
 openlogi-core = { path = "../openlogi-core", version = "0.8.1" }
 openlogi-hid = { path = "../openlogi-hid", version = "0.8.1" }
-openlogi-streamdeck = { path = "../openlogi-streamdeck", version = "0.8.1" }
+openlogi-streamdeck = { path = "../openlogi-streamdeck", version = "0.8.1", features = [
+    "render",
+] }
+# Reading whatever picture a user points at; the encoding for the device
+# itself is openlogi-streamdeck's job.
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+    "png",
+    "gif",
+    "bmp",
+] }
 openlogi-camera = { path = "../openlogi-camera", version = "0.8.1" }
 openlogi-assets = { path = "../openlogi-assets", version = "0.8.1" }
 openlogi-ipc = { path = "../openlogi-ipc", version = "0.8.1" }

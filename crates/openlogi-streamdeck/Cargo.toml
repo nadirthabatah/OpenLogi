@@ -10,8 +10,20 @@ description = "Pure Elgato Stream Deck wire protocol: device catalog, report enc
 keywords = ["streamdeck", "elgato", "hid", "macropad", "protocol"]
 categories = ["hardware-support", "encoding"]
 
+[features]
+# Encoding a picture for a key screen. Off by default: the protocol half of
+# this crate needs no image codec, and the wasm portability job checks it
+# without one.
+render = ["dep:image"]
+
 [dependencies]
 thiserror = { workspace = true }
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+], optional = true }
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
 [lints]
 workspace = true

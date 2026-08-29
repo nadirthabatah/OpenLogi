@@ -9,12 +9,14 @@
 //! paste into an issue, which is a far better way to close that gap than
 //! asking a user to describe what happened.
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow};
 use clap::{Args, Subcommand};
 use openlogi_hid::streamdeck::{self, Attached, Session};
+use openlogi_streamdeck::render;
 use openlogi_streamdeck::report::{Brightness, KeyAction};
 
 /// Exit status for "the scan succeeded, but no Stream Deck is attached".
@@ -42,6 +44,28 @@ pub enum StreamDeckCmd {
     Reset,
     /// Print key presses until interrupted.
     Watch,
+    /// Fill one key with a solid colour.
+    Fill(FillArgs),
+    /// Show a picture on one key. Any common image format is accepted.
+    Image(ImageArgs),
+    /// Clear every key back to black.
+    Clear,
+}
+
+#[derive(Debug, Args)]
+pub struct FillArgs {
+    /// Key index, counting from 0 at the top left.
+    pub key: u16,
+    /// Six hex digits, "RRGGBB", with no leading '#'.
+    pub colour: String,
+}
+
+#[derive(Debug, Args)]
+pub struct ImageArgs {
+    /// Key index, counting from 0 at the top left.
+    pub key: u16,
+    /// The picture to show. It is scaled and rotated to fit the key.
+    pub file: PathBuf,
 }
 
 #[derive(Debug, Args)]
@@ -106,6 +130,44 @@ impl StreamDeckCmd {
                 session.reset().await?;
                 println!("device reset to its standby screen");
             }
+            Self::Fill(args) => {
+                let (red, green, blue) = parse_colour(&args.colour)?;
+                let mut session = open_preferred(&collections).await?;
+                let model = session.model();
+                let picture = render::solid(model, red, green, blue).map_err(|e| anyhow!("{e}"))?;
+                let encoded = render::key_image(model, &picture).map_err(|e| anyhow!("{e}"))?;
+                session.set_key_image(args.key, &encoded).await?;
+                println!(
+                    "key {} filled with {} ({})",
+                    args.key,
+                    args.colour,
+                    describe_key_position(model, args.key)
+                );
+            }
+            Self::Image(args) => {
+                let picture = image::open(&args.file)
+                    .with_context(|| format!("failed to read {}", args.file.display()))?;
+                let mut session = open_preferred(&collections).await?;
+                let model = session.model();
+                let encoded = render::key_image(model, &picture).map_err(|e| anyhow!("{e}"))?;
+                session.set_key_image(args.key, &encoded).await?;
+                println!(
+                    "key {} now shows {} ({})",
+                    args.key,
+                    args.file.display(),
+                    describe_key_position(model, args.key)
+                );
+            }
+            Self::Clear => {
+                let mut session = open_preferred(&collections).await?;
+                let model = session.model();
+                let black = render::solid(model, 0, 0, 0).map_err(|e| anyhow!("{e}"))?;
+                let encoded = render::key_image(model, &black).map_err(|e| anyhow!("{e}"))?;
+                for key in 0..model.key_count() {
+                    session.set_key_image(key, &encoded).await?;
+                }
+                println!("cleared all {} keys", model.key_count());
+            }
             Self::Watch => {
                 let mut session = open_preferred(&collections).await?;
                 println!(
@@ -164,6 +226,30 @@ async fn open_preferred(collections: &[Attached]) -> Result<Session> {
     Session::open(chosen)
         .await
         .with_context(|| format!("failed to open the {}", chosen.model.name))
+}
+
+/// Parse a six-hex-digit colour.
+fn parse_colour(text: &str) -> Result<(u8, u8, u8)> {
+    let packed = (text.len() == 6)
+        .then(|| u32::from_str_radix(text, 16).ok())
+        .flatten()
+        .ok_or_else(|| {
+            anyhow!("colour must be 6 hex digits, \"RRGGBB\", with no leading '#' — got {text:?}")
+        })?;
+    // Each shift-and-mask selects one byte, so none of these can truncate.
+    Ok((
+        u8::try_from((packed >> 16) & 0xff).unwrap_or_default(),
+        u8::try_from((packed >> 8) & 0xff).unwrap_or_default(),
+        u8::try_from(packed & 0xff).unwrap_or_default(),
+    ))
+}
+
+/// Where a key sits, phrased for reading aloud.
+fn describe_key_position(model: &openlogi_streamdeck::model::Model, key: u16) -> String {
+    model.key_position(key).map_or_else(
+        |_| "out of range".to_string(),
+        |position| format!("row {}, column {}", position.row, position.column),
+    )
 }
 
 /// Describe a key event by where the key is, not only by its index.
@@ -262,4 +348,37 @@ async fn verify(collections: &[Attached]) -> Result<ExitCode> {
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_colour;
+
+    #[test]
+    fn a_six_digit_colour_splits_into_its_channels() {
+        assert_eq!(parse_colour("ff8800").expect("valid"), (0xff, 0x88, 0x00));
+        assert_eq!(parse_colour("000000").expect("valid"), (0, 0, 0));
+        assert_eq!(parse_colour("ffffff").expect("valid"), (255, 255, 255));
+        // Channel order is the one thing here that can be silently wrong.
+        assert_eq!(parse_colour("010203").expect("valid"), (1, 2, 3));
+    }
+
+    #[test]
+    fn upper_and_lower_case_hex_both_parse() {
+        assert_eq!(
+            parse_colour("AbCdEf").expect("valid"),
+            parse_colour("abcdef").expect("valid")
+        );
+    }
+
+    #[test]
+    fn anything_that_is_not_six_hex_digits_is_refused() {
+        for bad in ["#ff8800", "ff880", "ff88000", "", "gggggg", "ff 880"] {
+            let error = parse_colour(bad).expect_err(bad);
+            assert!(
+                error.to_string().contains("6 hex digits"),
+                "the message must say what is wanted: {error}"
+            );
+        }
+    }
 }

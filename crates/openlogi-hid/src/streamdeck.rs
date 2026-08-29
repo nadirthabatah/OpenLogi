@@ -27,10 +27,12 @@
 //! report layouts.
 
 use async_hid::{
-    AsyncHidFeatureHandle as _, AsyncHidRead as _, Device, DeviceFeatureHandle, DeviceReader,
+    AsyncHidFeatureHandle as _, AsyncHidRead as _, AsyncHidWrite as _, Device, DeviceFeatureHandle,
+    DeviceReader, DeviceWriter,
 };
 use hidpp::async_trait;
 use openlogi_device::backend::BackendError;
+use openlogi_streamdeck::image::key_image_packets;
 use openlogi_streamdeck::model::{ELGATO_VENDOR_ID, Model, identify};
 use openlogi_streamdeck::report::{self, Brightness, KeyEvent, KeyStates};
 
@@ -189,6 +191,9 @@ pub trait DeckTransport: Send {
     /// Send one feature report, report id included as byte 0.
     async fn write_feature_report(&mut self, report: &[u8]) -> Result<(), BackendError>;
 
+    /// Send one output report, report id included as byte 0.
+    async fn write_output_report(&mut self, report: &[u8]) -> Result<(), BackendError>;
+
     /// Wait for the next input report, returning how many bytes it filled.
     async fn read_input_report(&mut self, buffer: &mut [u8]) -> Result<usize, BackendError>;
 }
@@ -197,6 +202,7 @@ pub trait DeckTransport: Send {
 struct HostTransport {
     feature: DeviceFeatureHandle,
     reader: DeviceReader,
+    writer: DeviceWriter,
 }
 
 #[async_trait]
@@ -204,6 +210,13 @@ impl DeckTransport for HostTransport {
     async fn write_feature_report(&mut self, report: &[u8]) -> Result<(), BackendError> {
         self.feature
             .write_feature_report(report)
+            .await
+            .map_err(crate::transport::backend_error)
+    }
+
+    async fn write_output_report(&mut self, report: &[u8]) -> Result<(), BackendError> {
+        self.writer
+            .write_output_report(report)
             .await
             .map_err(crate::transport::backend_error)
     }
@@ -237,14 +250,18 @@ impl Session {
             .open_feature_handle()
             .await
             .map_err(crate::transport::backend_error)?;
-        let reader = attached
+        let (reader, writer) = attached
             .device
-            .open_readable()
+            .open()
             .await
             .map_err(crate::transport::backend_error)?;
         Ok(Self::with_transport(
             attached.model,
-            Box::new(HostTransport { feature, reader }),
+            Box::new(HostTransport {
+                feature,
+                reader,
+                writer,
+            }),
         ))
     }
 
@@ -286,6 +303,28 @@ impl Session {
     pub async fn reset(&mut self) -> Result<(), BackendError> {
         let report = report::reset(self.model);
         self.transport.write_feature_report(report.as_bytes()).await
+    }
+
+    /// Show an encoded image on one key.
+    ///
+    /// `encoded` must already be in the format the model's screens accept —
+    /// `openlogi_streamdeck::render::key_image` produces it. The packets are
+    /// written in order, and the device displays what it has received when it
+    /// sees the last one.
+    ///
+    /// # Errors
+    ///
+    /// Fails if the model has no key screens, if `key` is not one of its
+    /// keys, if this generation's framing is not implemented, or if a write
+    /// fails partway — in which case the key is left showing whatever it had,
+    /// since the device only commits on the final packet.
+    pub async fn set_key_image(&mut self, key: u16, encoded: &[u8]) -> Result<(), BackendError> {
+        let packets = key_image_packets(self.model, key, encoded)
+            .map_err(|error| BackendError::Backend(error.to_string()))?;
+        for packet in &packets {
+            self.transport.write_output_report(packet).await?;
+        }
+        Ok(())
     }
 
     /// Wait for the next input report and return the key transitions in it.
@@ -391,17 +430,24 @@ mod tests {
         inputs: VecDeque<Vec<u8>>,
         /// Every feature report written, in order.
         written: Arc<Mutex<Vec<Vec<u8>>>>,
+        /// Every output report written, in order.
+        outputs: Arc<Mutex<Vec<Vec<u8>>>>,
     }
 
+    /// What a scripted device recorded: feature reports, then output reports.
+    type Recorded = (Arc<Mutex<Vec<Vec<u8>>>>, Arc<Mutex<Vec<Vec<u8>>>>);
+
     impl Scripted {
-        fn new(inputs: Vec<Vec<u8>>) -> (Self, Arc<Mutex<Vec<Vec<u8>>>>) {
+        fn new(inputs: Vec<Vec<u8>>) -> (Self, Recorded) {
             let written = Arc::new(Mutex::new(Vec::new()));
+            let outputs = Arc::new(Mutex::new(Vec::new()));
             (
                 Self {
                     inputs: inputs.into(),
                     written: Arc::clone(&written),
+                    outputs: Arc::clone(&outputs),
                 },
-                written,
+                (written, outputs),
             )
         }
     }
@@ -410,6 +456,14 @@ mod tests {
     impl DeckTransport for Scripted {
         async fn write_feature_report(&mut self, report: &[u8]) -> Result<(), BackendError> {
             self.written
+                .lock()
+                .expect("the test holds this lock alone")
+                .push(report.to_vec());
+            Ok(())
+        }
+
+        async fn write_output_report(&mut self, report: &[u8]) -> Result<(), BackendError> {
+            self.outputs
                 .lock()
                 .expect("the test holds this lock alone")
                 .push(report.to_vec());
@@ -506,7 +560,7 @@ mod tests {
 
     #[tokio::test]
     async fn brightness_reaches_the_device_as_the_protocol_encodes_it() {
-        let (scripted, written) = Scripted::new(Vec::new());
+        let (scripted, (written, _)) = Scripted::new(Vec::new());
         let mut session = Session::with_transport(mk2(), Box::new(scripted));
 
         session
@@ -522,7 +576,7 @@ mod tests {
 
     #[tokio::test]
     async fn reset_reaches_the_device_as_the_protocol_encodes_it() {
-        let (scripted, written) = Scripted::new(Vec::new());
+        let (scripted, (written, _)) = Scripted::new(Vec::new());
         let mut session = Session::with_transport(mk2(), Box::new(scripted));
 
         session.reset().await.expect("accepted");
@@ -532,8 +586,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_key_image_is_written_as_ordered_packets_ending_in_a_last_one() {
+        let (scripted, (_, outputs)) = Scripted::new(Vec::new());
+        let mut session = Session::with_transport(mk2(), Box::new(scripted));
+
+        // Large enough to need several packets, so ordering and the last-packet
+        // flag are both exercised rather than collapsing into one write.
+        let encoded = vec![0x5au8; 1016 * 2 + 5];
+        session
+            .set_key_image(3, &encoded)
+            .await
+            .expect("the scripted device accepts writes");
+
+        let sent = outputs.lock().expect("uncontended");
+        assert_eq!(sent.len(), 3, "three packets for this payload");
+        for (index, packet) in sent.iter().enumerate() {
+            assert_eq!(packet.len(), 1024, "every packet is a full report");
+            assert_eq!(packet[2], 3, "each names the key it is for");
+            assert_eq!(
+                u16::from_le_bytes([packet[6], packet[7]]),
+                u16::try_from(index).expect("small"),
+                "pages arrive in order"
+            );
+        }
+        assert_eq!(sent[0][3], 0);
+        assert_eq!(sent[1][3], 0);
+        assert_eq!(sent[2][3], 1, "only the last packet commits the image");
+    }
+
+    #[tokio::test]
+    async fn an_image_for_a_key_the_model_lacks_writes_nothing_at_all() {
+        let (scripted, (_, outputs)) = Scripted::new(Vec::new());
+        let mut session = Session::with_transport(mk2(), Box::new(scripted));
+
+        session
+            .set_key_image(15, &[0u8; 32])
+            .await
+            .expect_err("the MK.2 has keys 0..=14");
+
+        assert!(
+            outputs.lock().expect("uncontended").is_empty(),
+            "a refused image must not half-write to the device"
+        );
+    }
+
+    #[tokio::test]
     async fn a_press_and_release_arrive_as_two_events_across_two_reports() {
-        let (scripted, _) = Scripted::new(vec![gen2_report(&[2]), gen2_report(&[])]);
+        let (scripted, ..) = Scripted::new(vec![gen2_report(&[2]), gen2_report(&[])]);
         let mut session = Session::with_transport(mk2(), Box::new(scripted));
 
         let pressed = session.next_events().await.expect("a scripted report");
@@ -549,7 +648,7 @@ mod tests {
 
     #[tokio::test]
     async fn holding_a_key_reports_nothing_further() {
-        let (scripted, _) = Scripted::new(vec![
+        let (scripted, ..) = Scripted::new(vec![
             gen2_report(&[0]),
             gen2_report(&[0]),
             gen2_report(&[0]),
@@ -568,7 +667,7 @@ mod tests {
         // that simply is not ours.
         let mut foreign = gen2_report(&[]);
         foreign[0] = 0x05;
-        let (scripted, _) = Scripted::new(vec![foreign, gen2_report(&[7])]);
+        let (scripted, ..) = Scripted::new(vec![foreign, gen2_report(&[7])]);
         let mut session = Session::with_transport(mk2(), Box::new(scripted));
 
         assert!(
@@ -583,7 +682,7 @@ mod tests {
     async fn a_truncated_key_report_is_an_error_not_a_row_of_phantom_releases() {
         let mut truncated = gen2_report(&[]);
         truncated.truncate(9);
-        let (scripted, _) = Scripted::new(vec![truncated]);
+        let (scripted, ..) = Scripted::new(vec![truncated]);
         let mut session = Session::with_transport(mk2(), Box::new(scripted));
 
         session
@@ -596,7 +695,7 @@ mod tests {
     async fn a_missed_report_still_resolves_both_transitions() {
         // The report where key 1 came up was never delivered; the next one
         // shows 5 down instead. Diffing whole snapshots recovers both.
-        let (scripted, _) = Scripted::new(vec![gen2_report(&[1]), gen2_report(&[5])]);
+        let (scripted, ..) = Scripted::new(vec![gen2_report(&[1]), gen2_report(&[5])]);
         let mut session = Session::with_transport(mk2(), Box::new(scripted));
 
         assert_eq!(session.next_events().await.expect("report").len(), 1);
@@ -608,7 +707,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_vanished_device_surfaces_rather_than_hanging() {
-        let (scripted, _) = Scripted::new(Vec::new());
+        let (scripted, ..) = Scripted::new(Vec::new());
         let mut session = Session::with_transport(mk2(), Box::new(scripted));
         session.next_events().await.expect_err("the device is gone");
     }

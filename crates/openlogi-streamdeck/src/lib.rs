@@ -34,6 +34,8 @@
 
 pub mod image;
 pub mod model;
+#[cfg(feature = "render")]
+pub mod render;
 pub mod report;
 
 use thiserror::Error;
@@ -79,6 +81,12 @@ pub enum ProtocolError {
     ScreenlessModel {
         /// Marketing name of the model.
         model: &'static str,
+    },
+    /// A key image could not be encoded.
+    #[error("could not encode the key image: {detail}")]
+    ImageEncoding {
+        /// What the encoder reported.
+        detail: String,
     },
     /// Image framing attempted for a generation this crate does not encode.
     #[error("key image framing for the {model} is not implemented yet")]

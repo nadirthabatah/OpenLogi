@@ -14,6 +14,8 @@ openlogi diag smartshift      # toggle SmartShift and restore (smoke test)
 openlogi diag lighting ff0000 # solid colour for a wired RGB keyboard (any RRGGBB hex)
 openlogi streamdeck           # list attached Elgato Stream Decks
 openlogi streamdeck verify    # check the Stream Deck driver against your hardware
+openlogi streamdeck fill 0 ff8800   # fill the top-left key with a colour
+openlogi streamdeck image 0 icon.png # show a picture on the top-left key
 openlogi mcp                  # serve the agent to an AI assistant over MCP (see below)
 openlogi profile export FILE  # write this machine's whole configuration to a file
 openlogi profile inspect FILE # show what a profile holds, without applying it
@@ -23,7 +25,16 @@ openlogi profile import FILE  # apply a profile, backing up the current one firs
 ## Stream Decks
 
 `openlogi streamdeck` lists every Stream Deck collection the OS reports;
-`brightness`, `reset` and `watch` drive an attached device.
+`brightness`, `reset`, `watch`, `fill`, `image` and `clear` drive an attached
+device.
+
+Keys are numbered from 0 at the top left, running left to right then down, and
+every command that takes a key also prints its row and column — so "key 7" and
+"row 2, column 3" always appear together and you never have to count squares.
+
+`fill` takes six hex digits; `image` takes any common picture file and scales
+and rotates it to fit the key, so you do not have to know the model's screen
+size or which way its panel is mounted.
 
 **`openlogi streamdeck verify` is worth running first.** The Stream Deck
 protocol layer is thoroughly unit-tested but has never met a physical device,
