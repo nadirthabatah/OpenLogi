@@ -74,8 +74,17 @@ impl KeyLight {
 
     /// Where this light is.
     #[must_use]
-    pub fn address(&self) -> IpAddr {
+    pub const fn address(&self) -> IpAddr {
         self.address
+    }
+
+    /// The port it answers on.
+    ///
+    /// Nearly always [`PORT`](crate::PORT), but a light is addressed by both
+    /// halves, and a caller storing a handle to come back to needs the pair.
+    #[must_use]
+    pub const fn port(&self) -> u16 {
+        self.port
     }
 
     /// The URL of one of the light's two endpoints.

@@ -24,9 +24,12 @@ path = "src/bin/mock_agent.rs"
 [dependencies]
 roadie-agent-core = { path = "../roadie-agent-core" }
 roadie-core = { path = "../roadie-core" }
+roadie-ddc = { path = "../roadie-ddc" }
+roadie-display = { path = "../roadie-display" }
 roadie-hid = { path = "../roadie-hid" }
 roadie-hook = { path = "../roadie-hook" }
 roadie-ipc = { path = "../roadie-ipc" }
+roadie-keylight = { path = "../roadie-keylight" }
 tarpc = { workspace = true }
 interprocess = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "net", "io-util", "signal"] }

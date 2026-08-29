@@ -53,6 +53,10 @@ use roadie_hid::{
     LightCommand, PasskeyMethod, ReceiverSelector, SmartShiftAutoDisengage, SmartShiftMode,
     SmartShiftStatus, TunableTorque, WriteError,
 };
+use roadie_ipc::desk::{
+    DisplayControl, DisplayFailure, DisplayReading, DisplaySettings, DisplaySummary,
+    NetworkLightChange, NetworkLightFailure, NetworkLightSummary,
+};
 use roadie_ipc::transport;
 use roadie_ipc::{
     ActionRingCommandError, ActionRingInvocation, Agent, AgentSnapshot, AgentStatus, ClientKind,
@@ -718,9 +722,68 @@ fn agent_status() -> AgentStatus {
 }
 
 /// The scripted [`Agent`] implementation, cloned per connection.
+/// The one mock monitor that answers. The other is scripted silent.
+const MOCK_DISPLAY: &str = "i2c-7";
+
+/// What the scripted monitor reads before anything is changed.
+///
+/// The maxima differ per control on purpose — brightness at 100 and contrast
+/// at 80 — because a panel that assumes every control runs to 100 works
+/// against half the monitors on sale and is wrong about the rest.
+fn mock_display_readings() -> Vec<DisplayReading> {
+    vec![
+        DisplayReading {
+            control: DisplayControl::Brightness,
+            current: 40,
+            maximum: 100,
+        },
+        DisplayReading {
+            control: DisplayControl::Contrast,
+            current: 60,
+            maximum: 80,
+        },
+        DisplayReading {
+            control: DisplayControl::Volume,
+            current: 12,
+            maximum: 100,
+        },
+        DisplayReading {
+            control: DisplayControl::Input,
+            current: 0x11,
+            maximum: 0xFF,
+        },
+    ]
+}
+
+/// Two scripted Key Lights, one of them off.
+fn mock_lights() -> Vec<NetworkLightSummary> {
+    vec![
+        NetworkLightSummary {
+            id: "192.168.1.40:9123".to_owned(),
+            name: "Key Light Left".to_owned(),
+            on: true,
+            brightness: 40,
+            kelvin: 4000,
+        },
+        NetworkLightSummary {
+            id: "192.168.1.41:9123".to_owned(),
+            name: "Key Light Right".to_owned(),
+            on: false,
+            brightness: 20,
+            kelvin: 5000,
+        },
+    ]
+}
+
 #[derive(Clone)]
 struct MockAgent {
     state: Arc<Mutex<State>>,
+    /// The scripted monitor's readings, which writes actually change — so the
+    /// GUI is developed against something that remembers, not something that
+    /// answers the same thing forever.
+    displays: Arc<Mutex<Vec<DisplayReading>>>,
+    /// The scripted lights, likewise.
+    lights: Arc<Mutex<Vec<NetworkLightSummary>>>,
     /// The last [`Observation`] handed out, so `observe` can stamp a new
     /// generation when the rendered state differs from it.
     served: Arc<Mutex<Observation>>,
@@ -734,6 +797,8 @@ impl MockAgent {
         };
         Self {
             state: Arc::new(Mutex::new(state)),
+            displays: Arc::new(Mutex::new(mock_display_readings())),
+            lights: Arc::new(Mutex::new(mock_lights())),
             served: Arc::new(Mutex::new(served)),
         }
     }
@@ -772,6 +837,97 @@ fn snapshot_of(state: &State) -> AgentSnapshot {
               the real server impl, which is the point of the mock"
 )]
 impl Agent for MockAgent {
+    async fn list_displays(self, _: Context) -> Vec<DisplaySummary> {
+        // Two monitors and one of them silent, on purpose. A panel that has
+        // only ever been seen against monitors that answer is a panel whose
+        // most common real state — found, listed, refusing every read because
+        // of a group membership — has never been looked at.
+        vec![
+            DisplaySummary {
+                id: MOCK_DISPLAY.to_owned(),
+                name: "LG ULTRAFINE".to_owned(),
+                reachable: true,
+                unreachable_reason: None,
+            },
+            DisplaySummary {
+                id: "i2c-9".to_owned(),
+                name: "Dell U2720Q".to_owned(),
+                reachable: false,
+                unreachable_reason: Some(
+                    "/dev/i2c-9: permission denied. The I2C devices belong to the i2c \
+                     group; adding your user to it and logging back in is the fix."
+                        .to_owned(),
+                ),
+            },
+        ]
+    }
+
+    async fn read_display(self, _: Context, id: String) -> Result<DisplaySettings, DisplayFailure> {
+        if id != MOCK_DISPLAY {
+            return Err(DisplayFailure::Unreachable(
+                "/dev/i2c-9: permission denied".to_owned(),
+            ));
+        }
+        Ok(DisplaySettings {
+            id,
+            readings: self.displays.lock().await.clone(),
+        })
+    }
+
+    async fn set_display(
+        self,
+        _: Context,
+        id: String,
+        control: DisplayControl,
+        value: u16,
+    ) -> Result<DisplayReading, DisplayFailure> {
+        if id != MOCK_DISPLAY {
+            return Err(DisplayFailure::Unreachable(
+                "/dev/i2c-9: permission denied".to_owned(),
+            ));
+        }
+        let mut readings = self.displays.lock().await;
+        let reading = readings
+            .iter_mut()
+            .find(|reading| reading.control == control)
+            .ok_or(DisplayFailure::NotFound)?;
+        // Clamped rather than stored as asked, so the GUI is developed against
+        // a monitor that answers with its own number instead of the one it was
+        // handed — which is what a real one does.
+        reading.current = value.min(reading.maximum);
+        Ok(*reading)
+    }
+
+    async fn list_network_lights(self, _: Context) -> Vec<NetworkLightSummary> {
+        self.lights.lock().await.clone()
+    }
+
+    async fn set_network_light(
+        self,
+        _: Context,
+        id: String,
+        change: NetworkLightChange,
+    ) -> Result<NetworkLightSummary, NetworkLightFailure> {
+        if change.is_empty() {
+            return Err(NetworkLightFailure::NothingToDo);
+        }
+        let mut lights = self.lights.lock().await;
+        let light = lights
+            .iter_mut()
+            .find(|light| light.id == id)
+            .ok_or(NetworkLightFailure::NotFound)?;
+        if let Some(on) = change.power {
+            light.on = on;
+        }
+        if let Some(percent) = change.brightness_percent {
+            light.brightness = percent.clamp(3, 100);
+        }
+        if let Some(kelvin) = change.kelvin {
+            light.kelvin = kelvin.clamp(2900, 7000);
+        }
+        Ok(light.clone())
+    }
+
     async fn protocol_version(self, _: Context) -> u32 {
         PROTOCOL_VERSION
     }
