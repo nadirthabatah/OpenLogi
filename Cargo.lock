@@ -5486,6 +5486,7 @@ dependencies = [
  "openlogi-camera",
  "openlogi-core",
  "openlogi-hid",
+ "openlogi-inject",
  "openlogi-ipc",
  "openlogi-streamdeck",
  "png 0.17.16",

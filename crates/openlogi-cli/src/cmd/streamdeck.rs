@@ -24,6 +24,12 @@ use openlogi_streamdeck::report::{Brightness, KeyAction};
 /// Exit status for "the scan succeeded, but no Stream Deck is attached".
 const NOTHING_FOUND: u8 = 2;
 
+/// Exit status for "the layout binds actions that run programs, and they were
+/// not accepted". Distinct from a read or parse failure so a script can tell
+/// them apart — the same status `openlogi profile import` uses for the same
+/// reason.
+const UNTRUSTED: u8 = 3;
+
 /// How long `verify` and `watch` wait for a key press.
 const WATCH: Duration = Duration::from_secs(15);
 
@@ -56,6 +62,8 @@ pub enum StreamDeckCmd {
     Clear,
     /// Apply a whole deck layout from a file.
     Apply(PathArgs),
+    /// Apply a layout, then run it: pressing a key performs its action.
+    Run(RunArgs),
     /// Write an example layout file to get started from.
     Example(PathArgs),
 }
@@ -64,6 +72,19 @@ pub enum StreamDeckCmd {
 pub struct PathArgs {
     /// The layout file.
     pub file: PathBuf,
+}
+
+#[derive(Debug, Args)]
+pub struct RunArgs {
+    /// The layout file.
+    pub file: PathBuf,
+    /// Accept actions that run a program or type text.
+    ///
+    /// Without this, a layout carrying any such action is refused and nothing
+    /// is applied. Inspect the file first — the refusal lists exactly what it
+    /// found and where.
+    #[arg(long)]
+    pub accept_actions: bool,
 }
 
 #[derive(Debug, Args)]
@@ -129,8 +150,19 @@ impl StreamDeckCmd {
         // Stream Deck found" would send someone hunting the wrong problem.
         let parsed = match &self {
             Self::Apply(args) => Some(read_layout(&args.file)?),
+            Self::Run(args) => Some(read_layout(&args.file)?),
             _ => None,
         };
+
+        // A layout that would run programs is refused before the device is
+        // even opened, so nothing is applied and nothing is bound.
+        if let Self::Run(args) = &self
+            && !args.accept_actions
+            && let Some(layout) = &parsed
+            && refuse_untrusted(layout)?
+        {
+            return Ok(ExitCode::from(UNTRUSTED));
+        }
 
         let collections = streamdeck::attached()
             .await
@@ -140,30 +172,43 @@ impl StreamDeckCmd {
             return Ok(ExitCode::from(NOTHING_FOUND));
         }
 
+        self.dispatch(&collections, parsed).await
+    }
+
+    /// The half of the command tree that needs an attached device.
+    ///
+    /// Split from [`Self::run`], which first handles everything that does
+    /// not: writing an example, reading a layout, and refusing one that
+    /// would run programs.
+    async fn dispatch(
+        self,
+        collections: &[Attached],
+        parsed: Option<layout::Layout>,
+    ) -> Result<ExitCode> {
         match self {
-            Self::List => list(&collections),
-            Self::Verify => return verify(&collections).await,
+            Self::List => list(collections),
+            Self::Verify => return verify(collections).await,
             Self::Brightness(args) => {
                 let brightness =
                     Brightness::new(args.percent).map_err(|error| anyhow!("{error}"))?;
-                let mut session = open_preferred(&collections).await?;
+                let mut session = open_preferred(collections).await?;
                 session.set_brightness(brightness).await?;
                 println!("brightness set to {}%", args.percent);
             }
             Self::Reset => {
-                let mut session = open_preferred(&collections).await?;
+                let mut session = open_preferred(collections).await?;
                 session.reset().await?;
                 println!("device reset to its standby screen");
             }
             Self::Fill(args) => {
                 let colour = parse_colour(&args.colour)?;
-                draw(&collections, args.key, &Drawing::Fill(colour)).await?;
+                draw(collections, args.key, &Drawing::Fill(colour)).await?;
             }
             Self::Label(args) => {
                 let ink = parse_colour(&args.colour)?;
                 let paper = parse_colour(&args.background)?;
                 draw(
-                    &collections,
+                    collections,
                     args.key,
                     &Drawing::Label(&args.text, ink, paper),
                 )
@@ -173,14 +218,14 @@ impl StreamDeckCmd {
                 let picture = image::open(&args.file)
                     .with_context(|| format!("failed to read {}", args.file.display()))?;
                 draw(
-                    &collections,
+                    collections,
                     args.key,
                     &Drawing::Picture(&picture, &args.file),
                 )
                 .await?;
             }
             Self::Clear => {
-                let mut session = open_preferred(&collections).await?;
+                let mut session = open_preferred(collections).await?;
                 let model = session.model();
                 let black = render::solid(model, 0, 0, 0).map_err(|e| anyhow!("{e}"))?;
                 let encoded = render::key_image(model, &black).map_err(|e| anyhow!("{e}"))?;
@@ -191,12 +236,16 @@ impl StreamDeckCmd {
             }
             Self::Apply(args) => {
                 let layout = parsed.ok_or_else(|| anyhow!("the layout was not read"))?;
-                return apply(&collections, &args.file, &layout).await;
+                return apply(collections, &args.file, &layout).await;
+            }
+            Self::Run(args) => {
+                let layout = parsed.ok_or_else(|| anyhow!("the layout was not read"))?;
+                return run_layout(collections, &args.file, &layout).await;
             }
             // Handled before the device scan above.
             Self::Example(_) => unreachable!("example returns before the device scan"),
             Self::Watch => {
-                let mut session = open_preferred(&collections).await?;
+                let mut session = open_preferred(collections).await?;
                 println!(
                     "watching {} — press its keys; interrupt to stop",
                     session.model().name
@@ -239,6 +288,23 @@ colour = "ff4040"
 # [[keys]]
 # index = 2
 # image = "icons/camera.png"
+
+# `action` says what pressing the key does, drawn from the same catalogue
+# every other device here uses — so a Stream Deck key and a mouse button are
+# bound the same way. Apply the faces with `apply`; act on presses with `run`.
+#
+# [[keys]]
+# index = 3
+# label = "COPY"
+# action = "Copy"
+#
+# An action that runs a program or types text needs `run --accept-actions`,
+# which is your decision to trust where the layout came from.
+#
+# [[keys]]
+# index = 4
+# label = "BUILD"
+# action = { RunShellCommand = "make -C ~/project" }
 "#;
 
 /// Read and parse a layout file, without needing a device.
@@ -295,6 +361,90 @@ async fn apply(collections: &[Attached], file: &Path, layout: &layout::Layout) -
         file.display()
     );
     Ok(ExitCode::SUCCESS)
+}
+
+/// Report a layout's program-running actions, if it has any.
+///
+/// Returns whether the layout was refused. Same rule, same audit and the same
+/// wording as importing a profile: whether a layout's source is trustworthy is
+/// a judgement about provenance, and it belongs to the person at the keyboard.
+fn refuse_untrusted(layout: &layout::Layout) -> Result<bool> {
+    let findings =
+        crate::profile::audit_serializable(layout).context("failed to audit the layout")?;
+    if findings.is_empty() {
+        return Ok(false);
+    }
+    eprintln!(
+        "this layout binds {} action(s) that would run a program or type text on your \
+         machine. Nothing has been applied. Review them, then re-run with \
+         --accept-actions if you trust the source:",
+        findings.len()
+    );
+    for finding in &findings {
+        eprintln!("  {finding}");
+    }
+    Ok(true)
+}
+
+/// Apply a layout, then act on key presses until interrupted.
+///
+/// The two halves of a macro pad: the face, and what pressing it does. Actions
+/// come from the same catalogue every other device here uses, so a Stream Deck
+/// key and a mouse button are bound the same way and mean the same thing.
+async fn run_layout(
+    collections: &[Attached],
+    file: &Path,
+    layout: &layout::Layout,
+) -> Result<ExitCode> {
+    apply(collections, file, layout).await?;
+
+    let bound: std::collections::BTreeMap<u16, &openlogi_core::binding::Action> = layout
+        .keys
+        .iter()
+        .filter_map(|key| key.action.as_ref().map(|action| (key.index, action)))
+        .collect();
+    if bound.is_empty() {
+        println!();
+        println!("No key in this layout has an action, so there is nothing to run.");
+        println!("Add an `action` to a key — `openlogi streamdeck example` shows how.");
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let mut session = open_preferred(collections).await?;
+    let model = session.model();
+    println!();
+    println!("Running {} bound key(s). Interrupt to stop.", bound.len());
+    for (index, action) in &bound {
+        println!(
+            "  key {index} ({}) -> {action:?}",
+            describe_key_position(model, *index)
+        );
+    }
+    println!();
+
+    loop {
+        for event in session.next_events().await? {
+            // Act on the press, not the release: a key that fires twice per
+            // push would double every action bound to it.
+            if event.action != KeyAction::Pressed {
+                continue;
+            }
+            let Some(action) = bound.get(&event.key) else {
+                println!(
+                    "  key {} pressed ({}) — nothing bound",
+                    event.key,
+                    describe_key_position(model, event.key)
+                );
+                continue;
+            };
+            println!(
+                "  key {} pressed ({}) -> {action:?}",
+                event.key,
+                describe_key_position(model, event.key)
+            );
+            openlogi_inject::execute(action);
+        }
+    }
 }
 
 /// What to put on a key.
@@ -587,7 +737,65 @@ async fn check_key_press(session: &mut Session, painted: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_colour;
+    use super::{EXAMPLE_LAYOUT, layout, parse_colour};
+
+    /// The example is the first layout most people ever run, and until this
+    /// test it was the one layout nothing checked. A stray word in it is a
+    /// parse error handed to someone on their first attempt.
+    #[test]
+    fn the_shipped_example_parses_and_validates() {
+        let parsed = layout::Layout::parse(std::path::Path::new("example.toml"), EXAMPLE_LAYOUT)
+            .expect("the example we hand people must parse");
+        // Every model with key screens, so the example is not quietly sized
+        // for whichever deck happened to be on the author's desk. The Pedal
+        // has keys but no screens, so a face layout cannot apply to it.
+        for model in openlogi_streamdeck::model::MODELS
+            .iter()
+            .filter(|model| model.screens.is_some())
+        {
+            parsed
+                .validate(model)
+                .unwrap_or_else(|error| panic!("example rejected on the {}: {error}", model.name));
+        }
+    }
+
+    /// The example documents `action` in comments, and a comment cannot fail
+    /// to compile. These are those exact snippets, uncommented: if the action
+    /// schema ever moves, the example stops teaching a shape that works.
+    #[test]
+    fn the_action_forms_the_example_documents_are_real() {
+        let source = "\
+[[keys]]
+index = 3
+label = \"COPY\"
+action = \"Copy\"
+
+[[keys]]
+index = 4
+label = \"BUILD\"
+action = { RunShellCommand = \"make -C ~/project\" }
+
+[[keys]]
+index = 5
+label = \"SHOT\"
+action = { CustomShortcut = \"cmd+shift+4\" }
+";
+        let parsed = layout::Layout::parse(std::path::Path::new("actions.toml"), source)
+            .expect("the documented action forms must parse");
+        let actions: Vec<_> = parsed.keys.iter().map(|key| key.action.clone()).collect();
+        assert_eq!(
+            actions,
+            vec![
+                Some(openlogi_core::binding::Action::Copy),
+                Some(openlogi_core::binding::Action::RunShellCommand(
+                    "make -C ~/project".to_owned()
+                )),
+                Some(openlogi_core::binding::Action::CustomShortcut(
+                    "cmd+shift+4".parse().expect("a chord the docs offer")
+                )),
+            ]
+        );
+    }
 
     #[test]
     fn a_six_digit_colour_splits_into_its_channels() {

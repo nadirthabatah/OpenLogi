@@ -19,6 +19,7 @@ openlogi streamdeck image 0 icon.png # show a picture on the top-left key
 openlogi streamdeck label 0 "MUTE MIC"  # write a label, sized to fit
 openlogi streamdeck example deck.toml   # write a layout file to start from
 openlogi streamdeck apply deck.toml     # apply a whole layout at once
+openlogi streamdeck run deck.toml       # apply it, then act on key presses
 openlogi mcp                  # serve the agent to an AI assistant over MCP (see below)
 openlogi profile export FILE  # write this machine's whole configuration to a file
 openlogi profile inspect FILE # show what a profile holds, without applying it
@@ -29,7 +30,7 @@ openlogi profile import FILE  # apply a profile, backing up the current one firs
 
 `openlogi streamdeck` lists every Stream Deck collection the OS reports;
 `brightness`, `reset`, `watch`, `fill`, `image` and `clear` drive an attached
-device.
+device. `apply` and `run` work from a layout file.
 
 Keys are numbered from 0 at the top left, running left to right then down, and
 every command that takes a key also prints its row and column — so "key 7" and
@@ -62,9 +63,42 @@ before the hardware arrives.
 
 A layout is checked before anything is written: a key the attached model does
 not have, the same key listed twice, a key with both a label and an image, or
-one with neither, are all refused with nothing half-applied. A misspelled field
-is refused too rather than silently ignored — a key that just stays blank tells
-you nothing.
+one with nothing at all, are all refused with nothing half-applied. A
+misspelled field is refused too rather than silently ignored — a key that just
+stays blank tells you nothing.
+
+### Making keys do things
+
+A face is half a macro pad; `action` is the other half:
+
+```toml
+[[keys]]
+index = 3
+label = "COPY"
+action = "Copy"
+```
+
+`openlogi streamdeck apply` only paints the faces. `openlogi streamdeck run
+deck.toml` applies the layout and then stays running: each time you press a
+bound key, its action fires. Actions come from the same catalogue every other
+device here uses, so a Stream Deck key and a mouse button are bound the same
+way and mean the same thing — `"Copy"`, `"NextTab"`, `"VolumeUp"`,
+`{ CustomShortcut = "cmd+shift+4" }`, and the rest. A key may carry an action
+with no label or image, if you want it to do something without showing
+anything; only a key with no face *and* no action is refused.
+
+Actions fire on the press, not the release, so a key does its thing once per
+push rather than twice.
+
+Some actions run a program or type text — `RunShellCommand`, `RunAppleScript`,
+`OpenApplication`, `TypeText`. A layout carrying any of those is **refused
+before the device is even opened**: nothing is applied and nothing is bound.
+The refusal names each one and where it is, so you can read them before
+deciding. `--accept-actions` proceeds anyway, and is deliberately your
+decision rather than a default — it is the same rule, and the same list, that
+`openlogi profile import` applies to a profile from somewhere else. A layout
+file is a thing people will send each other, and a key that silently runs a
+command when pressed is exactly the shape a malicious one would take.
 
 ### Keys
 
