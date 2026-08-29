@@ -1,7 +1,8 @@
 # Usage (CLI)
 
 The `openlogi` command-line tool. For install and configuration, see the
-[README](../README.md).
+[README](../README.md). To check this build against your own peripherals, see
+[VERIFYING.md](VERIFYING.md).
 
 ```sh
 openlogi list                 # paired devices: slot, codename, kind, online, battery
