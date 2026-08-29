@@ -156,6 +156,17 @@ next `cargo check` moves it again. Let the lock pick up the genuinely new
 packages, then `cargo update -p gpui --precise cc053a4a...`, then check that
 `git diff Cargo.lock` shows only the new crates.
 
+**Read the three surfaces side by side; the odd one out is usually a bug.**
+Every device family is reachable three ways — the command line, the MCP
+server, and the GUI through the agent — and they are written at different
+times, so they drift. Four defects this session were found that way and none
+of them by a failing test. A Key Light that stopped answering was listed by
+the CLI and by MCP, both with a comment explaining why, and silently dropped
+by the agent, so it vanished from the GUI. `roadie doctor` claimed "no
+peripheral of any kind" while `roadie devices` had grown two families it did
+not check. The technique is cheap: pick one question — what happens when the
+device does not answer? — and ask it of all three.
+
 **A mutation can survive because the data happens to be sorted.** Swapping
 "take the newest applicable firmware table" for "take the last one listed"
 changed nothing in `roadie-scarlett`, because the tables are listed oldest
