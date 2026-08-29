@@ -213,7 +213,9 @@ be a deliberate act of editing, not a flag on a convenience command.
 
 `set` and `unset` edit the layout's text rather than rewriting it from what
 they parsed, so the comments you wrote, your blank lines, and the order you put
-things in all survive an edit. That is the same choice OpenLogi already made
+things in all survive an edit. So do the file's line endings and its
+byte-order mark if it has one — a layout written on Windows stays a file written
+on Windows, rather than coming back with every line changed. That is the same choice OpenLogi already made
 for `config.toml`; layouts were simply missed.
 
 It matters most for the person least able to notice: a rewrite reports success,

@@ -18,6 +18,33 @@ use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, Value, value};
 
 use super::{Key, LayoutError};
 
+/// A byte-order mark, which some Windows editors put at the front of a file.
+const BOM: &str = "\u{feff}";
+
+/// Give an edited document the line endings and byte-order mark it arrived
+/// with.
+///
+/// The parser accepts both kinds of line ending and hands back only the one,
+/// so a file written on Windows came back with every line changed — which is
+/// exactly what this module exists to prevent, and shows up as a whole-file
+/// diff in the git repository the documentation suggests keeping layouts in.
+///
+/// The mark is put back for the same reason. It parsed with it, so removing it
+/// is a change to someone's file made for no benefit to them.
+fn keep_file_shape(source: &str, edited: String) -> String {
+    let edited = if source.contains("\r\n") {
+        // Flattened before being expanded, so a line that already ends CRLF
+        // cannot come out as CRCRLF.
+        edited.replace("\r\n", "\n").replace('\n', "\r\n")
+    } else {
+        edited
+    };
+    if source.starts_with(BOM) && !edited.starts_with(BOM) {
+        return format!("{BOM}{edited}");
+    }
+    edited
+}
+
 /// Parse a layout document, keeping its formatting.
 fn document(source: &str) -> Result<DocumentMut, LayoutError> {
     source
@@ -98,7 +125,7 @@ fn position_of(keys: &ArrayOfTables, index: u16) -> Option<usize> {
 pub fn set_key(source: &str, key: &Key) -> Result<String, LayoutError> {
     let mut document = document(source)?;
     if prepare_keys(&mut document)? == KeysForm::Inline {
-        return set_key_inline(document, key);
+        return Ok(keep_file_shape(source, set_key_inline(document, key)?));
     }
     let keys =
         document["keys"]
@@ -121,7 +148,7 @@ pub fn set_key(source: &str, key: &Key) -> Result<String, LayoutError> {
         // arranged stays arranged; nothing downstream cares about the order.
         keys.push(table);
     }
-    Ok(document.to_string())
+    Ok(keep_file_shape(source, document.to_string()))
 }
 
 /// Remove `index` from a layout's text, reporting whether it was there.
@@ -132,7 +159,8 @@ pub fn set_key(source: &str, key: &Key) -> Result<String, LayoutError> {
 pub fn remove_key(source: &str, index: u16) -> Result<(String, bool), LayoutError> {
     let mut document = document(source)?;
     if prepare_keys(&mut document)? == KeysForm::Inline {
-        return remove_key_inline(document, index);
+        let (edited, removed) = remove_key_inline(document, index)?;
+        return Ok((keep_file_shape(source, edited), removed));
     }
     let keys =
         document["keys"]
@@ -141,13 +169,13 @@ pub fn remove_key(source: &str, index: u16) -> Result<(String, bool), LayoutErro
                 detail: "`keys` stopped being a list of keys while it was being edited".to_owned(),
             })?;
     let Some(at) = position_of(keys, index) else {
-        return Ok((document.to_string(), false));
+        return Ok((keep_file_shape(source, document.to_string()), false));
     };
     keys.remove(at);
     // An emptied array of tables would otherwise render as nothing at all,
     // which is fine, but leaving the empty `keys` key behind is tidier to
     // diff than having it appear and disappear as the last key comes and goes.
-    Ok((document.to_string(), true))
+    Ok((keep_file_shape(source, document.to_string()), true))
 }
 
 /// [`set_key`] for a file that spells its keys inline.
@@ -547,5 +575,63 @@ label = \"B\"
     fn a_keys_field_of_the_wrong_kind_is_still_refused() {
         set_key("keys = 3\n", &key(0, "X")).expect_err("a number is not a list of keys");
         set_key("keys = [1, 2]\n", &key(0, "X")).expect_err("a list of numbers is not either");
+    }
+
+    /// A layout written on Windows has CRLF line endings, and the parser
+    /// accepts both kinds while handing back only one — so an edit came back
+    /// with every line changed. That is exactly what this module exists to
+    /// prevent, and it shows up as a whole-file diff in the git repository the
+    /// documentation suggests keeping layouts in.
+    #[test]
+    fn a_file_written_on_windows_keeps_its_line_endings() {
+        let source =
+            "# windows file\r\nbrightness = 80\r\n\r\n[[keys]]\r\nindex = 0\r\nlabel = \"OLD\"\r\n";
+        let edited = set_key(source, &key(1, "NEW")).expect("edited");
+        assert!(edited.contains("# windows file\r\n"), "{edited:?}");
+        assert!(
+            !edited.contains("\r\r\n"),
+            "a line that already ended CRLF must not come out CRCRLF: {edited:?}"
+        );
+        // The lines the edit added get the file's endings too, not the
+        // serializer's.
+        assert!(edited.contains("label = \"NEW\"\r\n"), "{edited:?}");
+        assert!(
+            !edited.replace("\r\n", "").contains('\n'),
+            "a stray bare newline: {edited:?}"
+        );
+        // And it still reads back as the layout it is.
+        assert_eq!(parsed(&edited).keys.len(), 2);
+    }
+
+    /// A file that uses plain newlines must not acquire carriage returns.
+    #[test]
+    fn a_file_written_anywhere_else_keeps_plain_newlines() {
+        let edited = set_key("brightness = 80\n", &key(0, "X")).expect("edited");
+        assert!(!edited.contains('\r'), "{edited:?}");
+    }
+
+    /// Some Windows editors put a byte-order mark at the front. The file
+    /// parsed with it, so taking it away is a change made to someone's file
+    /// for no benefit to them.
+    #[test]
+    fn a_byte_order_mark_is_left_where_it_was() {
+        let source = "\u{feff}brightness = 80\n";
+        let edited = set_key(source, &key(0, "X")).expect("edited");
+        assert!(edited.starts_with('\u{feff}'), "{edited:?}");
+        assert_eq!(
+            edited.matches('\u{feff}').count(),
+            1,
+            "and only one: {edited:?}"
+        );
+    }
+
+    /// Removing a key preserves the file's shape too, not only setting one.
+    #[test]
+    fn removing_a_key_keeps_the_files_line_endings() {
+        let source = "[[keys]]\r\nindex = 0\r\nlabel = \"A\"\r\n\r\n[[keys]]\r\nindex = 1\r\nlabel = \"B\"\r\n";
+        let (edited, removed) = remove_key(source, 0).expect("removed");
+        assert!(removed);
+        assert!(edited.contains("\r\n"), "{edited:?}");
+        assert!(!edited.replace("\r\n", "").contains('\n'), "{edited:?}");
     }
 }
