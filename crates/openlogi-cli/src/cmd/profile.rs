@@ -250,3 +250,49 @@ fn restore_layouts(named: &Path) -> Result<Vec<String>> {
     let library = crate::cmd::streamdeck::layout_library()?;
     bundle::restore_layouts(named, &library)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::profile_file;
+
+    /// Where the configuration lives decides what `import` reads and what
+    /// `inspect` reports. Getting it wrong reads the wrong file, or reports a
+    /// path that is not the one that was applied — and both look like the
+    /// command worked.
+    #[test]
+    fn a_toml_path_is_itself_the_configuration() {
+        assert_eq!(
+            profile_file(Path::new("setup.toml")),
+            PathBuf::from("setup.toml")
+        );
+        assert_eq!(
+            profile_file(Path::new("/backups/mine.TOML")),
+            PathBuf::from("/backups/mine.TOML"),
+            "the extension is matched whatever its case, as everywhere else"
+        );
+    }
+
+    #[test]
+    fn any_other_path_keeps_its_configuration_inside_the_bundle() {
+        assert_eq!(
+            profile_file(Path::new("my-setup")),
+            PathBuf::from("my-setup/config.toml")
+        );
+        assert_eq!(
+            profile_file(Path::new("/backups/desk")),
+            PathBuf::from("/backups/desk/config.toml")
+        );
+    }
+
+    /// A trailing separator is how a shell completes a directory name, so it
+    /// arrives this way often. It must not change what the path means.
+    #[test]
+    fn a_trailing_separator_still_names_a_bundle() {
+        assert_eq!(
+            profile_file(Path::new("my-setup/")),
+            PathBuf::from("my-setup/config.toml")
+        );
+    }
+}
