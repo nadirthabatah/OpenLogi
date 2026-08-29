@@ -53,7 +53,18 @@ The tools exposed are:
 | `set_lighting` | Backlight on/off, colour, brightness |
 | `set_light` | A standalone light such as a Litra: power, brightness, colour temperature |
 | `watch_input` | Watch for a few seconds and report what was pressed |
+| `list_cameras` | Every attached webcam, of any brand, with the id the camera tools take |
+| `read_camera_controls` | A webcam's controls with current values, accepted ranges, and auto modes |
+| `set_camera_control` | Set one webcam control, checked against the range that camera reports |
 | `reload_config` | Re-read `config.toml` |
+
+The camera tools reach the device directly rather than through the agent, the
+same way `openlogi camera` does — UVC controls are a host-exposed class
+standard, not agent-owned state, so on macOS the grant that matters is the
+CLI's own. Enumeration there is deliberately **not** filtered by vendor: the
+same UVC registers answer on an Elgato, an Obsbot or a built-in camera, so
+restricting the list to one manufacturer would hide devices that are in fact
+controllable.
 
 Start from `list_devices`: its output carries, for every device, the route
 object the other tools expect back verbatim, so routes are never assembled by

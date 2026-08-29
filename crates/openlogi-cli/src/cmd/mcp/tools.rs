@@ -12,6 +12,7 @@
 //! here as a single match, which keeps the whole surface greppable from one
 //! place.
 
+mod camera;
 mod inventory;
 mod lighting;
 mod monitor;
@@ -59,6 +60,7 @@ fn no_arguments_schema() -> Value {
 pub fn catalog() -> Value {
     let mut tools = Vec::new();
     tools.extend(inventory::tools());
+    tools.extend(camera::tools());
     tools.extend(pointer::tools());
     tools.extend(lighting::tools());
     tools.extend(monitor::tools());
@@ -87,6 +89,9 @@ pub async fn call(params: &Value) -> Result<Value, String> {
         "set_lighting" => lighting::set_lighting(&arguments).await,
         "set_light" => lighting::set_light(&arguments).await,
         "watch_input" => monitor::watch_input(&arguments).await,
+        "list_cameras" => camera::list_cameras(),
+        "read_camera_controls" => camera::read_camera_controls(&arguments),
+        "set_camera_control" => camera::set_camera_control(&arguments),
         other => return Err(format!("unknown tool: {other}")),
     };
     Ok(match outcome {
@@ -161,7 +166,7 @@ mod tests {
     /// The dispatch arms in [`super::call`], as the catalog must advertise
     /// them. Kept here so a tool added to one and not the other fails a test
     /// rather than surfacing as "unknown tool" at run time.
-    const DISPATCHED: [&str; 9] = [
+    const DISPATCHED: [&str; 12] = [
         "list_devices",
         "reload_config",
         "read_dpi",
@@ -171,6 +176,9 @@ mod tests {
         "set_lighting",
         "set_light",
         "watch_input",
+        "list_cameras",
+        "read_camera_controls",
+        "set_camera_control",
     ];
 
     fn names() -> Vec<String> {
