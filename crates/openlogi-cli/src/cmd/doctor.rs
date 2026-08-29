@@ -33,7 +33,14 @@ use clap::Args;
 const PROBLEMS_FOUND: u8 = 2;
 
 #[derive(Debug, Args)]
-pub struct DoctorArgs {}
+pub struct DoctorArgs {
+    /// Print machine-readable JSON instead of prose.
+    ///
+    /// The same rendering the MCP `diagnose` tool returns, so a script and an
+    /// assistant diagnosing the same machine cannot be told different things.
+    #[arg(long)]
+    pub json: bool,
+}
 
 /// What the machine actually looks like right now.
 ///
@@ -130,14 +137,18 @@ pub async fn examine() -> Vec<Check> {
 ///
 /// Does not fail on a broken machine — that is the case it exists for. Fails
 /// only when the survey itself cannot run.
-pub async fn run(_args: DoctorArgs) -> Result<ExitCode> {
+pub async fn run(args: DoctorArgs) -> Result<ExitCode> {
     let facts = gather().await;
     let checks = diagnose(&facts);
     let problems = checks
         .iter()
         .filter(|check| matches!(check.verdict, Verdict::Problem { .. }))
         .count();
-    print!("{}", render(&checks, problems));
+    if args.json {
+        println!("{}", render_json(&checks));
+    } else {
+        print!("{}", render(&checks, problems));
+    }
     Ok(if problems == 0 {
         ExitCode::SUCCESS
     } else {
@@ -538,6 +549,42 @@ fn counted(how_many: usize, one: &str, many: &str) -> String {
     }
 }
 
+/// One check as JSON, for `--json` and for the MCP `diagnose` tool.
+///
+/// The steps travel with the finding rather than in a separate list, because a
+/// consumer that has one without the other has half of what it needs.
+#[must_use]
+pub fn check_json(check: &Check) -> serde_json::Value {
+    let (state, detail) = match &check.verdict {
+        Verdict::Fine(detail) => ("ok", detail),
+        Verdict::Undetermined(detail) => ("note", detail),
+        Verdict::Problem { detail, .. } => ("problem", detail),
+    };
+    let mut entry = serde_json::Map::new();
+    entry.insert("check".to_owned(), serde_json::json!(check.name));
+    entry.insert("state".to_owned(), serde_json::json!(state));
+    entry.insert("detail".to_owned(), serde_json::json!(detail));
+    if let Verdict::Problem { fix, .. } = &check.verdict {
+        entry.insert("steps".to_owned(), serde_json::json!(fix));
+    }
+    serde_json::Value::Object(entry)
+}
+
+/// The whole diagnosis as JSON.
+#[must_use]
+pub fn render_json(checks: &[Check]) -> String {
+    let problems = checks
+        .iter()
+        .filter(|check| matches!(check.verdict, Verdict::Problem { .. }))
+        .count();
+    let document = serde_json::json!({
+        "checks": checks.iter().map(check_json).collect::<Vec<_>>(),
+        "problems": problems,
+    });
+    serde_json::to_string_pretty(&document)
+        .unwrap_or_else(|_| r#"{"error":"the diagnosis could not be rendered as JSON"}"#.to_owned())
+}
+
 /// The report, as the text a person receives.
 ///
 /// Problems are repeated at the end as one numbered list of steps. Someone who
@@ -596,7 +643,9 @@ pub fn render(checks: &[Check], problems: usize) -> String {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{Check, Facts, Hidraw, Platform, Verdict, counted, diagnose, render, udev_lines};
+    use super::{
+        Check, Facts, Hidraw, Platform, Verdict, counted, diagnose, render, render_json, udev_lines,
+    };
 
     /// A machine where everything is fine, to vary one thing at a time from.
     fn healthy() -> Facts {
@@ -932,6 +981,47 @@ mod tests {
             vec!["1", "2", "3", "4", "5", "6", "7"],
             "numbering must run straight through: {text}"
         );
+    }
+
+    /// A consumer that gets a problem without its steps has half of what it
+    /// needs, and no way to know the other half exists.
+    #[test]
+    fn a_problem_in_json_carries_its_steps_with_it() {
+        let mut facts = healthy();
+        facts.hidraw = Some(Hidraw {
+            present: 2,
+            openable: 0,
+            blocked_vendors: vec![0x0fd9],
+        });
+        facts.hid_devices = 0;
+        facts.cameras = 0;
+
+        let text = render_json(&diagnose(&facts));
+        let parsed: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
+        let checks = parsed["checks"].as_array().expect("an array");
+        let problem = checks
+            .iter()
+            .find(|check| check["state"] == "problem")
+            .expect("a problem");
+        let steps = problem["steps"].as_array().expect("steps travel with it");
+        assert!(!steps.is_empty());
+        assert!(
+            text.contains("0fd9"),
+            "the generated rule is in the JSON too"
+        );
+    }
+
+    /// A check with nothing wrong carries no steps, rather than an empty list
+    /// a consumer might render as a heading with nothing under it.
+    #[test]
+    fn a_check_with_nothing_wrong_has_no_steps_key() {
+        let text = render_json(&diagnose(&healthy()));
+        let parsed: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
+        assert_eq!(parsed["problems"], 0);
+        for check in parsed["checks"].as_array().expect("an array") {
+            assert_ne!(check["state"], "problem");
+            assert!(check.get("steps").is_none(), "{check}");
+        }
     }
 
     /// "1 thing(s)" is unbearable read aloud: a screen reader says "thing open

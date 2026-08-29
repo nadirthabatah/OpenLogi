@@ -38,7 +38,9 @@ pub async fn diagnose() -> Result<String, String> {
         .filter(|check| matches!(check.verdict, Verdict::Problem { .. }))
         .collect();
 
-    let findings: Vec<Value> = checks.iter().map(describe).collect();
+    // The same rendering `openlogi doctor --json` prints, so a script and an
+    // assistant diagnosing the same machine cannot be told different things.
+    let findings: Vec<Value> = checks.iter().map(crate::cmd::doctor::check_json).collect();
     let steps: Vec<Value> = problems
         .iter()
         .filter_map(|check| match &check.verdict {
@@ -65,21 +67,13 @@ pub async fn diagnose() -> Result<String, String> {
     }))
 }
 
-/// One check, as the model sees it.
-fn describe(check: &Check) -> Value {
-    let (state, detail) = match &check.verdict {
-        Verdict::Fine(detail) => ("ok", detail),
-        Verdict::Undetermined(detail) => ("note", detail),
-        Verdict::Problem { detail, .. } => ("problem", detail),
-    };
-    json!({ "check": check.name, "state": state, "detail": detail })
-}
-
 #[cfg(test)]
 mod tests {
     use crate::cmd::doctor::{Check, Verdict};
 
-    use super::{describe, tools};
+    use crate::cmd::doctor::check_json as describe;
+
+    use super::tools;
 
     #[test]
     fn each_state_is_named_in_a_word_a_model_can_branch_on() {

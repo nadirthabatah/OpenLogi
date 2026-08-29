@@ -216,6 +216,47 @@ fn via_lists_or_explains_itself() {
     }
 }
 
+/// `--json` has to be *only* JSON. A stray human sentence on stdout — a
+/// warning, a "nothing found" line — makes the output unparseable, and that is
+/// the kind of thing that gets added later by someone being helpful.
+#[test]
+fn json_output_is_nothing_but_json() {
+    let sandbox = Sandbox::new("json");
+    for arguments in [
+        ["devices", "--json"].as_slice(),
+        ["doctor", "--json"].as_slice(),
+    ] {
+        let run = sandbox.run(arguments);
+        run.expect_status_in(&[0, 2]);
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&run.stdout());
+        assert!(
+            parsed.is_ok(),
+            "`openlogi {}` did not print parseable JSON:\n--- stdout ---\n{}\n--- stderr ---\n{}",
+            arguments.join(" "),
+            run.stdout(),
+            run.stderr()
+        );
+    }
+}
+
+/// The exit status has to mean the same thing with and without `--json`, or a
+/// script that adds the flag changes its own behaviour.
+#[test]
+fn asking_for_json_does_not_change_the_exit_status() {
+    let sandbox = Sandbox::new("json-status");
+    for (plain, json) in [
+        (["devices"].as_slice(), ["devices", "--json"].as_slice()),
+        (["doctor"].as_slice(), ["doctor", "--json"].as_slice()),
+    ] {
+        assert_eq!(
+            sandbox.run(plain).status(),
+            sandbox.run(json).status(),
+            "`openlogi {}` and its --json form disagree about the exit status",
+            plain.join(" ")
+        );
+    }
+}
+
 /// The whole layout library flow, which needs no hardware at all: create,
 /// list, and refuse to overwrite.
 #[test]

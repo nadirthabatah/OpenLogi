@@ -87,6 +87,10 @@ useful.
 Exit status `2` means it checked successfully and found something to fix, which
 is not the same as the command failing.
 
+`--json` prints the same findings as machine-readable data, steps included, for
+a script or another tool. The exit status is identical either way, so adding
+the flag never changes how a script behaves.
+
 ## Everything plugged in
 
 `openlogi list` answers "which Logitech devices are paired". `openlogi
@@ -113,6 +117,11 @@ sorts what it finds into three groups:
 The closing line gives a total, because a long list read aloud needs one.
 `--supported` narrows the listing to what can be configured, and still prints
 the full count so a shorter list does not read as a smaller desk.
+
+`--json` prints the same survey as machine-readable data — literally the same
+rendering the MCP `list_peripherals` tool returns, so a script and an assistant
+looking at the same desk cannot be told different things. The totals stay
+truthful under `--supported` there too.
 
 Cameras are in the list whoever made them. UVC is a class standard rather than
 a per-vendor protocol — the same brightness, exposure, focus and zoom
