@@ -1,0 +1,40 @@
+[package]
+name = "roadie-display"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Host transports for DDC/CI: reaching a real monitor over Linux I2C, macOS IOAVService, or the Windows monitor-configuration API"
+keywords = ["ddc", "ddc-ci", "monitor", "brightness", "i2c"]
+categories = ["hardware-support", "os"]
+
+[dependencies]
+roadie-ddc = { path = "../roadie-ddc", version = "0.8.1" }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+# `dxva2` is reached through windows-sys rather than a DDC crate: it is a
+# handful of calls, and the monitor-configuration API is stable enough that a
+# wrapper would only add a version to track.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Devices_Display",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+] }
+
+# IOAVService is private, so there is no typed framework crate to use — the
+# symbols are resolved with dlopen/dlsym, exactly as roadie-inject resolves its
+# private ApplicationServices SPI. CoreFoundation types come from the typed
+# crate the rest of the workspace already uses.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-foundation = { workspace = true, features = ["std", "CFDictionary", "CFString"] }
+objc2-io-kit = { workspace = true, features = ["std", "libc"] }
+
+[lints]
+workspace = true

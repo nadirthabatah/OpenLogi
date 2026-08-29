@@ -13,6 +13,7 @@ members = [
     "crates/roadie-catalog",
     "crates/roadie-via",
     "crates/roadie-ddc",
+    "crates/roadie-display",
     "crates/roadie-camera",
     "crates/roadie-permissions",
     "crates/roadie-assets",

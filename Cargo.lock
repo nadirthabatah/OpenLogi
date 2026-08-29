@@ -6660,6 +6660,19 @@ name = "roadie-device-registry"
 version = "0.8.1"
 
 [[package]]
+name = "roadie-display"
+version = "0.8.1"
+dependencies = [
+ "libc",
+ "objc2-core-foundation",
+ "objc2-io-kit",
+ "roadie-ddc",
+ "thiserror 2.0.18",
+ "tracing",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "roadie-hid"
 version = "0.8.1"
 dependencies = [
