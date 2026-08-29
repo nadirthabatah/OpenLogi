@@ -8,6 +8,7 @@ use clap::Parser;
 use tracing_subscriber::{EnvFilter, fmt};
 
 mod cmd;
+pub mod profile;
 
 /// OpenLogi: a local-first companion for Logitech HID++ peripherals.
 #[derive(Debug, Parser)]

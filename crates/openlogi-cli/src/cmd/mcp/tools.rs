@@ -17,6 +17,7 @@ mod inventory;
 mod lighting;
 mod monitor;
 mod pointer;
+mod profiles;
 
 use std::time::Duration;
 
@@ -64,6 +65,7 @@ pub fn catalog() -> Value {
     tools.extend(pointer::tools());
     tools.extend(lighting::tools());
     tools.extend(monitor::tools());
+    tools.extend(profiles::tools());
     Value::Array(tools)
 }
 
@@ -92,6 +94,10 @@ pub async fn call(params: &Value) -> Result<Value, String> {
         "list_cameras" => camera::list_cameras(),
         "read_camera_controls" => camera::read_camera_controls(&arguments),
         "set_camera_control" => camera::set_camera_control(&arguments),
+        "export_profile" => profiles::export_profile(&arguments),
+        "inspect_profile" => profiles::inspect_profile(&arguments),
+        "import_profile" => profiles::import_profile(&arguments),
+        "config_location" => profiles::config_location(),
         other => return Err(format!("unknown tool: {other}")),
     };
     Ok(match outcome {
@@ -166,7 +172,7 @@ mod tests {
     /// The dispatch arms in [`super::call`], as the catalog must advertise
     /// them. Kept here so a tool added to one and not the other fails a test
     /// rather than surfacing as "unknown tool" at run time.
-    const DISPATCHED: [&str; 12] = [
+    const DISPATCHED: [&str; 16] = [
         "list_devices",
         "reload_config",
         "read_dpi",
@@ -179,6 +185,10 @@ mod tests {
         "list_cameras",
         "read_camera_controls",
         "set_camera_control",
+        "export_profile",
+        "inspect_profile",
+        "import_profile",
+        "config_location",
     ];
 
     fn names() -> Vec<String> {
