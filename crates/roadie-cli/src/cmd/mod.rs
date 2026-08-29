@@ -42,7 +42,8 @@ pub enum Command {
     /// Real-device round-trip smoke tests against the HID++ write path.
     #[command(subcommand)]
     Diag(diag::DiagCmd),
-    /// Inspect and control standalone Logitech lights.
+    /// Inspect and control standalone lights: Logitech Litra over USB, and
+    /// Elgato Key Lights over the network.
     #[command(subcommand)]
     Light(light::LightCmd),
     /// Drive an Elgato Stream Deck, and check the driver against hardware.

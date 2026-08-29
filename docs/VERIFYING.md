@@ -416,6 +416,75 @@ itself. **Do not pass `--yes`.** The point of running this is to confirm the
 refusal happens, and a monitor that stops answering DDC is a monitor only its
 bezel can recover.
 
+## 11. Elgato Key Lights
+
+Only if you have one. These are the first devices here that are reached over
+Wi-Fi rather than a cable, and that changes what can go wrong: the light has to
+be powered on, on the same network as this computer, and the network has to
+carry multicast — which some guest networks and some VPNs deliberately do not.
+
+```sh
+./target/release/roadie light list
+```
+
+**Expect:** each light named as you named it in Elgato's app, with whether it
+is on, its brightness as a percentage, and its colour temperature in kelvin.
+
+**If nothing is found and the light is on:** the most likely cause is multicast
+rather than the light. Try again on the same Wi-Fi with any VPN off. A light on
+a different subnet from this computer will not be found and cannot be, which is
+a property of multicast rather than a defect here.
+
+**If a light is found and then says it did not answer:** that is the useful
+half working. Discovery and reachability are separate questions and a light
+that went to sleep between the two is the ordinary case; the address it prints
+is what to ping.
+
+### The three writes, all reversible
+
+Note what the light is at now, from the list above, so you can put it back.
+
+```sh
+./target/release/roadie light brightness --percent 40
+./target/release/roadie light temperature --kelvin 4000
+./target/release/roadie light off
+./target/release/roadie light on
+```
+
+**Expect:** each command to report the light's state *after* the change, read
+back from the light itself rather than echoed from the request.
+
+**Two things worth checking by eye or by hand**, because they are the ones no
+test here could settle:
+
+1. **That 4000 kelvin looks like 4000 kelvin.** The light does not take kelvin;
+   it takes mireds, which run backwards — a larger number is a warmer light.
+   The conversion is tested against its own arithmetic, and what it has never
+   been tested against is a lamp. If warm and cold come out swapped, that is
+   the finding, and it is a one-line fix.
+2. **That brightness 3 is the dimmest it goes and not off.** The floor is the
+   light's own, not a choice here, and off is a separate setting. A light that
+   goes dark at 3 percent would mean the two have been conflated somewhere.
+
+Put it back with the values you noted.
+
+### Two lights, which is where the naming matters
+
+If you have a key and a fill light:
+
+```sh
+./target/release/roadie light list
+./target/release/roadie light brightness --device fill --percent 20
+```
+
+**Expect:** the one you named to change, and the other to be untouched.
+Without `--device`, expect a refusal that lists both names rather than a guess.
+
+**If both are called the same thing** — which happens, since Elgato names them
+after the model — the refusal will list the same name twice and the address is
+how you tell them apart. That is worth reporting: it means the name someone
+sees is not the one the app set, and it is a genuine gap.
+
 ## What a failure here means
 
 Failures in steps 0b, 1 and 4 are almost always permissions, not defects —
@@ -428,7 +497,7 @@ the build and the platform, which are the first two things anyone reading a
 report has to ask for. `roadie doctor --json` carries the same two fields for
 anything that parses output rather than reading it.
 
-Steps 6, 7, 8 and 10 are explicitly unproven. They are the least verified code
+Steps 6, 7, 8, 10 and 11 are explicitly unproven. They are the least verified code
 in the fork — written against published protocols and thoroughly unit-tested
 against scripted devices, but never run against a physical one — and their
 output is written to be pasted straight into an issue.
@@ -436,6 +505,8 @@ output is written to be pasted straight into an issue.
 Step 10 is the least proven of those, and the one where a single reading
 settles the most: a monitor that answers `roadie display get brightness` at all
 has confirmed the reply checksum seed, which nothing without hardware could.
+Step 11 has one question of the same kind — whether warm and cold come out the
+way round they should — and it is answered by looking at the lamp.
 
 If you have limited time, do steps 0, 6 and 7 in that order. Step 0 clears the
 permissions that mask everything else, step 6 proves that the hub sees your

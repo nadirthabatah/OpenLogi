@@ -1,0 +1,38 @@
+[package]
+name = "roadie-keylight"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Elgato Key Light and Ring Light control: the JSON protocol on port 9123, its colour-temperature units, and the ranges each model accepts"
+keywords = ["elgato", "key-light", "lighting", "streaming"]
+categories = ["hardware-support"]
+
+[features]
+# The protocol alone, which is what the wasm portability job checks. The two
+# host-facing halves are separate because they pull very different things in:
+# `net` an HTTP client, `discovery` a multicast DNS responder that binds
+# sockets. A caller that already knows a light's address wants the first and
+# not the second.
+default = ["net", "discovery"]
+net = ["dep:ureq", "dep:serde_json"]
+discovery = ["dep:mdns-sd", "net"]
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde_json = { workspace = true, optional = true }
+# No TLS: a Key Light serves plain HTTP on the local network and has no
+# certificate to verify. Pulling rustls in for it would add a dependency that
+# could never be exercised.
+ureq = { version = "3", default-features = false, optional = true }
+mdns-sd = { version = "0.21", default-features = false, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

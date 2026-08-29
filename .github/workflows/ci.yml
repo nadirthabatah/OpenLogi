@@ -329,6 +329,8 @@ jobs:
       # here and nowhere else. The crate list lives in xtask
       # (`WASM_PORTABLE_CRATES`) and the drift test keeps the two in step.
       - run: cargo check -p roadie-device-registry -p roadie-hidpp -p roadie-device -p roadie-streamdeck -p roadie-catalog -p roadie-via -p roadie-ddc --target wasm32-unknown-unknown
-      # `roadie-core` earns its place only with `fs` off: that feature is
-      # the config file, and a config file needs a filesystem.
-      - run: cargo check -p roadie-core --no-default-features --target wasm32-unknown-unknown
+      # Two crates earn their place only with a feature off. `roadie-core`
+      # with `fs`, which is the config file and a config file needs a
+      # filesystem. `roadie-keylight` with `net` and `discovery`, which are an
+      # HTTP client and a multicast responder; what is left is the protocol.
+      - run: cargo check -p roadie-core -p roadie-keylight --no-default-features --target wasm32-unknown-unknown

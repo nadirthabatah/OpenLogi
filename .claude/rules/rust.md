@@ -149,6 +149,15 @@ House style:
   so versions come from the registry. After ANY dependency change, verify the
   `gpui`/`gpui-component` git pins in `Cargo.lock` didn't move (they are held only by
   the lock; restore with `cargo update -p gpui --precise <rev>`).
+  **This is not only a `cargo update` hazard.** Adding one crate to one manifest and
+  then running a plain `cargo check` is enough: the new package forces a re-resolve,
+  the git dependency has no rev in its manifest entry, and the lock follows the
+  branch's current HEAD. What that looks like is not a dependency error but a
+  compile failure deep inside `gpui_linux` — "no associated function named `iter`",
+  with a note about multiple versions of `strum` in the graph. `git checkout
+  Cargo.lock` does not fix it either, because the next `cargo check` moves it again.
+  The fix is the `--precise` line above, run after the lock has been allowed to pick
+  up the genuinely new packages; `git diff Cargo.lock` should then show only those.
 - Module layout: a module with its own semantics is `foo.rs` (children in a sibling
   `foo/`); `foo/mod.rs` is only for pure namespace shells. Never both for one module.
 - Sibling implementations that differ are an investigation signal, not proof that

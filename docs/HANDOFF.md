@@ -75,7 +75,7 @@ Merged, in order:
 
 Logitech HID++ mice and keyboards, Elgato Stream Decks, QMK/VIA keyboards and
 macro pads, UVC webcams, Logitech standalone lights, and — on the branch, not
-yet on `master` — monitors over DDC/CI.
+yet on `master` — monitors over DDC/CI and Elgato Key Lights over the network.
 
 ### Monitors, as of the branch
 
@@ -140,6 +140,15 @@ no `dlsym`'d signature checked against the one Apple ships — a wrong one
 type-checks perfectly and is undefined behaviour when called. The full note is
 in `.claude/rules/cross-platform.md`.
 
+**A new dependency can move the `gpui` git pin, and a plain `cargo check` is
+enough to do it.** The manifest entry has no rev, so a re-resolve follows the
+branch's HEAD. It does not look like a dependency problem: it is a compile
+error deep inside `gpui_linux` about `ImageFormat::iter`, with a note about two
+versions of `strum`. `git checkout Cargo.lock` does not fix it, because the
+next `cargo check` moves it again. Let the lock pick up the genuinely new
+packages, then `cargo update -p gpui --precise cc053a4a...`, then check that
+`git diff Cargo.lock` shows only the new crates.
+
 **Clippy reports as warnings; `-D warnings` makes them failures.** Grepping
 output for `^error` hides every one of them. Check the exit code — and not
 after a pipe, where `$?` is the last command's status, not clippy's.
@@ -185,6 +194,19 @@ unreachable, had a paragraph of prose and no test, because enumeration read
 `/sys/class/drm` directly and `/sys` cannot be written to. Making the root a
 parameter turned five claims into tested ones, and the test written for it
 immediately exposed a message that nested one error's text inside another's.
+
+The seventh, over `roadie-keylight` and its front ends, found four survivors in
+twenty-two and **not one of them was in the code** — all four were tests that
+looked like they proved something and did not. The IPv4-preference test
+compared against an address the filter already excluded, so any rule at all
+would have passed it. The "too wide for the wire" test used 70000, which
+truncates to 4464 and clamps to the same answer as the correct code; 65536 is
+the value that tells them apart, because it truncates to zero and clamps to the
+opposite end. The refusal of a call that changes nothing was reachable only
+through the network, so it was extracted into a function that could be tested.
+And `full_description` had never been checked for a network device at all. That
+is a different failure mode from the earlier sweeps — prose ahead of tests —
+and worth naming: **a test can be present, passing, and evidence of nothing.**
 
 Two cautions learned the hard way. `rustfmt` reflows source, so a
 pattern-match mutation script silently finds nothing — always report
@@ -307,15 +329,43 @@ on-screen menu driven by bezel buttons.
 the monitor in the one list it promises. The crate is pure, so this is ordinary
 tested work.
 
-### 6.6 After monitors — this is the part still to do
+### 6.6 Key Lights, which are done
 
-Unchanged in order, with one note. Audio interfaces starting with the Focusrite
-Scarlett family are per-vendor USB work with no standard underneath, so they
-cost the most per device. Elgato Key Lights are HTTP over the local network,
-well documented, and adjacent to the Stream Deck work already merged — which
-makes them the better thing to reach for in a session with no hardware to hand.
-Then headsets, MIDI pads, RGB on other brands, and other vendors' mice and
-keyboards.
+Taken next rather than the audio interfaces, because they are HTTP over the
+local network and well documented, so a session with no hardware could build
+and prove them. `roadie-keylight` is one crate rather than two: unlike
+`roadie-ddc`, whose host half is three platform APIs carrying unsafe FFI, a Key
+Light's host half is an HTTP client with no platform code at all, so a feature
+gate says the same thing at a fraction of the ceremony — the way `roadie-core`
+already gates its filesystem reads. The protocol keeps the wasm portability
+claim with `net` and `discovery` off.
+
+Three decisions in it are worth keeping:
+
+**They live under `roadie light`, not a command of their own.** The question
+someone asks is "what lights do I have", and an answer covering only the ones
+on USB would be worse for being confidently incomplete. So a Litra on USB and a
+Key Light on Wi-Fi are one list, one selector and one set of verbs.
+
+**Colour temperature is the part to get right.** The light does not take
+Kelvin. It takes mireds — reciprocal megakelvin — and they run *backwards*: a
+larger number is a warmer light. Everything else on this desk speaks Kelvin, so
+the conversion sits at the boundary, rounds to nearest rather than truncating
+(which halves the worst-case round-trip drift, 48 K to 24 K), and is tested
+against the endpoints Elgato publishes rather than trusted.
+
+**Discovery is not a convenience.** A light's address comes from a DHCP lease
+and changes on its own, so an address in a config file is one that will be
+wrong one morning. Multicast is how the light stays findable without anyone
+maintaining that — and it is also why a guest network or a VPN can hide a light
+that is working perfectly.
+
+### 6.7 After the lights — this is the part still to do
+
+Audio interfaces starting with the Focusrite Scarlett family. They are
+per-vendor USB work with no standard underneath, so they cost the most per
+device, and Nadir asked about them directly. Then headsets, MIDI pads, RGB on
+other brands, and other vendors' mice and keyboards.
 
 ## 7. What a session can do with nobody at the desk
 

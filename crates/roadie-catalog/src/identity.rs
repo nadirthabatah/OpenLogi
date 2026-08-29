@@ -16,6 +16,10 @@ pub enum IdSource {
     Usb,
     /// A display's PNP manufacturer code and product code, from its EDID.
     Edid,
+    /// A device on the network, which has neither. Its identity is its serial
+    /// number and the name it announces; the two id fields are zero and mean
+    /// nothing.
+    Network,
 }
 
 /// A peripheral's identity, exactly as the OS reports it.
@@ -98,19 +102,28 @@ impl Identity {
     /// How this device is written down when reporting it, ids included.
     #[must_use]
     pub fn full_description(&self) -> String {
-        // The scheme is said aloud for a display, because a bare pair of hex
-        // numbers after a name reads as a USB id, and a PNP code that looked
-        // like one would send someone searching a database it is not in.
-        let scheme = match self.ids {
-            IdSource::Usb => "",
-            IdSource::Edid => "display ",
-        };
-        format!(
-            "{} ({scheme}{:04x}:{:04x})",
-            self.describe(),
-            self.vendor_id,
-            self.product_id
-        )
+        let name = self.describe();
+        match self.ids {
+            IdSource::Usb => format!("{name} ({:04x}:{:04x})", self.vendor_id, self.product_id),
+            // The scheme is said aloud for a display, because a bare pair of
+            // hex numbers after a name reads as a USB id, and a PNP code that
+            // looked like one would send someone searching a database it is
+            // not in.
+            IdSource::Edid => {
+                format!(
+                    "{name} (display {:04x}:{:04x})",
+                    self.vendor_id, self.product_id
+                )
+            }
+            // A device on the network has no id pair at all, so printing one
+            // would be inventing data. Its serial number is the only number it
+            // has, and saying where it is explains why there is no vendor id
+            // to look up.
+            IdSource::Network => match self.serial_number.as_deref() {
+                Some(serial) => format!("{name} (on the network, serial {serial})"),
+                None => format!("{name} (on the network)"),
+            },
+        }
     }
 
     /// The key that decides whether two enumerated entries are one device.
@@ -324,6 +337,58 @@ mod id_source_tests {
             serial_number: None,
         };
         assert_eq!(camera.full_description(), "Logitech StreamCam (046d:0893)");
+    }
+
+    /// An Elgato light's identity, as `roadie devices` builds one.
+    fn network_light() -> Identity {
+        Identity {
+            ids: IdSource::Network,
+            vendor_id: 0,
+            product_id: 0,
+            product: Some("Key Light Left".to_owned()),
+            manufacturer: Some("Elgato".to_owned()),
+            serial_number: Some("CW31J1A00183".to_owned()),
+        }
+    }
+
+    #[test]
+    fn a_network_device_is_never_given_ids_it_does_not_have() {
+        // It has no vendor or product id at all, so printing the zeros as if
+        // they were one would be inventing data — and "0000:0000" reads as a
+        // real pair to anyone who cannot see that every network device has
+        // the same one.
+        let described = network_light().full_description();
+        assert_eq!(
+            described,
+            "Elgato Key Light Left (on the network, serial CW31J1A00183)"
+        );
+        assert!(
+            !described.contains("0000"),
+            "the zeros are absence, not a value: {described}"
+        );
+    }
+
+    #[test]
+    fn a_network_device_with_no_serial_says_only_where_it_is() {
+        let anonymous = Identity {
+            serial_number: None,
+            ..network_light()
+        };
+        assert_eq!(
+            anonymous.full_description(),
+            "Elgato Key Light Left (on the network)"
+        );
+    }
+
+    #[test]
+    fn two_network_devices_are_told_apart_by_their_serials() {
+        // The reason `roadie devices` asks each light for its accessory info
+        // rather than making do with the name it announced.
+        let other = Identity {
+            serial_number: Some("CW31J1A00184".to_owned()),
+            ..network_light()
+        };
+        assert_ne!(network_light().merge_key(), other.merge_key());
     }
 
     #[test]
