@@ -13,9 +13,9 @@ use bundle::identity::Channel;
 pub(crate) enum Command {
     /// Compile the macOS app icon from its Icon Composer document.
     Icon,
-    /// Build the OpenLogi.app bundle.
+    /// Build the OpenRoadie.app bundle.
     Bundle(BundleArgs),
-    /// Wrap a freshly built desktop binary in `target/dev/OpenLogi.app`.
+    /// Wrap a freshly built desktop binary in `target/dev/OpenRoadie.app`.
     /// Driven by the cargo runner; not normally run by hand.
     DevBundle(dev_bundle::Args),
     /// Create the branded macOS DMG from an existing app bundle.

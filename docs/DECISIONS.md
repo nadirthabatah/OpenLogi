@@ -7,9 +7,9 @@ made or revisited.
 ## 2026-08: The agent stays one process; a crossing edge gets a wire, not an event layer
 
 The 2026-06 daemon split (#165) put the resident input machinery in
-`openlogi-agent` and left the GUI an on-demand IPC client. Its two
+`roadie-agent` and left the GUI an on-demand IPC client. Its two
 cross-process abstractions have been production infrastructure since:
-`openlogi-ipc` is the versioned, append-only wire, and `succession` owns the
+`roadie-ipc` is the versioned, append-only wire, and `succession` owns the
 one-process-per-role lifetime pattern (the agent negotiates as a peer, the
 overlay serves one run as a subordinate, the GUI only reports mismatches).
 This entry records the deliberate end of that road: the agent itself does not
@@ -38,7 +38,7 @@ Two facts decide it:
 
 The standing doctrine for any edge that does someday cross a process boundary:
 give it the treatment the overlay got — a versioned method on the
-`openlogi-ipc` contract (append-only, golden-tested, `PROTOCOL_VERSION`
+`roadie-ipc` contract (append-only, golden-tested, `PROTOCOL_VERSION`
 bumped) plus a `succession` role for the new process's lifetime — and cut
 along the named seams (`startup::StateWatchers` is the message list of a
 watcher-side wire, `lifecycle::Armed` is the consumer-side state list). What
@@ -101,10 +101,10 @@ two systemic problems, both now fixed.
   `clippy.toml` with `allow-unwrap-in-tests` / `allow-expect-in-tests` replaces
   all of them. Clippy's exemption covers `#[cfg(test)]` modules and `#[test]`
   functions; a free helper in a `tests/` integration file is the one shape it
-  cannot see, so `openlogi-ipc`'s wire-format test keeps a file-level
+  cannot see, so `roadie-ipc`'s wire-format test keeps a file-level
   suppression. Build scripts are not tests and keep theirs too.
 - **`allow` rots silently.** 20 suppressions no longer suppressed anything,
-  including three module-wide `dead_code` blankets in `openlogi-assets` that
+  including three module-wide `dead_code` blankets in `roadie-assets` that
   had been inert since those modules became `pub mod` — and would have hidden
   real dead code the moment they went private again. Suppressions are now
   `#[expect]` by default, which fails the build once it stops being needed.
@@ -118,7 +118,7 @@ two systemic problems, both now fixed.
   annotated exceptions and nothing else — the sweep had already left the tree
   compliant. One blind spot to remember: `allow_attributes` only sees outer
   `#[allow]`, so a module-wide `#![allow(…)]` — precisely the shape that rotted
-  in `openlogi-assets` — still passes it. Adding them also disproved the
+  in `roadie-assets` — still passes it. Adding them also disproved the
   first-pass rule that a `cfg_attr`-wrapped suppression always needs `allow`:
   two of the four turned out to work fine as `expect`.
 
@@ -129,7 +129,7 @@ a shared conversion helper. Linux CI showed `capture_linux`'s file-level
 blanket was two-thirds dead (`cast_possible_truncation` /
 `cast_possible_wrap`); the remaining `cast_sign_loss` sits on `clamp_u8`.
 
-Supersedes the "`openlogi-hidpp` stays out on purpose (vendored)" note in the
+Supersedes the "`roadie-hidpp` stays out on purpose (vendored)" note in the
 shared-lint-set entry below: the hard-fork ruling retired that, and the crate
 inherits `[lints] workspace = true` like every other.
 
@@ -148,19 +148,19 @@ The workspace adopted the shared ten-lint set (`assertions_on_result_states`,
 `tests_outside_test_module`, `undocumented_unsafe_blocks`) on top of the
 existing `pedantic` + `unwrap_used`/`expect_used` table.
 
-- One table, inherited everywhere. `openlogi-desktop`, `openlogi-camera` and
-  `openlogi-hook` carried hand-copied duplicates of `[workspace.lints]`, so any
+- One table, inherited everywhere. `roadie-desktop`, `roadie-camera` and
+  `roadie-hook` carried hand-copied duplicates of `[workspace.lints]`, so any
   lint added to the workspace would have silently skipped them — three of the
   crates holding most of the FFI. Cargo rejects `[lints] workspace = true`
-  alongside local overrides, so `openlogi-hook` moved its `unsafe_code` opt-out
-  into its three platform modules. `openlogi-hidpp` stays out on purpose
+  alongside local overrides, so `roadie-hook` moved its `unsafe_code` opt-out
+  into its three platform modules. `roadie-hidpp` stays out on purpose
   (vendored).
 - `tests_outside_test_module` only recognises a literal `#[cfg(test)]`. Compound
   gates are written as stacked attributes (`#[cfg(test)]` then `#[cfg(unix)]`);
   an integration test under `tests/` carries a file-level `#![expect(…)]`
   because that file is already a test-only crate. Splitting the attribute also
   wakes `items_after_test_module`, so such a module belongs last in its file.
-- `exit` gets a real `ExitCode` wherever the call site can return — `openlogi
+- `exit` gets a real `ExitCode` wherever the call site can return — `roadie
   list` hands status 2 back to `main` — and a reasoned `#[expect]` where it
   cannot (the AppKit run loop, the watchdog threads, the update handover).
   Clippy does not look inside `define_class!`, so the menu-bar Quit body moved
@@ -193,11 +193,11 @@ mature crates (`tempfile`, `which`, `plist`, `walkdir`, `xshell`, `sysinfo`,
 `fs-err`, `backon`, `opener`, `etcetera`, and others — see the git history of
 `FIXDRY.md` for the full list). The following stayed custom, deliberately:
 
-- `openlogi-core::single_instance`: the `single-instance` crate uses different
+- `roadie-core::single_instance`: the `single-instance` crate uses different
   backends (for example abstract Unix sockets on Linux) and does not preserve
-  OpenLogi's data-dir lock-file path, per-role names, and error classification
+  OpenRoadie's data-dir lock-file path, per-role names, and error classification
   closely enough to be a safe deletion.
-- Agent tray Quit's `openlogi://quit` dispatch keeps
+- Agent tray Quit's `roadie://quit` dispatch keeps
   `std::process::Command::output()` intentionally: it blocks until
   LaunchServices accepts the Apple Event, while generic opener crates only
   guarantee process spawn.
@@ -211,12 +211,12 @@ mature crates (`tempfile`, `which`, `plist`, `walkdir`, `xshell`, `sysinfo`,
   systemd user units, not merely opening or spawning an arbitrary program.
 - Self-restart and `disclaim` launches stay custom because they are process
   identity / update lifecycle boundaries, not generic command orchestration.
-- `openlogi-hook`: event suppression/rewriting and foreground-app lookup are
-  OpenLogi-specific and not covered cleanly by generic input crates.
-- `openlogi-inject`: platform-specific action synthesis may overlap with
+- `roadie-hook`: event suppression/rewriting and foreground-app lookup are
+  OpenRoadie-specific and not covered cleanly by generic input crates.
+- `roadie-inject`: platform-specific action synthesis may overlap with
   `enigo`, but current semantics are narrower and more controlled.
-- `openlogi-hid` / vendored `openlogi-hidpp`: the right path is upstreaming
-  OpenLogi-specific fixes, not replacing the fork blindly.
+- `roadie-hid` / vendored `roadie-hidpp`: the right path is upstreaming
+  OpenRoadie-specific fixes, not replacing the fork blindly.
 
 ## 2026-06: Fn is not a capturable trigger (macOS)
 
@@ -231,7 +231,7 @@ settled why the Fn modifier cannot join the keyboard-remap trigger vocabulary:
 - The keyboard firmware holds Fn internal unless the key has a dual
   function-row meaning, so the flag attaches only to F1–F12.
   `Fn+<anything else>` is indistinguishable at the tap — firmware behavior,
-  not something OpenLogi can code around at this layer.
+  not something OpenRoadie can code around at this layer.
 - The only theoretical path is raw-HID reading below the OS event system
   (Karabiner/DriverKit territory) — a large subsystem with no guarantee a
   given keyboard exposes Fn there. Not pursued.

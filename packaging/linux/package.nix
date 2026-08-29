@@ -1,13 +1,13 @@
-# Nix package for OpenLogi on Linux (CLI + agent + GUI/overlay).
+# Nix package for OpenRoadie on Linux (CLI + agent + GUI/overlay).
 #
 # Build via the flake:
-#   nix build .#openlogi
+#   nix build .#roadie
 #
 # ## Why this doesn't suffer the #262 cargoHash churn
 #
 # The previous flake (removed in #262) used fetchCargoVendor, whose single
 # cargoHash covers one FOD containing every dependency plus a copy of
-# Cargo.lock. Because the lock embeds the local openlogi* crate versions,
+# Cargo.lock. Because the lock embeds the local roadie* crate versions,
 # every release bump invalidated the hash even when no dependency changed.
 #
 # This package uses rustPlatform's `cargoLock` (importCargoLock) instead:
@@ -16,7 +16,7 @@
 # - git dependencies need one manual hash per repository (not per crate,
 #   not per release): importCargoLock resolves `outputHashes` keys to git
 #   commit SHAs, so the hashes below stay valid until a git pin actually
-#   moves. A version bump of OpenLogi itself changes nothing here.
+#   moves. A version bump of OpenRoadie itself changes nothing here.
 #
 # The only recurring maintenance is: when a git pin (gpui, gpui-component,
 # ...) is bumped, update the corresponding entry below — the failing build
@@ -82,7 +82,7 @@ let
   # gpui-component checkout for the GUI build script. The upstream themes live
   # at the repository root next to (not inside) the gpui-component crate, so
   # the per-crate vendor tree importCargoLock produces doesn't contain them.
-  # build.rs provides OPENLOGI_THEMES_DIR as an explicit override — point it
+  # build.rs provides ROADIE_THEMES_DIR as an explicit override — point it
   # at a separate checkout. The rev must match Cargo.lock (a mismatch fails
   # the build with a hash error, so it cannot drift silently); the hash is
   # shared with outputHashes below.
@@ -95,7 +95,7 @@ let
   };
 in
 rustPlatform.buildRustPackage {
-  pname = "openlogi";
+  pname = "roadie";
   inherit version;
   src = source;
   strictDeps = true;
@@ -135,7 +135,7 @@ rustPlatform.buildRustPackage {
     ln -sfn "''${assets[0]}" "$cargoDepsCopy/assets"
   '';
 
-  env.OPENLOGI_THEMES_DIR = "${gpuiComponentSrc}/themes";
+  env.ROADIE_THEMES_DIR = "${gpuiComponentSrc}/themes";
 
   nativeBuildInputs = [
     pkg-config
@@ -162,78 +162,78 @@ rustPlatform.buildRustPackage {
   ];
 
   # Select production binaries explicitly: selecting the agent package alone
-  # also builds the development-only openlogi-agent-mock target.
+  # also builds the development-only roadie-agent-mock target.
   cargoBuildFlags = [
-    "--package=openlogi"
-    "--bin=openlogi"
-    "--package=openlogi-agent"
-    "--bin=openlogi-agent"
-    "--package=openlogi-desktop"
-    "--bin=openlogi-desktop"
-    "--package=openlogi-overlay"
-    "--bin=openlogi-overlay"
+    "--package=roadie"
+    "--bin=roadie"
+    "--package=roadie-agent"
+    "--bin=roadie-agent"
+    "--package=roadie-desktop"
+    "--bin=roadie-desktop"
+    "--package=roadie-overlay"
+    "--bin=roadie-overlay"
   ];
 
   # Match Linux CI: the pure workspace tests run in the sandbox; GUI tests are
   # exercised on macOS because GPUI's Linux test harness is not headless.
   cargoTestFlags = [
     "--workspace"
-    "--exclude=openlogi-desktop"
+    "--exclude=roadie-desktop"
   ];
 
   installPhase = ''
     runHook preInstall
 
     releaseDir=target/${stdenv.hostPlatform.rust.rustcTarget}/release
-    for binary in openlogi openlogi-agent openlogi-desktop openlogi-overlay; do
+    for binary in roadie roadie-agent roadie-desktop roadie-overlay; do
       install -Dm755 "$releaseDir/$binary" "$out/bin/$binary"
     done
 
-    install -Dm644 packaging/linux/desktop/openlogi.desktop \
-      "$out/share/applications/openlogi.desktop"
+    install -Dm644 packaging/linux/desktop/roadie.desktop \
+      "$out/share/applications/roadie.desktop"
     # Every standard indexed hicolor size: a stock `hicolor/index.theme`
     # stops at 512x512, so an icon installed only under `1024x1024/apps` is
     # invisible to launchers that resolve by theme index.
-    install -Dm644 design/icon/openlogi.png \
-      "$out/share/icons/hicolor/1024x1024/apps/openlogi.png"
+    install -Dm644 design/icon/roadie.png \
+      "$out/share/icons/hicolor/1024x1024/apps/roadie.png"
     for size in 512 256 128 64 48 32 16; do
-      install -Dm644 "design/icon/openlogi-$size.png" \
-        "$out/share/icons/hicolor/''${size}x''${size}/apps/openlogi.png"
+      install -Dm644 "design/icon/roadie-$size.png" \
+        "$out/share/icons/hicolor/''${size}x''${size}/apps/roadie.png"
     done
-    install -Dm644 packaging/linux/udev/70-openlogi.rules \
-      "$out/lib/udev/rules.d/70-openlogi.rules"
-    install -Dm644 packaging/linux/systemd/openlogi-agent.service \
-      "$out/share/systemd/user/openlogi-agent.service"
-    install -Dm644 LICENSE-APACHE "$out/share/licenses/openlogi/LICENSE-APACHE"
-    install -Dm644 LICENSE-MIT "$out/share/licenses/openlogi/LICENSE-MIT"
+    install -Dm644 packaging/linux/udev/70-roadie.rules \
+      "$out/lib/udev/rules.d/70-roadie.rules"
+    install -Dm644 packaging/linux/systemd/roadie-agent.service \
+      "$out/share/systemd/user/roadie-agent.service"
+    install -Dm644 LICENSE-APACHE "$out/share/licenses/roadie/LICENSE-APACHE"
+    install -Dm644 LICENSE-MIT "$out/share/licenses/roadie/LICENSE-MIT"
 
-    substituteInPlace "$out/share/systemd/user/openlogi-agent.service" \
+    substituteInPlace "$out/share/systemd/user/roadie-agent.service" \
       --replace-fail \
-        "ExecStart=/usr/bin/openlogi-agent" \
-        "ExecStart=$out/bin/openlogi-agent"
+        "ExecStart=/usr/bin/roadie-agent" \
+        "ExecStart=$out/bin/roadie-agent"
 
     runHook postInstall
   '';
 
   postFixup = ''
-    patchelf --add-rpath "${runtimeLibs}" "$out/bin/openlogi-desktop"
+    patchelf --add-rpath "${runtimeLibs}" "$out/bin/roadie-desktop"
   '';
 
   doInstallCheck = true;
   nativeInstallCheckInputs = [ versionCheckHook ];
   preInstallCheck = ''
-    for binary in openlogi openlogi-agent openlogi-desktop openlogi-overlay; do
+    for binary in roadie roadie-agent roadie-desktop roadie-overlay; do
       test -x "$out/bin/$binary"
     done
-    test ! -e "$out/bin/openlogi-agent-mock"
-    test -f "$out/lib/udev/rules.d/70-openlogi.rules"
-    test -f "$out/share/applications/openlogi.desktop"
+    test ! -e "$out/bin/roadie-agent-mock"
+    test -f "$out/lib/udev/rules.d/70-roadie.rules"
+    test -f "$out/share/applications/roadie.desktop"
     for size in 1024 512 256 128 64 48 32 16; do
-      test -f "$out/share/icons/hicolor/''${size}x''${size}/apps/openlogi.png"
+      test -f "$out/share/icons/hicolor/''${size}x''${size}/apps/roadie.png"
     done
     grep -Fqx \
-      "ExecStart=$out/bin/openlogi-agent" \
-      "$out/share/systemd/user/openlogi-agent.service"
+      "ExecStart=$out/bin/roadie-agent" \
+      "$out/share/systemd/user/roadie-agent.service"
   '';
 
   meta = {
@@ -243,8 +243,8 @@ rustPlatform.buildRustPackage {
       mit
       asl20
     ];
-    mainProgram = "openlogi";
-    # Darwin support (the .app bundle, see nixpkgs' `openlogi`) could be
+    mainProgram = "roadie";
+    # Darwin support (the .app bundle, see nixpkgs' `roadie`) could be
     # revived here later; this package is authored and tested on Linux.
     platforms = lib.platforms.linux;
   };

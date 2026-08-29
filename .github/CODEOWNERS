@@ -1,4 +1,4 @@
-# Code owners for AprilNEA/OpenLogi.
+# Code owners for AprilNEA/OpenRoadie.
 #
 # This is a personal repository, so every owner must be an individual account
 # with write access — `@org/team` entries do not exist here, and an owner
@@ -14,25 +14,25 @@
 
 # ── Windows port ───────────────────────────────────────────────────────────
 # Listed file by file rather than by a `*windows*` glob: in this repo the word
-# means two different things, and `openlogi-gui/src/windows.rs` is the app's
+# means two different things, and `roadie-gui/src/windows.rs` is the app's
 # auxiliary-window registry (Settings, Add Device), not Win32 code.
 #
-# Windows-only branches living in multi-platform files (openlogi-agent's
+# Windows-only branches living in multi-platform files (roadie-agent's
 # main.rs / autostart.rs / binary_watch/ / takeover.rs, hid/transport.rs,
 # hook/lib.rs, …) stay with the maintainer: CODEOWNERS scopes by path, so it
 # cannot hand out ownership of a single `#[cfg(windows)]` branch.
 #
 # The installer manifest (packaging/windows) and the signing workflow also stay
 # with the maintainer — see the supply-chain block below.
-/crates/openlogi-agent/src/resume_windows.rs    @AprilNEA @davidbudnick
-/crates/openlogi-agent/src/tray_windows.rs      @AprilNEA @davidbudnick
-/crates/openlogi-camera/src/capture_windows.rs  @AprilNEA @davidbudnick
-/crates/openlogi-camera/src/com_windows.rs      @AprilNEA @davidbudnick
-/crates/openlogi-camera/src/uvc_windows.rs      @AprilNEA @davidbudnick
-/crates/openlogi-hid/src/transport/windows.rs   @AprilNEA @davidbudnick
-/crates/openlogi-hid/src/windows_hid.rs         @AprilNEA @davidbudnick
-/crates/openlogi-hook/src/windows.rs            @AprilNEA @davidbudnick
-/crates/openlogi-inject/src/inject/windows.rs   @AprilNEA @davidbudnick
+/crates/roadie-agent/src/resume_windows.rs    @AprilNEA @davidbudnick
+/crates/roadie-agent/src/tray_windows.rs      @AprilNEA @davidbudnick
+/crates/roadie-camera/src/capture_windows.rs  @AprilNEA @davidbudnick
+/crates/roadie-camera/src/com_windows.rs      @AprilNEA @davidbudnick
+/crates/roadie-camera/src/uvc_windows.rs      @AprilNEA @davidbudnick
+/crates/roadie-hid/src/transport/windows.rs   @AprilNEA @davidbudnick
+/crates/roadie-hid/src/windows_hid.rs         @AprilNEA @davidbudnick
+/crates/roadie-hook/src/windows.rs            @AprilNEA @davidbudnick
+/crates/roadie-inject/src/inject/windows.rs   @AprilNEA @davidbudnick
 
 # ── Release, packaging, supply chain ───────────────────────────────────────
 # Anything here can reach the release pipeline's signing and notarization
@@ -61,12 +61,12 @@
 /design/                        @AprilNEA
 
 # ── Cross-crate contracts ──────────────────────────────────────────────────
-# openlogi-ipc is an append-only wire format, openlogi-core is the shared
-# config and device model, openlogi-hidpp is a hard fork with its own rules.
-/crates/openlogi-ipc/           @AprilNEA
-/crates/openlogi-core/          @AprilNEA
-/crates/openlogi-hidpp/         @AprilNEA
-/crates/openlogi-hidpp-derive/  @AprilNEA
+# roadie-ipc is an append-only wire format, roadie-core is the shared
+# config and device model, roadie-hidpp is a hard fork with its own rules.
+/crates/roadie-ipc/           @AprilNEA
+/crates/roadie-core/          @AprilNEA
+/crates/roadie-hidpp/         @AprilNEA
+/crates/roadie-hidpp-derive/  @AprilNEA
 
 # ── Agent guides ───────────────────────────────────────────────────────────
 /AGENTS.md                      @AprilNEA

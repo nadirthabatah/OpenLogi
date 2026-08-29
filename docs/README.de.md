@@ -1,34 +1,17 @@
 > [!WARNING]
-> **OpenLogi befindet sich in aktiver Entwicklung** und ist noch nicht stabil — Funktionen und Konfiguration können sich noch ändern. Gib dem Repo einen **Star** ⭐ und **beobachte** 👀 es, um benachrichtigt zu werden, wenn ein neues Release erscheint.
+> **OpenRoadie befindet sich in aktiver Entwicklung** und ist noch nicht stabil — Funktionen und Konfiguration können sich noch ändern. Gib dem Repo einen **Star** ⭐ und **beobachte** 👀 es, um benachrichtigt zu werden, wenn ein neues Release erscheint.
 
 <h4 align="right"><a href="../README.md">English</a> | <a href="README.zh-CN.md">简体中文</a> | <a href="README.ja.md">日本語</a> | <strong>Deutsch</strong> | <a href="README.fr.md">Français</a> | <a href="README.ko.md">한국어</a></h4>
 
-<p align="center">
-    <img src="https://assets.openlogi.org/brand/openlogi-icon.png" width="138" alt="OpenLogi"/>
-</p>
 
-<h1 align="center">OpenLogi</h1>
+<h1 align="center">OpenRoadie</h1>
+<p align="center">OpenRoadie is a fork of <a href="https://github.com/AprilNEA/OpenLogi">OpenLogi</a> by @AprilNEA.</p>
 <p align="center"><strong>⚡️ Eine native, local-first Alternative zu Logitech Options+, geschrieben in Rust 🦀<br/>Schöpfe das volle Potenzial von Logitech-Mäusen, -Tastaturen und -Webcams über HID++ und UVC aus</strong></p>
 
 
-<div align="center">
-    <a href="https://twitter.com/AprilNEA" target="_blank">
-    <img alt="twitter" src="https://img.shields.io/badge/follow-AprilNEA-green?style=social&logo=Twitter"></a>
-    <a href="https://t.me/+VDtkR5OSAT04NzVh" target="_blank">
-    <img alt="telegram" src="https://img.shields.io/badge/chat-telegram-blueviolet?style=flat&logo=Telegram"></a>
-    <a href="https://github.com/AprilNEA/OpenLogi/releases" target="_blank">
-    <img alt="GitHub downloads" src="https://img.shields.io/github/downloads/AprilNEA/OpenLogi/total.svg?style=flat"></a>
-    <a href="https://github.com/AprilNEA/OpenLogi/commits" target="_blank">
-    <img alt="GitHub commit" src="https://img.shields.io/github/commit-activity/m/AprilNEA/OpenLogi?style=flat"></a>
-    <img alt="Hits" src="https://hits.aprilnea.com/hits?url=https://github.com/aprilnea/openlogi">
-</div>
 
-<p align="center">
-    <a href="https://trendshift.io/repositories/42303" target="_blank">
-    <img src="https://trendshift.io/api/badge/trendshift/repositories/42303/daily?language=Rust" alt="AprilNEA%2FOpenLogi | Trendshift" width="250" height="55"/></a>
-</p>
 
-> **Genug von Options+? Probier OpenLogi.**
+> **Genug von Options+? Probier OpenRoadie.**
 
 Läuft auf macOS, Linux und Windows.
 
@@ -36,10 +19,10 @@ Läuft auf macOS, Linux und Windows.
 
 ## Mehr als Options+
 
-Was OpenLogi kann und Options+ nicht:
+Was OpenRoadie kann und Options+ nicht:
 
 - **Leichtgewichtig bleiben.** Natives Rust + GPUI.
-- **Auf Linux laufen.** Linux ist in OpenLogi eine vollwertige Plattform.
+- **Auf Linux laufen.** Linux ist in OpenRoadie eine vollwertige Plattform.
 - **Die Gestentaste frei wählen.** Weise die Gestenrolle jeder beliebigen physischen Taste zu — oder schalte Gesten ganz ab.
 - **Konfiguration im Klartext.** Alles steckt in einer TOML-Datei, die sich beliebig zwischen Rechnern synchronisieren lässt.
 - **Skriptbar.** Neben der GUI gibt es eine echte CLI.
@@ -83,22 +66,22 @@ Was OpenLogi kann und Options+ nicht:
 
 Erfordert macOS 13 oder neuer.
 
-Lade das signierte, notarisierte `.dmg` vom [neuesten Release](https://github.com/AprilNEA/OpenLogi/releases/latest) und ziehe `OpenLogi.app` nach `/Applications`.
+Lade das signierte, notarisierte `.dmg` vom [neuesten Release](https://github.com/AprilNEA/OpenLogi/releases/latest) und ziehe `OpenRoadie.app` nach `/Applications`.
 
 Oder per [Homebrew](https://brew.sh):
 
 ```sh
-brew install --cask openlogi
+brew install --cask roadie
 ```
 
 Der offizielle Homebrew-Cask ist der Standardweg. Um stattdessen explizit das neueste GitHub-Release über `aprilnea/tap` zu verfolgen:
 
 ```sh
 brew tap aprilnea/tap
-brew install --cask aprilnea/tap/openlogi@latest
+brew install --cask aprilnea/tap/roadie@latest
 ```
 
-`openlogi@latest` wird vom Release-Workflow von OpenLogi gepflegt und kann aktualisiert sein, bevor der Autobump des offiziellen Casks greift. Installiere entweder `openlogi` oder `openlogi@latest`, nicht beide.
+`roadie@latest` wird vom Release-Workflow von OpenRoadie gepflegt und kann aktualisiert sein, bevor der Autobump des offiziellen Casks greift. Installiere entweder `roadie` oder `roadie@latest`, nicht beide.
 
 ### Linux
 
@@ -106,13 +89,13 @@ Lade das `.deb` oder `.rpm` vom [neuesten Release](https://github.com/AprilNEA/O
 
 ```sh
 # Debian / Ubuntu
-sudo dpkg -i openlogi_*.deb
+sudo dpkg -i roadie_*.deb
 
 # Fedora / RHEL
-sudo rpm -i openlogi-*.rpm
+sudo rpm -i roadie-*.rpm
 
 # Arch Linux
-sudo pacman -U openlogi-*.pkg.tar.zst
+sudo pacman -U roadie-*.pkg.tar.zst
 ```
 
 Pakete erscheinen für `x86_64`/`amd64` und `arm64`/`aarch64`.
@@ -120,14 +103,14 @@ Pakete erscheinen für `x86_64`/`amd64` und `arm64`/`aarch64`.
 Das Paket installiert udev-Regeln, die deinem Benutzer Zugriff auf `/dev/hidraw*` und `/dev/uinput` ohne `sudo` geben. Aktiviere nach der Installation den Hintergrund-Agent für deinen Benutzer:
 
 ```sh
-systemctl --user enable --now openlogi-agent.service
+systemctl --user enable --now roadie-agent.service
 ```
 
 Für manuelle / Quellcode-Installationen und Distributionen ohne systemd siehe [INSTALL-linux.md](INSTALL-linux.md).
 
 ### Windows
 
-Jedem Release liegen signierte portable `.zip`-Archive und Per-User-`.msi`-Installer (x86_64 und arm64) bei. Beide enthalten die GUI (`OpenLogi.exe`) zusammen mit dem Hintergrund-Agent (`openlogi-agent.exe`), dem sämtliche Geräte-I/O gehören. Halte bei der portablen ZIP beide Dateien nebeneinander, sonst hat die GUI keine Gegenstelle.
+Jedem Release liegen signierte portable `.zip`-Archive und Per-User-`.msi`-Installer (x86_64 und arm64) bei. Beide enthalten die GUI (`OpenRoadie.exe`) zusammen mit dem Hintergrund-Agent (`roadie-agent.exe`), dem sämtliche Geräte-I/O gehören. Halte bei der portablen ZIP beide Dateien nebeneinander, sonst hat die GUI keine Gegenstelle.
 
 Windows funktioniert und wurde auf echter Windows 11-Hardware vollständig validiert — mit einer kabelgebundenen Tastatur und einer Maus am Unifying-Empfänger, einschließlich Installation, In-Place-Upgrade und Deinstallation des MSI. Der Port ist neuer als die macOS-Version; [melde](https://github.com/AprilNEA/OpenLogi/issues) bitte Ecken und Kanten. Der Agent zeigt ein Symbol im Infobereich (Hauptfenster anzeigen / Beenden), damit die App nach dem Schließen des Hauptfensters erreichbar bleibt. Setze zum Deaktivieren unter Windows `show_in_menu_bar = false` im TOML-Block `[app_settings]` und starte den Agent neu; der GUI-Schalter ist derzeit nur unter macOS verfügbar.
 
@@ -162,17 +145,13 @@ Der Code in diesem Repository ist doppelt lizenziert, wahlweise unter
 
 ### Code von Dritten
 
-`crates/openlogi-hidpp` ist ein eingebundener Fork von [`hidpp`](https://crates.io/crates/hidpp)
+`crates/roadie-hidpp` ist ein eingebundener Fork von [`hidpp`](https://crates.io/crates/hidpp)
 von [@lus](https://github.com/lus), lizenziert unter 0BSD.
 
 ### Logo & Markenressourcen
 
-Danke an [@kubai087](https://github.com/kubai087) für das Design des OpenLogi-Logos. Das OpenLogi-Logo und das App-Icon — die Markenressourcen unter [`design/`](../design/) — sind © 2026 AprilNEA, alle Rechte vorbehalten, und fallen nicht unter die obigen MIT-/Apache-Lizenzen; siehe [`design/LICENSE`](../design/LICENSE). Ein Fork des Codes gewährt kein Recht am Namen, Logo oder Icon von OpenLogi; bitte verwende sie nicht ohne vorherige schriftliche Erlaubnis für eigene Projekte, Forks oder Distributionen.
+Danke an [@kubai087](https://github.com/kubai087) für das Design des OpenRoadie-Logos. Das OpenRoadie-Logo und das App-Icon — die Markenressourcen unter [`design/`](../design/) — sind © 2026 AprilNEA, alle Rechte vorbehalten, und fallen nicht unter die obigen MIT-/Apache-Lizenzen; siehe [`design/LICENSE`](../design/LICENSE). Ein Fork des Codes gewährt kein Recht am Namen, Logo oder Icon von OpenRoadie; bitte verwende sie nicht ohne vorherige schriftliche Erlaubnis für eigene Projekte, Forks oder Distributionen.
 
 ---
 
 **Nicht mit Logitech verbunden.** „Logitech", „MX Master" und „Options+" sind Marken der Logitech International S.A.
-
-## Repo-Aktivität
-
-![Repobeats analytics image](https://repobeats.axiom.co/api/embed/4a0b576a03e9d528ad31ccf4797a1286c045d021.svg "Repobeats analytics image")

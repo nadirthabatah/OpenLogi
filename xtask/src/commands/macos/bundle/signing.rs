@@ -14,17 +14,17 @@ use super::identity::{Channel, Component};
 use crate::support::fs::{ensure_file, repo_root};
 
 pub(super) fn local_sign_app_if_available(channel: Channel) -> Result<()> {
-    if env::var("OPENLOGI_LOCAL_CODESIGN").as_deref() == Ok("0") {
-        println!("==> local codesign: skipped (OPENLOGI_LOCAL_CODESIGN=0)");
+    if env::var("ROADIE_LOCAL_CODESIGN").as_deref() == Ok("0") {
+        println!("==> local codesign: skipped (ROADIE_LOCAL_CODESIGN=0)");
         return Ok(());
     }
 
-    if let Some(identity) = env_nonempty("OPENLOGI_SIGN_IDENTITY") {
+    if let Some(identity) = env_nonempty("ROADIE_SIGN_IDENTITY") {
         sign_app_with_timestamp(&identity, TimestampMode::Secure, channel)?;
         return Ok(());
     }
 
-    if let Some(identity) = env_nonempty("OPENLOGI_LOCAL_CODESIGN_IDENTITY") {
+    if let Some(identity) = env_nonempty("ROADIE_LOCAL_CODESIGN_IDENTITY") {
         sign_app_with_timestamp(&identity, TimestampMode::None, channel)?;
         return Ok(());
     }
@@ -35,7 +35,7 @@ pub(super) fn local_sign_app_if_available(channel: Channel) -> Result<()> {
     }
 
     println!(
-        "==> local codesign: skipped (no Apple Development identity found;          set OPENLOGI_LOCAL_CODESIGN_IDENTITY or OPENLOGI_SIGN_IDENTITY to sign)"
+        "==> local codesign: skipped (no Apple Development identity found;          set ROADIE_LOCAL_CODESIGN_IDENTITY or ROADIE_SIGN_IDENTITY to sign)"
     );
     println!(
         "    warning: an unsigned bundle is re-signed ad-hoc on every build, so its own Accessibility grant goes stale each time"
@@ -50,7 +50,7 @@ pub(super) fn sign_app_with_timestamp(
 ) -> Result<()> {
     let sh = Shell::new()?;
     let root = repo_root()?;
-    let app = root.join("target/release/bundle/osx/OpenLogi.app");
+    let app = root.join("target/release/bundle/osx/OpenRoadie.app");
     let helper = Component::Agent.root(&app, channel);
     let overlay = Component::Overlay.root(&app, channel);
     // GUI + embedded CLI open the camera (preview / snapshot). The agent and
@@ -72,7 +72,7 @@ pub(super) fn sign_app_with_timestamp(
     // The embedded CLI is a second Mach-O under Contents/MacOS; sign it with the
     // hardened runtime before the outer app so it carries a Developer ID
     // signature (its as-built ad-hoc signature would fail notarization).
-    let cli = app.join("Contents/MacOS/openlogi");
+    let cli = app.join("Contents/MacOS/roadie");
     if cli.exists() {
         codesign_runtime(identity, &cli, timestamp, Some(&camera_ents))?;
     }
@@ -92,7 +92,7 @@ pub(super) fn sign_app_with_timestamp(
 
 /// Path to the GUI/CLI entitlements (camera hardened-runtime exception).
 fn camera_entitlements_path(root: &Path) -> PathBuf {
-    root.join("crates/openlogi-desktop/bundle/OpenLogi.entitlements")
+    root.join("crates/roadie-desktop/bundle/OpenRoadie.entitlements")
 }
 
 /// Sign one target with the hardened runtime and the requested timestamp mode.

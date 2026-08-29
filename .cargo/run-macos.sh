@@ -4,15 +4,15 @@
 #
 # Cargo calls this for every binary of every `cargo run`/`test`/`bench`, so the
 # passthrough below has to stay cheap — that is why this is still a shell script
-# and not something with an interpreter to start. Only `openlogi-desktop` gets
+# and not something with an interpreter to start. Only `roadie-desktop` gets
 # wrapped, and the wrapping itself lives in `xtask macos dev-bundle`, sharing
 # the identity, helper and `Info.plist` tables with what packaging ships.
 #
-#   OPENLOGI_DEV_BUNDLE=0           run the raw binary, no bundle
-#   OPENLOGI_DEV_CODESIGN=0         skip dev codesigning
-#   OPENLOGI_DEV_CODESIGN_IDENTITY  pin a signing identity
-#   OPENLOGI_DEV_AGENT=0            don't build or embed the agent + overlay
-#   OPENLOGI_ALLOW_EXTERNAL_AGENT=1 tolerate an agent outside this checkout
+#   ROADIE_DEV_BUNDLE=0           run the raw binary, no bundle
+#   ROADIE_DEV_CODESIGN=0         skip dev codesigning
+#   ROADIE_DEV_CODESIGN_IDENTITY  pin a signing identity
+#   ROADIE_DEV_AGENT=0            don't build or embed the agent + overlay
+#   ROADIE_ALLOW_EXTERNAL_AGENT=1 tolerate an agent outside this checkout
 set -euo pipefail
 
 # SIP strips DYLD_* when it launches this interpreter, including the
@@ -28,10 +28,10 @@ fi
 bin="$1"
 shift
 
-if [ "${bin##*/}" != "openlogi-desktop" ] || [ "${OPENLOGI_DEV_BUNDLE:-1}" = "0" ]; then
+if [ "${bin##*/}" != "roadie-desktop" ] || [ "${ROADIE_DEV_BUNDLE:-1}" = "0" ]; then
   exec "$bin" "$@"
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cargo run -q -p xtask --manifest-path "$ROOT/Cargo.toml" -- macos dev-bundle --binary "$bin"
-exec "$ROOT/target/dev/OpenLogi.app/Contents/MacOS/openlogi-desktop" "$@"
+exec "$ROOT/target/dev/OpenRoadie.app/Contents/MacOS/roadie-desktop" "$@"

@@ -1,0 +1,19 @@
+[package]
+name = "roadie-catalog"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "What this build knows about a peripheral it finds plugged in: identity, and which driver (if any) can configure it. No host I/O."
+keywords = ["hid", "usb", "peripherals", "detection", "catalog"]
+categories = ["hardware-support"]
+
+[dependencies]
+roadie-device-registry = { path = "../roadie-device-registry", version = "0.8.1" }
+roadie-streamdeck = { path = "../roadie-streamdeck", version = "0.8.1" }
+roadie-via = { path = "../roadie-via", version = "0.8.1" }
+
+[lints]
+workspace = true

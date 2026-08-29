@@ -2,11 +2,11 @@ use super::*;
 
 #[test]
 fn the_profile_comes_from_the_binarys_own_directory() {
-    let debug = Profile::of(Path::new("/repo/target/debug/openlogi-desktop")).unwrap();
+    let debug = Profile::of(Path::new("/repo/target/debug/roadie-desktop")).unwrap();
     assert!(!debug.release);
     assert_eq!(debug.dir, Path::new("/repo/target/debug"));
 
-    let release = Profile::of(Path::new("/repo/target/release/openlogi-desktop")).unwrap();
+    let release = Profile::of(Path::new("/repo/target/release/roadie-desktop")).unwrap();
     assert!(release.release);
     assert_eq!(release.dir, Path::new("/repo/target/release"));
 }
@@ -16,8 +16,7 @@ fn the_profile_comes_from_the_binarys_own_directory() {
 /// be looked for where Cargo actually wrote them.
 #[test]
 fn the_helper_directory_follows_cargo_rather_than_the_repo() {
-    let profile =
-        Profile::of(Path::new("/elsewhere/shared-target/debug/openlogi-desktop")).unwrap();
+    let profile = Profile::of(Path::new("/elsewhere/shared-target/debug/roadie-desktop")).unwrap();
 
     assert_eq!(profile.dir, Path::new("/elsewhere/shared-target/debug"));
 }
@@ -35,7 +34,7 @@ fn an_unrecognised_profile_directory_is_an_error() {
 /// The app seals its helpers, so its signature must be applied last.
 #[test]
 fn the_app_is_signed_after_everything_it_contains() {
-    let app = Path::new("/repo/target/dev/OpenLogi.app");
+    let app = Path::new("/repo/target/dev/OpenRoadie.app");
     let order = sign_order(app, Component::VARIANTS);
     assert_eq!(order.last().unwrap(), app);
     assert_eq!(
@@ -47,6 +46,6 @@ fn the_app_is_signed_after_everything_it_contains() {
 
 #[test]
 fn skipping_the_helpers_leaves_only_the_app_to_sign() {
-    let app = Path::new("/repo/target/dev/OpenLogi.app");
+    let app = Path::new("/repo/target/dev/OpenRoadie.app");
     assert_eq!(sign_order(app, &APP_ONLY), vec![app.to_path_buf()]);
 }

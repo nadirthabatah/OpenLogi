@@ -9,7 +9,7 @@ on:
       - master
     paths:
       # English source is SoT; non-English catalogs come from Crowdin only.
-      - crates/openlogi-ui/locales/en.yml
+      - crates/roadie-ui/locales/en.yml
       - .config/crowdin.yml
       - .github/workflows/crowdin.yml
       - .github/scripts/i18n/**
@@ -26,7 +26,7 @@ jobs:
   synchronize:
     name: Synchronize translations
     runs-on: ubuntu-latest
-    if: github.repository == 'AprilNEA/OpenLogi'
+    if: github.repository == 'AprilNEA/OpenRoadie'
 
     steps:
       # persist-credentials must stay false: checkout's default GITHUB_TOKEN
@@ -70,8 +70,8 @@ jobs:
       - name: Snapshot locale catalogs
         run: |
           set -euo pipefail
-          mkdir -p /tmp/openlogi-locales-before
-          cp crates/openlogi-ui/locales/*.yml /tmp/openlogi-locales-before/
+          mkdir -p /tmp/roadie-locales-before
+          cp crates/roadie-ui/locales/*.yml /tmp/roadie-locales-before/
 
       # Upload sources + seed per-language translations, then download only
       # (no push/PR — we merge first so sparse/English exports never land).
@@ -99,16 +99,16 @@ jobs:
         run: |
           set -euo pipefail
           python3 .github/scripts/i18n/merge_crowdin_download.py \
-            --before /tmp/openlogi-locales-before \
-            --locales crates/openlogi-ui/locales \
-            --en crates/openlogi-ui/locales/en.yml
+            --before /tmp/roadie-locales-before \
+            --locales crates/roadie-ui/locales \
+            --en crates/roadie-ui/locales/en.yml
 
       - name: Push translation branch and open PR
         env:
           GH_TOKEN: ${{ steps.github_app.outputs.token }}
         run: |
           set -euo pipefail
-          if git diff --quiet -- crates/openlogi-ui/locales/; then
+          if git diff --quiet -- crates/roadie-ui/locales/; then
             echo "No real Crowdin translation updates"
             exit 0
           fi
@@ -116,7 +116,7 @@ jobs:
           git config user.name "Crowdin Bot"
           git config user.email "support+bot@crowdin.com"
           git checkout -B crowdin/i18n
-          git add crates/openlogi-ui/locales/
+          git add crates/roadie-ui/locales/
           git commit -m "chore(i18n): sync Crowdin translations"
           git push -f origin crowdin/i18n
 

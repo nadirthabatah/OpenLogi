@@ -2,7 +2,7 @@
 //! macOS lists it under.
 //!
 //! macOS keys TCC grants (Accessibility, Input Monitoring) to a bundle's code
-//! identity, and `openlogi_core::paths` keys the config profile to that
+//! identity, and `roadie_core::paths` keys the config profile to that
 //! identifier's suffix. A shipped bundle wearing the dev identity therefore
 //! voids every existing permission grant *and* reads a different config
 //! directory — which is what releases 0.6.24–0.6.26 did, because the identity
@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 use clap::ValueEnum;
-use openlogi_core::brand;
+use roadie_core::brand;
 use strum::{Display, VariantArray};
 
 use crate::icon::macos::ICON_NAME;
@@ -44,7 +44,7 @@ pub(crate) enum Channel {
 /// newly added component without anyone remembering to extend a list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Display, VariantArray)]
 pub(crate) enum Component {
-    /// `OpenLogi.app` itself.
+    /// `OpenRoadie.app` itself.
     #[strum(serialize = "app")]
     App,
     /// The always-on agent: the process that owns the hook and holds the
@@ -65,23 +65,23 @@ impl Component {
     /// dev helper named like the shipped one) renders as a row nobody can
     /// trust. The spellings are load-bearing: the GUI's `agent_binary_path`
     /// and the agent's `overlay_binary_path` look the helpers up by name at
-    /// runtime, keeping the old no-space names (`OpenLogiAgent.app`,
-    /// `OpenLogiOverlay.app`) as fallbacks for bundles built before the
+    /// runtime, keeping the old no-space names (`OpenRoadieAgent.app`,
+    /// `OpenRoadieOverlay.app`) as fallbacks for bundles built before the
     /// rename.
     pub(crate) fn nested_bundle(self, channel: Channel) -> Option<&'static str> {
         match (self, channel) {
             (Self::App, _) => None,
             (Self::Agent, Channel::Production) => {
-                Some("Contents/Library/LoginItems/OpenLogi Agent.app")
+                Some("Contents/Library/LoginItems/OpenRoadie Agent.app")
             }
             (Self::Agent, Channel::Dev) => {
-                Some("Contents/Library/LoginItems/OpenLogi Agent Dev.app")
+                Some("Contents/Library/LoginItems/OpenRoadie Agent Dev.app")
             }
             (Self::Overlay, Channel::Production) => {
-                Some("Contents/Library/LoginItems/OpenLogi Overlay.app")
+                Some("Contents/Library/LoginItems/OpenRoadie Overlay.app")
             }
             (Self::Overlay, Channel::Dev) => {
-                Some("Contents/Library/LoginItems/OpenLogi Overlay Dev.app")
+                Some("Contents/Library/LoginItems/OpenRoadie Overlay Dev.app")
             }
         }
     }
@@ -106,9 +106,9 @@ impl Component {
     /// The shipped identity — the one macOS ties existing grants to.
     fn production(self) -> Identity {
         let (bundle_id, name) = match self {
-            Self::App => (brand::APP_ID, "OpenLogi"),
-            Self::Agent => (brand::AGENT_ID, "OpenLogi Agent"),
-            Self::Overlay => (brand::OVERLAY_ID, "OpenLogi Overlay"),
+            Self::App => (brand::APP_ID, "OpenRoadie"),
+            Self::Agent => (brand::AGENT_ID, "OpenRoadie Agent"),
+            Self::Overlay => (brand::OVERLAY_ID, "OpenRoadie Overlay"),
         };
         Identity {
             bundle_id: bundle_id.to_owned(),
@@ -193,7 +193,7 @@ pub(crate) fn verify(app: &Path, channel: Channel, components: &[Component]) -> 
 }
 
 /// Fail unless every component ships the shared app icon *and* declares it, so
-/// no surface that lists OpenLogi's processes — System Settings' privacy panes,
+/// no surface that lists OpenRoadie's processes — System Settings' privacy panes,
 /// Login Items — shows a blank icon for one of them.
 ///
 /// What the app carries beyond that `.icns` — the asset catalog, the alternates

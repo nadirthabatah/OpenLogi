@@ -56,11 +56,11 @@ if ! command -v rustup >/dev/null 2>&1; then
   source "$HOME/.cargo/env"
 fi
 
-profile_marker="# OpenLogi orb Rust toolchain"
+profile_marker="# OpenRoadie orb Rust toolchain"
 if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
   cat >>"$HOME/.bash_profile" <<'EOF'
 
-# OpenLogi orb Rust toolchain
+# OpenRoadie orb Rust toolchain
 if [ -f "$HOME/.cargo/env" ]; then
   . "$HOME/.cargo/env"
 fi
@@ -85,4 +85,4 @@ echo "==> Installing locked release-notes dependencies"
 corepack pnpm@10.11.0 --dir .github/scripts/release-notes install --frozen-lockfile
 echo "    completed in $((SECONDS - step_started))s"
 
-echo "==> OpenLogi orb setup complete"
+echo "==> OpenRoadie orb setup complete"

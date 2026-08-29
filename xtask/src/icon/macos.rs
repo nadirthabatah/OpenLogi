@@ -17,14 +17,14 @@ use crate::support::fs::{ensure_dir, ensure_file, repo_root};
 use crate::support::info_plist::{read_plist_string, stamp_plist_strings};
 use crate::support::xcode;
 
-/// `OpenLogi.app`'s icons: the one it wears, and the alternates it can switch
+/// `OpenRoadie.app`'s icons: the one it wears, and the alternates it can switch
 /// to at runtime.
 pub(crate) struct AppBundle;
 
 /// Where the compiled icons land. `cargo-bundle` copies `AppIcon.icns` out of
-/// here (`openlogi-desktop/Cargo.toml` names it); the catalog and the
+/// here (`roadie-desktop/Cargo.toml` names it); the catalog and the
 /// alternates are installed into the bundle by [`IconPipeline::install`].
-const OUTPUT_DIR: &str = "crates/openlogi-desktop/icon";
+const OUTPUT_DIR: &str = "crates/roadie-desktop/icon";
 
 /// Where the icons Settings offers live inside the bundle: a preview for each,
 /// and the `.icns` of every alternate for the app to hand to macOS at runtime.
@@ -47,7 +47,7 @@ pub(crate) const ICON_NAME: &str = "AppIcon";
 const CATALOG: &str = "Assets.car";
 
 /// Deployment target handed to `actool`; mirrors `osx_minimum_system_version`
-/// in `openlogi-desktop/Cargo.toml`.
+/// in `roadie-desktop/Cargo.toml`.
 const MINIMUM_MACOS: &str = "13.0";
 
 impl IconPipeline for AppBundle {
@@ -161,8 +161,8 @@ impl IconPipeline for AppBundle {
 /// This icon's Icon Composer document, relative to the repository root.
 fn document(icon: AppIcon) -> &'static str {
     match icon {
-        AppIcon::Openlogi => "design/icon/openlogi.icon",
-        AppIcon::Prism => "design/icon/openlogi-prism.icon",
+        AppIcon::OpenRoadie => "design/icon/roadie.icon",
+        AppIcon::Prism => "design/icon/roadie-prism.icon",
     }
 }
 
@@ -221,7 +221,7 @@ fn compile_document(root: &Path, output_dir: &Path, icon: AppIcon) -> Result<()>
     }
 
     let work = tempfile::Builder::new()
-        .prefix("openlogi-app-icon-")
+        .prefix("roadie-app-icon-")
         .tempdir()
         .context("could not create temporary icon directory")?;
     // actool names every output after the document it compiled, so the name the
@@ -260,7 +260,7 @@ fn compile_document(root: &Path, output_dir: &Path, icon: AppIcon) -> Result<()>
     if !run.status.success() {
         bail!(
             "actool could not compile {}: an Icon Composer document needs Xcode 26 \
-             or newer, and OPENLOGI_DEVELOPER_DIR picks which Xcode is used.\n{}",
+             or newer, and ROADIE_DEVELOPER_DIR picks which Xcode is used.\n{}",
             source.display(),
             String::from_utf8_lossy(&run.stdout)
         );

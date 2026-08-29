@@ -1,0 +1,45 @@
+[package]
+name = "roadie-inject"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "OS input-event synthesis for OpenRoadie actions (macOS CGEvent/NSEvent, Linux uinput/D-Bus, Windows SendInput)."
+keywords = ["logitech", "input", "uinput", "sendinput", "mouse"]
+categories = ["hardware-support", "os"]
+
+[dependencies]
+shellexpand.workspace = true
+opener.workspace = true
+roadie-core = { path = "../roadie-core", version = "0.8.1" }
+tracing = { workspace = true }
+
+[dev-dependencies]
+serde = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[lints]
+workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev = { workspace = true }
+zbus = "5"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = { workspace = true, features = ["highsierra"] }
+core-foundation = { workspace = true }
+objc2 = { workspace = true }
+objc2-app-kit = { workspace = true, features = [
+  "NSEvent",
+  "NSGraphicsContext",
+  "objc2-core-graphics",
+  "NSWorkspace",
+  "NSRunningApplication",
+] }
+objc2-core-graphics = { workspace = true, features = ["CGEvent"] }
+objc2-foundation = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse"] }

@@ -26,7 +26,7 @@ from pathlib import Path
 ENTRY_RE = re.compile(r'^"((?:\\.|[^"\\])*)":\s*"((?:\\.|[^"\\])*)"\s*$')
 
 DEFAULT_HEADER = (
-    "# OpenLogi GUI translations. Managed by Crowdin; "
+    "# OpenRoadie GUI translations. Managed by Crowdin; "
     "edit source text there when possible.\n"
     "_version: 1\n"
 )
@@ -221,7 +221,7 @@ class MergeTests(unittest.TestCase):
             (before / "de.yml").write_text(
                 "\n".join(
                     [
-                        "# OpenLogi GUI translations.",
+                        "# OpenRoadie GUI translations.",
                         "_version: 1",
                         '"Camera": "Kamera"',
                         '"Sleep": "Ruhezustand"',
@@ -241,7 +241,7 @@ class MergeTests(unittest.TestCase):
             changed = merge_locales(before, after, en)
             text = (after / "de.yml").read_text(encoding="utf-8")
             self.assertEqual(changed, 1)
-            self.assertIn("# OpenLogi GUI translations.", text)
+            self.assertIn("# OpenRoadie GUI translations.", text)
             self.assertIn("_version: 1", text)
             self.assertIn('"Camera": "Kamera"', text)
             self.assertIn('"Sleep": "Schlafen"', text)

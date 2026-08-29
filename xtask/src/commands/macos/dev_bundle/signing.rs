@@ -16,7 +16,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result};
-use openlogi_core::paths;
+use roadie_core::paths;
 use xshell::{Shell, cmd};
 
 use super::super::bundle::quoted_identity;
@@ -31,7 +31,7 @@ pub(super) enum Signing {
     /// No certificate is available. Ad-hoc signatures are identified by their
     /// own hash, so every rebuild is a new identity and the grants go with it.
     AdHoc,
-    /// `OPENLOGI_DEV_CODESIGN=0`.
+    /// `ROADIE_DEV_CODESIGN=0`.
     Skipped,
 }
 
@@ -70,10 +70,10 @@ impl Signing {
 /// so inheriting it means introducing the state file cannot be the thing that
 /// voids them.
 pub(super) fn resolve(app: &Path) -> Result<Signing> {
-    if std::env::var("OPENLOGI_DEV_CODESIGN").as_deref() == Ok("0") {
+    if std::env::var("ROADIE_DEV_CODESIGN").as_deref() == Ok("0") {
         return Ok(Signing::Skipped);
     }
-    if let Ok(pinned) = std::env::var("OPENLOGI_DEV_CODESIGN_IDENTITY")
+    if let Ok(pinned) = std::env::var("ROADIE_DEV_CODESIGN_IDENTITY")
         && !pinned.trim().is_empty()
     {
         return Ok(Signing::Identity(pinned));
@@ -103,13 +103,13 @@ pub(super) fn resolve(app: &Path) -> Result<Signing> {
              certificate, so the permissions you gave the dev build no longer apply.\n\
              Clear the stale entries and grant them once more:\n\n  \
              tccutil reset Accessibility {agent}\n  tccutil reset ListenEvent {agent}\n\n\
-             Pin a specific certificate with OPENLOGI_DEV_CODESIGN_IDENTITY to stop this.",
-            agent = openlogi_core::brand::dev_id(openlogi_core::brand::AGENT_ID),
+             Pin a specific certificate with ROADIE_DEV_CODESIGN_IDENTITY to stop this.",
+            agent = roadie_core::brand::dev_id(roadie_core::brand::AGENT_ID),
         );
     } else if available.len() > 1 {
         println!(
             "note: several Apple Development identities are available; using \"{first}\".\n      \
-             Set OPENLOGI_DEV_CODESIGN_IDENTITY to choose a different one — switching\n      \
+             Set ROADIE_DEV_CODESIGN_IDENTITY to choose a different one — switching\n      \
              voids the dev build's Accessibility grant."
         );
     }

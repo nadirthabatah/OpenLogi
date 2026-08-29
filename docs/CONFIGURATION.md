@@ -1,14 +1,14 @@
 # Configuration
 
-OpenLogi stores settings as plain TOML. The GUI and agent read the same file:
+OpenRoadie stores settings as plain TOML. The GUI and agent read the same file:
 
-- macOS and Linux: `$XDG_CONFIG_HOME/openlogi/config.toml` (normally
-  `~/.config/openlogi/config.toml`)
-- Windows: `%USERPROFILE%\.config\openlogi\config.toml`
+- macOS and Linux: `$XDG_CONFIG_HOME/roadie/config.toml` (normally
+  `~/.config/roadie/config.toml`)
+- Windows: `%USERPROFILE%\.config\roadie\config.toml`
 
 The complete, tested example is [config.example.toml](config.example.toml).
 Copy only the sections you need and replace its example physical device keys
-with keys already written by OpenLogi for your devices.
+with keys already written by OpenRoadie for your devices.
 
 ## Editing and recovery
 
@@ -19,7 +19,7 @@ GUI updates known fields.
 The schema is strict: misspelled, obsolete, and out-of-range fields stop the
 config from loading instead of silently selecting a default or disappearing on
 the next save. The GUI then opens in read-only mode and shows the exact TOML
-error. Fix the file and relaunch OpenLogi.
+error. Fix the file and relaunch OpenRoadie.
 
 If the file changes in an editor while the GUI is open, the next GUI save is
 refused rather than overwriting the external edit. Relaunch to load that
@@ -40,7 +40,7 @@ optional physical device key.
 `[app_settings]` contains application-wide preferences:
 
 - startup, update, menu-bar / tray, input-capture, and asset-download toggles
-- `asset_source`: `automatic`, `openlogi`, `cloudflare`, or `fastly`
+- `asset_source`: `automatic`, `roadie`, `cloudflare`, or `fastly`
 - `language`, `appearance`, `device_view_mode` (`grid`, `list`, or `carousel`),
   optional theme names, and optional UI radius
 - `smooth_scroll` toggles finite animation for traditional mouse-wheel input

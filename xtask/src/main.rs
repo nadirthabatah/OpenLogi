@@ -6,7 +6,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(about = "OpenLogi repository maintenance tasks")]
+#[command(about = "OpenRoadie repository maintenance tasks")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

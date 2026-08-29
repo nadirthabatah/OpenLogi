@@ -1,9 +1,9 @@
-//! Assemble the throwaway `target/dev/OpenLogi.app` that `cargo run -p
-//! openlogi-desktop` launches.
+//! Assemble the throwaway `target/dev/OpenRoadie.app` that `cargo run -p
+//! roadie-desktop` launches.
 //!
-//! A bare `target/debug/openlogi-desktop` has no `Info.plist` and no
+//! A bare `target/debug/roadie-desktop` has no `Info.plist` and no
 //! `Resources`, so macOS falls back to the executable name and a generic icon,
-//! registers no `openlogi://` handler, and gives TCC nothing stable to key a
+//! registers no `roadie://` handler, and gives TCC nothing stable to key a
 //! grant to. Wrapping the build in a real bundle fixes all four — and doing it
 //! here rather than in the cargo runner means the dev and shipped bundles are
 //! assembled by the same code: one identity table ([`identity::Channel`]), one
@@ -12,7 +12,7 @@
 //! up with no icon and the dev identity had to be renamed twice.
 //!
 //! The runner keeps only what must stay cheap: it is invoked for every binary
-//! of every `cargo run`/`test`/`bench`, and everything but `openlogi-desktop`
+//! of every `cargo run`/`test`/`bench`, and everything but `roadie-desktop`
 //! is a passthrough that must not pay for an interpreter start.
 
 mod processes;
@@ -38,19 +38,19 @@ const CHANNEL: Channel = Channel::Dev;
 /// `cargo-bundle` from `Cargo.toml`, so this is the only checked-in one; like
 /// the helpers' it carries no identity of its own — [`identity::stamp`] writes
 /// it.
-const APP_PLIST: &str = "crates/openlogi-desktop/bundle/desktop-dev/Info.plist";
+const APP_PLIST: &str = "crates/roadie-desktop/bundle/desktop-dev/Info.plist";
 
 /// The shared app icon, compiled by [`AppBundle`] alongside the catalog and
 /// the alternates. Only this one is checked in; the rest a fresh clone
 /// compiles on its first bundle.
-const ICON: &str = "crates/openlogi-desktop/icon/AppIcon.icns";
+const ICON: &str = "crates/roadie-desktop/icon/AppIcon.icns";
 
 /// What the identity pass covers when the helpers were not embedded.
 const APP_ONLY: [Component; 1] = [Component::App];
 
 #[derive(Parser)]
 pub(crate) struct Args {
-    /// The freshly built `openlogi-desktop` to wrap. Its parent directory also
+    /// The freshly built `roadie-desktop` to wrap. Its parent directory also
     /// names the profile the helpers are built in, so the bundle never mixes a
     /// release GUI with a debug agent.
     #[arg(long)]
@@ -59,7 +59,7 @@ pub(crate) struct Args {
 
 pub(crate) fn run(args: &Args) -> Result<()> {
     let root = repo_root()?;
-    let app = root.join("target/dev/OpenLogi.app");
+    let app = root.join("target/dev/OpenRoadie.app");
     let profile = Profile::of(&args.binary)?;
 
     processes::reap_leftovers(&app, &root.join("target"))?;
@@ -73,7 +73,7 @@ pub(crate) fn run(args: &Args) -> Result<()> {
     fs_err::create_dir_all(app.join("Contents/Resources"))?;
     place_binary(
         &args.binary,
-        &app.join("Contents/MacOS/openlogi-desktop"),
+        &app.join("Contents/MacOS/roadie-desktop"),
         &signing,
     )?;
     fs_err::copy(root.join(APP_PLIST), app.join("Contents/Info.plist"))
@@ -95,7 +95,7 @@ pub(crate) fn run(args: &Args) -> Result<()> {
         write_agent_launch_plist(&app, CHANNEL)?;
         Component::VARIANTS
     } else {
-        println!("==> helpers: skipped (OPENLOGI_DEV_AGENT=0)");
+        println!("==> helpers: skipped (ROADIE_DEV_AGENT=0)");
         &APP_ONLY
     };
 
@@ -143,12 +143,12 @@ fn start_agent(app: &Path) -> Result<()> {
     println!("==> agent (start)");
     cmd!(sh, "open -g -n {agent_bundle}").run()?;
 
-    // The dev agent serves the sibling `openlogi-dev` profile's socket; xtask
+    // The dev agent serves the sibling `roadie-dev` profile's socket; xtask
     // itself is not a dev-profile process, so build the path by hand the way
     // `signing::state_path` does rather than via `paths::agent_socket_path`.
-    let socket = openlogi_core::paths::xdg_config_home()
+    let socket = roadie_core::paths::xdg_config_home()
         .map_err(|error| anyhow::anyhow!("could not resolve the dev socket: {error}"))?
-        .join(openlogi_core::paths::DEV_APP_DIR)
+        .join(roadie_core::paths::DEV_APP_DIR)
         .join("agent.sock");
     let started = std::time::Instant::now();
     while started.elapsed() < AGENT_SOCKET_DEADLINE {
@@ -247,7 +247,7 @@ fn sign_order(app: &Path, components: &[Component]) -> Vec<PathBuf> {
     targets
 }
 
-/// Register the bundle so `openlogi://` resolves to the dev build.
+/// Register the bundle so `roadie://` resolves to the dev build.
 ///
 /// Dev and release register the same scheme and LaunchServices routes to
 /// whichever registered last, so this also re-asserts the dev build after an
@@ -264,14 +264,14 @@ fn register_with_launch_services(app: &Path) -> Result<()> {
         .run()
         .is_err()
     {
-        println!("    warning: lsregister failed; openlogi:// may open the installed app instead");
+        println!("    warning: lsregister failed; roadie:// may open the installed app instead");
     }
     Ok(())
 }
 
 /// Whether to build and embed the agent and overlay helpers.
 fn helpers_wanted() -> bool {
-    std::env::var("OPENLOGI_DEV_AGENT").as_deref() != Ok("0")
+    std::env::var("ROADIE_DEV_AGENT").as_deref() != Ok("0")
 }
 
 /// Where cargo put the build, and which profile it was.

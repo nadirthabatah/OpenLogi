@@ -15,7 +15,7 @@ pub(crate) fn stamp_privacy_usage_descriptions(app: &Path) -> Result<()> {
         &app.join("Contents/Info.plist"),
         &[(
             "NSCameraUsageDescription",
-            "OpenLogi previews your Logitech webcam locally. Video never leaves your Mac.",
+            "OpenRoadie previews your Logitech webcam locally. Video never leaves your Mac.",
         )],
     )
 }

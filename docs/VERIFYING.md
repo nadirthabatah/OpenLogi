@@ -40,7 +40,7 @@ what the steps below are for.
 
 ```sh
 cargo build --release
-./target/release/openlogi doctor
+./target/release/roadie doctor
 ```
 
 **Expect:** every check `OK` or `NOTE`, and the line "Nothing needs fixing."
@@ -61,7 +61,7 @@ here.
 ## 0b. Confirm the agent path
 
 ```sh
-./target/release/openlogi list
+./target/release/roadie list
 ```
 
 **Expect:** your devices, each with slot, name, kind, online state and battery.
@@ -75,14 +75,14 @@ rules must be installed and your session must have been restarted since.
 ## 1. Reading device state
 
 ```sh
-./target/release/openlogi diag features
-./target/release/openlogi camera
+./target/release/roadie diag features
+./target/release/roadie camera
 ```
 
 **Expect:** a feature dump for the active device, and each camera control's
 min, max, default and current value.
 
-**Note:** `openlogi camera` lists Logitech cameras. The MCP `list_cameras` tool
+**Note:** `roadie camera` lists Logitech cameras. The MCP `list_cameras` tool
 deliberately does not filter by vendor — if you have an Obsbot, an Elgato or a
 built-in camera, that tool should list it and this command should not. A
 difference between the two is the expected result, not a bug.
@@ -96,7 +96,7 @@ JSON on stdin and stdout, so a shell pipeline is a complete test:
 printf '%s\n%s\n' \
   '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_devices","arguments":{}}}' \
-  | ./target/release/openlogi mcp
+  | ./target/release/roadie mcp
 ```
 
 **Expect:** two JSON lines. The second contains your real devices, and each one
@@ -109,7 +109,7 @@ what an assistant does:
 printf '%s\n%s\n' \
   '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_dpi","arguments":{"route":PASTE_HERE}}}' \
-  | ./target/release/openlogi mcp
+  | ./target/release/roadie mcp
 ```
 
 **Expect:** the mouse's current DPI and the list of values its sensor supports.
@@ -123,7 +123,7 @@ hardware.
 Note the DPI you just read, then set it and read it back:
 
 ```sh
-./target/release/openlogi diag dpi --target 1600
+./target/release/roadie diag dpi --target 1600
 ```
 
 **Expect:** a read, a write, a read-back showing 1600, and a restore to the
@@ -135,7 +135,7 @@ original. The pointer speed should visibly change and change back.
 printf '%s\n%s\n' \
   '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"watch_input","arguments":{"seconds":10}}}' \
-  | ./target/release/openlogi mcp
+  | ./target/release/roadie mcp
 ```
 
 Press a mouse button while it runs.
@@ -150,8 +150,8 @@ the failure is a permission, not a bug.
 ## 5. Profiles, round trip
 
 ```sh
-./target/release/openlogi profile export ~/my-setup.toml
-./target/release/openlogi profile inspect ~/my-setup.toml
+./target/release/roadie profile export ~/my-setup.toml
+./target/release/roadie profile inspect ~/my-setup.toml
 ```
 
 **Expect:** the file is written, and inspecting it reports your schema version,
@@ -168,7 +168,7 @@ cat >> /tmp/untrusted.toml <<'EOF'
 [keyboard.bindings]
 F13 = { RunShellCommand = "echo this should never run" }
 EOF
-./target/release/openlogi profile import /tmp/untrusted.toml
+./target/release/roadie profile import /tmp/untrusted.toml
 echo "exit status: $?"
 ```
 
@@ -183,7 +183,7 @@ layouts — is step 9, and that is the one that matters most to you.
 ## 6. Everything plugged in
 
 ```sh
-./target/release/openlogi devices
+./target/release/roadie devices
 ```
 
 **Expect:** every peripheral on your desk, in one list, sorted into
@@ -207,7 +207,7 @@ along whatever else you report.
 ## 7. Stream Deck
 
 ```sh
-./target/release/openlogi streamdeck verify
+./target/release/roadie streamdeck verify
 ```
 
 **Expect:** every collection listed, the chosen one marked, the screens dimming
@@ -221,9 +221,9 @@ exists to answer.
 Then a whole layout, which is how anyone will actually use it:
 
 ```sh
-./target/release/openlogi streamdeck example desk-test
-./target/release/openlogi streamdeck apply desk-test
-./target/release/openlogi streamdeck layouts
+./target/release/roadie streamdeck example desk-test
+./target/release/roadie streamdeck apply desk-test
+./target/release/roadie streamdeck layouts
 ```
 
 **Expect:** key 0 reading `MUTE MIC` on a dark red ground, key 1 reading `REC`
@@ -236,7 +236,7 @@ mirrored is a rendering defect worth reporting with a photograph.
 Only if you have a board running QMK with VIA enabled.
 
 ```sh
-./target/release/openlogi via
+./target/release/roadie via
 ```
 
 **Expect:** the board named, with the VIA protocol revision it speaks and how
@@ -254,7 +254,7 @@ this build implements one. Report the number it names; it is exactly what is
 needed to add support.
 
 ```sh
-./target/release/openlogi via keymap 0
+./target/release/roadie via keymap 0
 ```
 
 **Expect:** the keys of layer 0, by name — `A`, `F13`, `LEFT_CTRL` — with their
@@ -271,8 +271,8 @@ Pick a key you are willing to lose for a minute — a spare macro pad key, not
 your only Enter.
 
 ```sh
-./target/release/openlogi via get 0 <row> <column>
-./target/release/openlogi via set 0 <row> <column> F13
+./target/release/roadie via get 0 <row> <column>
+./target/release/roadie via set 0 <row> <column> F13
 ```
 
 **Expect:** the change reported as `WAS -> F13`, the words "Confirmed by
@@ -291,7 +291,7 @@ The promise this project is built around, and the only step that needs two
 computers.
 
 ```sh
-./target/release/openlogi profile export ~/my-setup
+./target/release/roadie profile export ~/my-setup
 ```
 
 **Expect:** a folder, and a report naming `config.toml` and every saved layout.
@@ -299,9 +299,9 @@ computers.
 Copy that whole folder to the second machine, install there, and:
 
 ```sh
-./target/release/openlogi profile import ~/my-setup
-./target/release/openlogi streamdeck layouts
-./target/release/openlogi streamdeck apply desk-test
+./target/release/roadie profile import ~/my-setup
+./target/release/roadie streamdeck layouts
+./target/release/roadie streamdeck apply desk-test
 ```
 
 **Expect:** the import naming the layouts it restored, the layout list showing
@@ -320,9 +320,9 @@ macOS in particular gates HID reads and input monitoring separately and per
 binary. Step 0 exists to catch those before you reach them.
 
 Failures in steps 2, 3 and 5 are defects worth reporting, with the command and
-its full output. Begin any report with `openlogi doctor` — its first line names
+its full output. Begin any report with `roadie doctor` — its first line names
 the build and the platform, which are the first two things anyone reading a
-report has to ask for. `openlogi doctor --json` carries the same two fields for
+report has to ask for. `roadie doctor --json` carries the same two fields for
 anything that parses output rather than reading it.
 
 Steps 6, 7 and 8 are explicitly unproven. They are the least verified code in

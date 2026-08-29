@@ -21,7 +21,7 @@ whose invocation does not depend on the host, and `every_ci_yml_job_name_resolve
 fails on a job name the runner cannot even name — but neither can check this
 file, so it is on you.
 
-`devenv tasks run openlogi:check` is the **full tier** of the host-OS pre-push
+`devenv tasks run roadie:check` is the **full tier** of the host-OS pre-push
 gate (fmt, clippy, tests, rustdoc). `AGENTS.md` defines when a package-local diff
 may check its complete reverse-dependency closure instead. Neither tier is the
 pipeline. macOS-green clippy does not compile linux cfg; it does not run typos,
@@ -37,7 +37,7 @@ cargo xtask ci --list             # job → command table
 cargo xtask ci rustfmt docs       # named jobs (CI `name:` or job id)
 cargo xtask ci --dry-run          # print each job's commands, run nothing
 direnv exec . cargo xtask ci      # when cargo is only inside devenv
-devenv tasks run openlogi:ci      # same as the command
+devenv tasks run roadie:ci      # same as the command
 ```
 
 The runner sets CI's semantic compiler env (`RUSTFLAGS=-D warnings`). CI also
@@ -55,12 +55,12 @@ warning that host clippy `-D warnings` does not surface still fails CI.
 | `shell` | `git ls-files -z \| xargs -0 shfmt -f` piped into `xargs shellcheck` and `xargs shfmt -d` | any (needs `shellcheck` + `shfmt`; both are in the devenv shell) |
 | `clippy` | `cargo clippy --workspace --all-targets -- -D warnings` | **Linux** is the CI job. Host clippy on macOS/Windows compiles a different `cfg` |
 | `MSRV (cargo check, <os>)` | `RUSTUP_TOOLCHAIN=<rust-version> cargo check --workspace --all-targets` | macOS and Linux. `<rust-version>` is `rust-version` in the root `Cargo.toml` |
-| `rustdoc (non-GUI crates)` | `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --exclude openlogi-ui --exclude openlogi-desktop --exclude openlogi-overlay --exclude openlogi-agent` | any |
-| `tests (linux)` | `cargo test --workspace --exclude openlogi-desktop` | Linux |
+| `rustdoc (non-GUI crates)` | `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --exclude roadie-ui --exclude roadie-desktop --exclude roadie-overlay --exclude roadie-agent` | any |
+| `tests (linux)` | `cargo test --workspace --exclude roadie-desktop` | Linux |
 | `tests (macos, <arch>)` | `cargo test --workspace --all-targets` | macOS. CI matrix is arm64 (`macos-latest`) and x86_64 (`macos-15-intel`) |
-| `cargo-deny` | `cargo deny --config .cargo/deny.toml --all-features --manifest-path crates/openlogi/Cargo.toml check` | any (needs `cargo-deny`; `nix run nixpkgs#cargo-deny -- …` also works) |
-| `clippy (windows)` | `cargo clippy --workspace --all-targets -- -D warnings` | **Windows**. Elsewhere: `devenv tasks run openlogi:check-windows` (ring-free subset, not the full workspace) |
-| `wasm (portable crates)` | `cargo check -p openlogi-hidpp -p openlogi-device --target wasm32-unknown-unknown` then `cargo check -p openlogi-core --no-default-features --target wasm32-unknown-unknown` | any (needs the `wasm32-unknown-unknown` std; devenv installs it) |
+| `cargo-deny` | `cargo deny --config .cargo/deny.toml --all-features --manifest-path crates/roadie/Cargo.toml check` | any (needs `cargo-deny`; `nix run nixpkgs#cargo-deny -- …` also works) |
+| `clippy (windows)` | `cargo clippy --workspace --all-targets -- -D warnings` | **Windows**. Elsewhere: `devenv tasks run roadie:check-windows` (ring-free subset, not the full workspace) |
+| `wasm (portable crates)` | `cargo check -p roadie-hidpp -p roadie-device --target wasm32-unknown-unknown` then `cargo check -p roadie-core --no-default-features --target wasm32-unknown-unknown` | any (needs the `wasm32-unknown-unknown` std; devenv installs it) |
 
 CI always sets `CARGO_TERM_COLOR=always`, `CARGO_INCREMENTAL=0`, and
 `RUSTFLAGS=-D warnings`. Compilation jobs also set `RUSTC_WRAPPER=sccache`;
@@ -82,16 +82,16 @@ Host clippy on macOS is not CI's `clippy` job. For linux cfg outside camera:
 
 ```sh
 cargo clippy --target aarch64-unknown-linux-musl \
-  -p openlogi-hook -p openlogi-inject -p openlogi-hid -p openlogi-hidpp \
-  -p openlogi-core -p openlogi-agent -p openlogi-agent-core -p openlogi-ipc \
-  -p openlogi-permissions --all-targets -- -D warnings
+  -p roadie-hook -p roadie-inject -p roadie-hid -p roadie-hidpp \
+  -p roadie-core -p roadie-agent -p roadie-agent-core -p roadie-ipc \
+  -p roadie-permissions --all-targets -- -D warnings
 ```
 
-`openlogi-camera`'s Linux backend needs kernel headers and does not
+`roadie-camera`'s Linux backend needs kernel headers and does not
 cross-compile from macOS. Details: `.claude/rules/cross-platform.md`.
 
-Linux CI tests **exclude** `openlogi-desktop`, so i18n locale-parity tests run
-only on macOS CI (`cargo test -p openlogi-desktop i18n`).
+Linux CI tests **exclude** `roadie-desktop`, so i18n locale-parity tests run
+only on macOS CI (`cargo test -p roadie-desktop i18n`).
 
 ## If you changed X, run Y
 
@@ -101,12 +101,12 @@ only on macOS CI (`cargo test -p openlogi-desktop i18n`).
 | crate publish flags, workspace path dependencies, `release-plz.toml` | `publish-closure` |
 | any `*.sh`, any file with a shell shebang, `.editorconfig` | `shell` (the prek hooks run the same two tools at commit) |
 | `#[cfg(target_os = …)]`, hook/inject/hid/camera platform files | `clippy-windows` proxy + the linux-musl recipe; say so if you cannot |
-| `crates/openlogi-hidpp/**`, `crates/openlogi-device/**`, `crates/openlogi-core/**`, or any dependency they gain | `wasm` — those crates must keep building with no OS under them |
+| `crates/roadie-hidpp/**`, `crates/roadie-device/**`, `crates/roadie-core/**`, or any dependency they gain | `wasm` — those crates must keep building with no OS under them |
 | `Cargo.lock` / `.cargo/deny.toml` / new deps | `cargo-deny` |
 | `rust-version` or a newly stabilized API | `MSRV` |
 | rustdoc / moved trait impls / hidpp derive | `rustdoc` |
-| `crates/openlogi-ipc/**` or wire types | `cargo test -p openlogi-ipc --test wire_format` |
-| `crates/openlogi-ui/locales/**` | `cargo test -p openlogi-desktop i18n` (macOS; Linux CI does not run this) |
+| `crates/roadie-ipc/**` or wire types | `cargo test -p roadie-ipc --test wire_format` |
+| `crates/roadie-ui/locales/**` | `cargo test -p roadie-desktop i18n` (macOS; Linux CI does not run this) |
 | `devenv.nix` / `.envrc` / `devenv.lock` | devenv CI: `nix fmt -- --check devenv.nix` and `devenv --no-tui shell -- true` |
 | `flake.nix` / `flake.lock` / `packaging/linux/**` | Nix CI: `nix fmt -- --check flake.nix devenv.nix packaging/linux/package.nix packaging/linux/nixos-module.nix` and `nix flake check --all-systems --no-build --show-trace` |
 | `xtask/**` / `packaging/**` | unsigned `cargo xtask` package for that platform; the Build workflow is not part of `cargo xtask ci` |
@@ -132,5 +132,5 @@ Not part of `ci.yml`, not in the default run:
    host skip — do not reach for `cfg!(target_os = …)` in a job's steps.
    If the new job's command is the same everywhere, add it to
    `ci_yml_runs_what_this_runner_runs` so a typo in either copy fails a test.
-2. If it belongs in the host-OS pre-push gate, also update `openlogi:check` in
+2. If it belongs in the host-OS pre-push gate, also update `roadie:check` in
    `devenv.nix` and the Local gate in `AGENTS.md`.

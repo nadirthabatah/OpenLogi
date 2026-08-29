@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=OpenRoadie
+Comment=Logitech HID++ device control — remap buttons, DPI, SmartShift
+Exec=roadie-desktop
+Icon=roadie
+Terminal=false
+# Ties the running window (Wayland xdg-toplevel app_id / X11 WM_CLASS) back to
+# this launcher so GNOME groups it under the OpenRoadie icon instead of a generic
+# one. Must match `roadie_core::brand::APP_ID`, the value the GUI advertises.
+StartupWMClass=org.roadie.roadie
+Categories=Settings;HardwareSettings;
+Keywords=logitech;mouse;hid;remap;dpi;
+StartupNotify=true

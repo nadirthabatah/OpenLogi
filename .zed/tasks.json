@@ -1,7 +1,7 @@
 [
   {
-    "label": "Run OpenLogi GUI",
-    "command": "devenv tasks run openlogi:gui",
+    "label": "Run OpenRoadie GUI",
+    "command": "devenv tasks run roadie:gui",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
     "reveal": "always",

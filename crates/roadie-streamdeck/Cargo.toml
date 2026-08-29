@@ -1,0 +1,29 @@
+[package]
+name = "roadie-streamdeck"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Pure Elgato Stream Deck wire protocol: device catalog, report encoding, and key-event decoding. No host I/O."
+keywords = ["streamdeck", "elgato", "hid", "macropad", "protocol"]
+categories = ["hardware-support", "encoding"]
+
+[features]
+# Encoding a picture for a key screen. Off by default: the protocol half of
+# this crate needs no image codec, and the wasm portability job checks it
+# without one.
+render = ["dep:image"]
+
+[dependencies]
+thiserror = { workspace = true }
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+], optional = true }
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+
+[lints]
+workspace = true

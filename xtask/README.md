@@ -1,4 +1,4 @@
-# OpenLogi xtask
+# OpenRoadie xtask
 
 `xtask` is the repository-level entry point for development tasks that need Rust
 or cross-language orchestration. Run it from the repository root:
@@ -13,12 +13,12 @@ devenv shell -- cargo run -p xtask -- <command>
 
 - `ci [--list] [--dry-run] [JOB…]` — reproduce the `ci.yml` jobs this host can
   run; a job it cannot is skipped with a reason, never passed.
-- `macos icon` — compile `design/icon/openlogi.icon` into the `AppIcon.icns` and
-  `Assets.car` under `crates/openlogi-desktop/icon/`.
-- `macos bundle [--channel dev|production]` — build `OpenLogi.app` and embed the
+- `macos icon` — compile `design/icon/roadie.icon` into the `AppIcon.icns` and
+  `Assets.car` under `crates/roadie-desktop/icon/`.
+- `macos bundle [--channel dev|production]` — build `OpenRoadie.app` and embed the
   agent and overlay helpers.
 - `macos dev-bundle --binary <path>` — wrap a freshly built desktop binary in
-  `target/dev/OpenLogi.app`. Driven by the Cargo runner, not run by hand.
+  `target/dev/OpenRoadie.app`. Driven by the Cargo runner, not run by hand.
 - `macos dmg` — package an existing app bundle into the branded DMG.
 - `macos package` — build the app bundle, optionally sign it, then create the branded DMG.
 - `linux package` — build release binaries and package `.deb`, `.rpm`, and
@@ -33,21 +33,21 @@ devenv shell -- cargo run -p xtask -- <command>
 
 ### Bundle identity
 
-macOS keys TCC grants to a bundle's code identity, and OpenLogi keys its config
+macOS keys TCC grants to a bundle's code identity, and OpenRoadie keys its config
 profile to the identifier's suffix — so the identity decides whose permission
 grants and whose settings a build inherits. Every bundle therefore gets it
 written explicitly and read back:
 
 | channel | app | agent helper | overlay helper |
 |---|---|---|---|
-| `production` | `org.openlogi.openlogi` / OpenLogi | `org.openlogi.agent` / OpenLogi Agent | `org.openlogi.overlay` / OpenLogi Overlay |
+| `production` | `org.roadie.roadie` / OpenRoadie | `org.roadie.agent` / OpenRoadie Agent | `org.roadie.overlay` / OpenRoadie Overlay |
 | `dev` | the same, suffixed `-dev` / ` Dev` | | |
 
 `macos bundle` defaults to `--channel dev`, so a local build can never claim the
-installed app's grants, and signs the result with `OPENLOGI_LOCAL_CODESIGN_IDENTITY`
-or the first Apple Development identity it finds (`OPENLOGI_LOCAL_CODESIGN=0`
+installed app's grants, and signs the result with `ROADIE_LOCAL_CODESIGN_IDENTITY`
+or the first Apple Development identity it finds (`ROADIE_LOCAL_CODESIGN=0`
 leaves it unsigned). `macos package` always builds the production channel and
-signs with `OPENLOGI_SIGN_IDENTITY` / `--sign-identity`; `macos dmg` refuses to
+signs with `ROADIE_SIGN_IDENTITY` / `--sign-identity`; `macos dmg` refuses to
 package anything but a production bundle once it is given a signing identity, so
 a dev build cannot reach users. That check is what releases 0.6.24–0.6.26 lacked
 when the release workflow shipped `.dev` identifiers.
@@ -59,9 +59,9 @@ CI can cross-compile either distribution architecture.
 
 ### The dev bundle
 
-`macos dev-bundle` assembles `target/dev/OpenLogi.app` around the binary Cargo
-just built, so `cargo run -p openlogi-desktop` gets an app name, a Dock icon, an
-`openlogi://` registration and a stable signed identity. It reuses everything
+`macos dev-bundle` assembles `target/dev/OpenRoadie.app` around the binary Cargo
+just built, so `cargo run -p roadie-desktop` gets an app name, a Dock icon, an
+`roadie://` registration and a stable signed identity. It reuses everything
 `macos bundle` uses — the identity table, the helper table, the `Info.plist`
 templates — which is the point: the two were separate implementations until
 they drifted far enough that the dev overlay shipped without an icon and the

@@ -16,32 +16,32 @@ use crate::support::manifest::workspace_package;
 /// cross-compile.
 ///
 /// `clippy --target` is check-only (no linker needed), but a C-compiling build
-/// dependency does need a cross C toolchain: `openlogi-{assets,cli}` and the
-/// root `openlogi` pull ureq → ring, whose `curve25519.c` needs a Windows C
+/// dependency does need a cross C toolchain: `roadie-{assets,cli}` and the
+/// root `roadie` pull ureq → ring, whose `curve25519.c` needs a Windows C
 /// compiler to cross-compile. With mingw installed it builds, so those three
 /// are in the list; without it they are skipped along with everything else,
 /// because the whole job needs the windows-gnu std anyway. The GUI crates stay
 /// out because GPUI has no Windows backend.
 ///
 /// A crate missing here is a crate whose Windows paths nothing checks until CI
-/// — which is how three `chunks_exact` sites in `openlogi-camera` survived a
+/// — which is how three `chunks_exact` sites in `roadie-camera` survived a
 /// whole lint sweep, and later how a test calling `std::os::unix::fs::symlink`
 /// reached CI and failed the Windows build there. That second one is why
-/// `openlogi-cli` is on this list now: it holds the most test code in the
+/// `roadie-cli` is on this list now: it holds the most test code in the
 /// workspace, and a test is exactly where a Unix-only call gets written
 /// without thinking about it.
 const WINDOWS_LINT_CRATES: [&str; 11] = [
-    "openlogi-core",
-    "openlogi-hidpp",
-    "openlogi-hid",
-    "openlogi-hook",
-    "openlogi-inject",
-    "openlogi-camera",
-    "openlogi-agent",
-    "openlogi-agent-core",
-    "openlogi-assets",
-    "openlogi-cli",
-    "openlogi",
+    "roadie-core",
+    "roadie-hidpp",
+    "roadie-hid",
+    "roadie-hook",
+    "roadie-inject",
+    "roadie-camera",
+    "roadie-agent",
+    "roadie-agent-core",
+    "roadie-assets",
+    "roadie-cli",
+    "roadie",
 ];
 
 /// The crates that must keep compiling with no OS underneath them.
@@ -51,20 +51,20 @@ const WINDOWS_LINT_CRATES: [&str; 11] = [
 /// portable by default. Adding a name here is the claim; this job is what makes
 /// it a fact.
 ///
-/// `openlogi-core` qualifies only with its `fs` feature off — that feature is
+/// `roadie-core` qualifies only with its `fs` feature off — that feature is
 /// the config file, and a config file needs a filesystem. Hence
 /// `--no-default-features`, which is why this job checks it in its own pass.
 const WASM_PORTABLE_CRATES: [&str; 6] = [
-    "openlogi-device-registry",
-    "openlogi-hidpp",
-    "openlogi-device",
-    "openlogi-streamdeck",
-    "openlogi-catalog",
-    "openlogi-via",
+    "roadie-device-registry",
+    "roadie-hidpp",
+    "roadie-device",
+    "roadie-streamdeck",
+    "roadie-catalog",
+    "roadie-via",
 ];
 
 /// The crates that are portable once their host-facing feature is off.
-const WASM_PORTABLE_NO_DEFAULT_CRATES: [&str; 1] = ["openlogi-core"];
+const WASM_PORTABLE_NO_DEFAULT_CRATES: [&str; 1] = ["roadie-core"];
 
 /// Every crate the wasm job checks, however it checks it.
 #[cfg(test)]
@@ -78,10 +78,10 @@ pub(super) fn wasm_portable_crates() -> impl Iterator<Item = &'static str> {
 /// graphics toolchain into the job. Excluding by name rather than listing the
 /// covered crates keeps a new crate documented by default.
 const RUSTDOC_EXCLUDES: [&str; 4] = [
-    "openlogi-ui",
-    "openlogi-desktop",
-    "openlogi-overlay",
-    "openlogi-agent",
+    "roadie-ui",
+    "roadie-desktop",
+    "roadie-overlay",
+    "roadie-agent",
 ];
 
 const CLIPPY_ARGS: [&str; 6] = [
@@ -163,7 +163,7 @@ pub(super) fn plan(job: Job, sh: &Shell, host: Host) -> Result<Plan> {
         Job::Rustdoc => Ok(rustdoc(job)),
         Job::TestsLinux => Ok(Plan::run(
             job,
-            [Step::new("cargo").args(["test", "--workspace", "--exclude", "openlogi-desktop"])],
+            [Step::new("cargo").args(["test", "--workspace", "--exclude", "roadie-desktop"])],
         )),
         Job::TestsMacos => Ok(tests_macos(job)),
         Job::CargoDeny => Ok(cargo_deny(job)),
@@ -171,11 +171,11 @@ pub(super) fn plan(job: Job, sh: &Shell, host: Host) -> Result<Plan> {
         Job::Wasm => wasm(job, sh),
         Job::I18n => Ok(Plan::run(
             job,
-            [Step::new("cargo").args(["test", "-p", "openlogi-desktop", "i18n"])],
+            [Step::new("cargo").args(["test", "-p", "roadie-desktop", "i18n"])],
         )),
         Job::Wire => Ok(Plan::run(
             job,
-            [Step::new("cargo").args(["test", "-p", "openlogi-ipc", "--test", "wire_format"])],
+            [Step::new("cargo").args(["test", "-p", "roadie-ipc", "--test", "wire_format"])],
         )),
     }
 }
@@ -319,7 +319,7 @@ fn cargo_deny(job: Job) -> Plan {
         ".cargo/deny.toml",
         "--all-features",
         "--manifest-path",
-        "crates/openlogi/Cargo.toml",
+        "crates/roadie/Cargo.toml",
         "check",
     ];
 

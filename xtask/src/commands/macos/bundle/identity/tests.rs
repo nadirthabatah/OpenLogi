@@ -113,7 +113,7 @@ fn a_dev_bundle_fails_production_verification() {
         .to_string();
 
     assert!(
-        error.contains("org.openlogi.openlogi-dev") && error.contains("production"),
+        error.contains("org.roadie.roadie-dev") && error.contains("production"),
         "the error must name the dev identity it found and the channel it wanted, got: {error}"
     );
 }

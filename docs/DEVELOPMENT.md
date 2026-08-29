@@ -1,6 +1,6 @@
-# Developing OpenLogi
+# Developing OpenRoadie
 
-This document covers the local development workflow for OpenLogi. For end-user
+This document covers the local development workflow for OpenRoadie. For end-user
 build instructions, see the [README](../README.md).
 
 ## Toolchain
@@ -9,7 +9,7 @@ build instructions, see the [README](../README.md).
 - macOS: Xcode 26+ with the optional **Metal Toolchain** component. The Metal
   Toolchain is what GPUI's `gpui_macos` build script compiles shaders with; the
   version floor is `actool`, which packaging uses to compile the app icon from
-  its Icon Composer document. `OPENLOGI_DEVELOPER_DIR` overrides which Xcode is
+  its Icon Composer document. `ROADIE_DEVELOPER_DIR` overrides which Xcode is
   used when several are installed.
 - Linux: system libraries — on Debian/Ubuntu:
   `sudo apt-get install libudev-dev gcc g++ clang libfontconfig-dev libwayland-dev libxkbcommon-x11-dev libx11-xcb-dev libssl-dev libzstd-dev pkg-config`
@@ -28,10 +28,10 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # macOS: full Xcode 26+ with the Metal Toolchain (not only Command Line Tools)
 # Linux: see system libraries under Toolchain above
 # optional helpers: brew install cmake create-dmg sccache
-git clone https://github.com/AprilNEA/OpenLogi
-cd OpenLogi
-cargo run -p openlogi --release -- list
-cargo run -p openlogi-desktop --release
+git clone https://github.com/nadirthabatah/OpenLogi
+cd OpenRoadie
+cargo run -p roadie --release -- list
+cargo run -p roadie-desktop --release
 ```
 
 If you use [direnv](https://direnv.net) without devenv installed, `.envrc`
@@ -45,12 +45,12 @@ nfpm on Linux, and the macOS packaging/env helpers GPUI needs
 (`create-dmg`, `DEVELOPER_DIR`, and `SDKROOT`). Tasks:
 
 ```sh
-devenv tasks run openlogi:gui      # run the desktop app
-devenv tasks run openlogi:check    # host-OS gate: fmt + clippy + tests + rustdoc
-devenv tasks run openlogi:ci       # every GitHub Actions CI job this host can reproduce
-devenv tasks run openlogi:dmg      # build the macOS DMG
-devenv tasks run openlogi:i18n-upload    # upload English source strings to Crowdin
-devenv tasks run openlogi:i18n-download  # download translations and run i18n tests
+devenv tasks run roadie:gui      # run the desktop app
+devenv tasks run roadie:check    # host-OS gate: fmt + clippy + tests + rustdoc
+devenv tasks run roadie:ci       # every GitHub Actions CI job this host can reproduce
+devenv tasks run roadie:dmg      # build the macOS DMG
+devenv tasks run roadie:i18n-upload    # upload English source strings to Crowdin
+devenv tasks run roadie:i18n-download  # download translations and run i18n tests
 ```
 
 After a `devenv.nix` change, reload direnv so the new env takes effect:
@@ -71,8 +71,8 @@ the NixOS module. It is separate from the devenv shell:
 
 ```sh
 nix flake check --all-systems --no-build  # evaluate every output
-nix build .#openlogi                      # build + test this host's package
-nix run .#openlogi -- list                # run the packaged CLI
+nix build .#roadie                      # build + test this host's package
+nix run .#roadie -- list                # run the packaged CLI
 ```
 
 The package expression and NixOS module live beside the other Linux packaging
@@ -82,15 +82,15 @@ Flake's pinned formatter.
 ### Dev app bundle (macOS)
 
 On macOS the desktop binary is launched from inside a throwaway
-`target/dev/OpenLogi.app` — a Cargo `runner` wired in `.cargo/config.toml`
+`target/dev/OpenRoadie.app` — a Cargo `runner` wired in `.cargo/config.toml`
 (`.cargo/run-macos.sh`) that hands the build to `xtask macos dev-bundle`. This
-makes the dev build show as **OpenLogi Dev** in the menu bar and Dock, with the
+makes the dev build show as **OpenRoadie Dev** in the menu bar and Dock, with the
 real app icon; a bare `cargo run` binary has no bundle, so macOS would otherwise
-fall back to the `openlogi-desktop` executable name and a generic icon. The
+fall back to the `roadie-desktop` executable name and a generic icon. The
 binary is hardlinked in (no copy) unless the bundle is being signed, and the
 icon is generated on demand. The runner is a transparent passthrough for
-everything else (the CLI, tests); set `OPENLOGI_DEV_BUNDLE=0` to launch the raw
-`openlogi-desktop` binary instead.
+everything else (the CLI, tests); set `ROADIE_DEV_BUNDLE=0` to launch the raw
+`roadie-desktop` binary instead.
 
 Each run also stops the dev agent and overlay left behind by the previous one,
 then starts the freshly built agent and waits for its IPC socket before the
@@ -100,13 +100,13 @@ The helpers are launched through LaunchServices so they get their own TCC
 identity, which also means they are not children of the GUI: closing its
 window or pressing Ctrl-C ends only the GUI, and a surviving dev agent
 relaunches itself ~20 s later once its watcher notices the rewritten binary.
-Set `OPENLOGI_DEV_AGENT=0` to run against an agent you started yourself —
+Set `ROADIE_DEV_AGENT=0` to run against an agent you started yourself —
 nothing is stopped, built, embedded, or started then.
 
 Packaged local dev bundles (`cargo run` and
 `cargo run -p xtask -- macos bundle`) use `-dev` bundle identifiers and the
-`openlogi-dev` XDG profile (`~/.config/openlogi-dev`,
-`~/.local/share/openlogi-dev`, and its own `agent.sock`). That keeps the dev
+`roadie-dev` XDG profile (`~/.config/roadie-dev`,
+`~/.local/share/roadie-dev`, and its own `agent.sock`). That keeps the dev
 GUI and agent from sharing the installed production app's Accessibility grant,
 single-instance lock, config, or IPC socket.
 
@@ -121,31 +121,31 @@ installed app's grants and config, which is exactly what releases
 To install the CLI binary on `PATH`:
 
 ```sh
-cargo install --path crates/openlogi
+cargo install --path crates/roadie
 ```
 
 ## Developing the GUI without hardware
 
-`openlogi-agent-mock` serves the real agent IPC contract from a scripted
+`roadie-agent-mock` serves the real agent IPC contract from a scripted
 in-memory inventory, so the desktop app can be developed with no Logitech
 device (or receiver) attached:
 
 ```sh
-cargo run -p openlogi-agent --bin openlogi-agent-mock   # then, in another terminal:
-OPENLOGI_DEV_AGENT=0 cargo run -p openlogi-desktop
+cargo run -p roadie-agent --bin roadie-agent-mock   # then, in another terminal:
+ROADIE_DEV_AGENT=0 cargo run -p roadie-desktop
 ```
 
-The mock defaults itself to the `openlogi-dev` profile (as if `OPENLOGI_PROFILE=dev`
+The mock defaults itself to the `roadie-dev` profile (as if `ROADIE_PROFILE=dev`
 were set), which is the profile the dev app bundle already uses — so it meets the
 dev GUI on the dev socket, and an installed *release* build, which is on the
 production profile, keeps running untouched. (A locally built bundle installed
 into `/Applications` carries `-dev` identifiers and therefore shares the dev
 profile: it and the mock contend for the same lock, and whichever starts second
-exits.) `OPENLOGI_DEV_AGENT=0` keeps the runner from building and embedding
-the real agent for the GUI to auto-spawn; add `OPENLOGI_ALLOW_EXTERNAL_AGENT=1`
+exits.) `ROADIE_DEV_AGENT=0` keeps the runner from building and embedding
+the real agent for the GUI to auto-spawn; add `ROADIE_ALLOW_EXTERNAL_AGENT=1`
 if your installed production agent is running, since the runner's guard against
 it predates the profile split and cannot know the dev GUI is on a separate
-socket. Pass `OPENLOGI_PROFILE=prod` to serve the production socket instead; the
+socket. Pass `ROADIE_PROFILE=prod` to serve the production socket instead; the
 mock then contends for the production agent's single-instance lock and refuses
 to start while it is running.
 
@@ -162,7 +162,7 @@ Use the debug-only component gallery to review shared controls across light and
 dark themes and every supported interface scale without config, IPC, or hardware:
 
 ```sh
-OPENLOGI_COMPONENT_GALLERY=1 cargo run -p openlogi-desktop
+ROADIE_COMPONENT_GALLERY=1 cargo run -p roadie-desktop
 ```
 
 Gallery mode opens one isolated window and bypasses the normal single-instance,
@@ -173,20 +173,20 @@ ignored by release builds.
 
 ```
 crates/
-  openlogi/         the `openlogi` binary — a thin wrapper over openlogi-cli
-  openlogi-core/    types, config (TOML), paths, button + action catalog — no HID, no async
-  openlogi-inject/  OS input synthesis: CGEvent, uinput/MPRIS, and SendInput
-  openlogi-hidpp/   vendored HID++ protocol crate (lib name `hidpp`)
-  openlogi-hid/     device discovery, HID++ reads/writes, and control capture over async-hid
-  openlogi-assets/  device-render registry schema + cached HTTP fetch from OpenLogi asset mirrors
-  openlogi-cli/     CLI implementation: command tree + `run()`, called by the `openlogi` binary
-  openlogi-agent-core/  shared orchestration + the agent/GUI IPC contract
-  openlogi-agent/   the `openlogi-agent` binary — background agent owning device I/O and the hook
-  openlogi-hook/    OS mouse hook: macOS CGEventTap, Linux evdev/uinput, Windows WH_MOUSE_LL
-  openlogi-ui/      presentation shared by the two GPUI processes: ring geometry/icons,
+  roadie/         the `roadie` binary — a thin wrapper over roadie-cli
+  roadie-core/    types, config (TOML), paths, button + action catalog — no HID, no async
+  roadie-inject/  OS input synthesis: CGEvent, uinput/MPRIS, and SendInput
+  roadie-hidpp/   vendored HID++ protocol crate (lib name `hidpp`)
+  roadie-hid/     device discovery, HID++ reads/writes, and control capture over async-hid
+  roadie-assets/  device-render registry schema + cached HTTP fetch from OpenRoadie asset mirrors
+  roadie-cli/     CLI implementation: command tree + `run()`, called by the `roadie` binary
+  roadie-agent-core/  shared orchestration + the agent/GUI IPC contract
+  roadie-agent/   the `roadie-agent` binary — background agent owning device I/O and the hook
+  roadie-hook/    OS mouse hook: macOS CGEventTap, Linux evdev/uinput, Windows WH_MOUSE_LL
+  roadie-ui/      presentation shared by the two GPUI processes: ring geometry/icons,
                     the GPUI asset source, locale negotiation — gpui, no gpui-component
-  openlogi-desktop/     the `openlogi-desktop` binary — GPUI + gpui-component IPC client
-  openlogi-overlay/ the `openlogi-overlay` binary — the cursor-centred Actions Ring
+  roadie-desktop/     the `roadie-desktop` binary — GPUI + gpui-component IPC client
+  roadie-overlay/ the `roadie-overlay` binary — the cursor-centred Actions Ring
 ```
 
 ## Local CI
@@ -198,7 +198,7 @@ cross-lint the host-OS gate does not run:
 ```sh
 cargo xtask ci
 cargo xtask ci --list                        # job → command table
-devenv tasks run openlogi:ci                 # same, from devenv
+devenv tasks run roadie:ci                 # same, from devenv
 ```
 
 The runner sets `RUSTFLAGS=-D warnings` the way CI does. Jobs that need another
@@ -212,9 +212,9 @@ rustup target add x86_64-pc-windows-gnu
 sudo apt-get install gcc-mingw-w64-x86-64   # or the equivalent for your distro
 ```
 
-The C compiler is for `ring`, which `openlogi-{assets,cli}` and the root
-`openlogi` pull in through ureq. Without it those three drop out of the lint,
-and `openlogi-cli` is where most of the workspace's test code lives — a test is
+The C compiler is for `ring`, which `roadie-{assets,cli}` and the root
+`roadie` pull in through ureq. Without it those three drop out of the lint,
+and `roadie-cli` is where most of the workspace's test code lives — a test is
 exactly where a Unix-only call such as `std::os::unix::fs::symlink` gets
 written without thinking about it, compiles fine locally, and fails the Windows
 build in CI fifteen minutes later. With mingw the same failure appears in about
@@ -231,11 +231,11 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps \
-  --document-private-items --exclude openlogi-ui --exclude openlogi-desktop \
-  --exclude openlogi-overlay --exclude openlogi-agent
+  --document-private-items --exclude roadie-ui --exclude roadie-desktop \
+  --exclude roadie-overlay --exclude roadie-agent
 ```
 
-Equivalent to `devenv tasks run openlogi:check`. That is **not** the full
+Equivalent to `devenv tasks run roadie:check`. That is **not** the full
 pipeline: typos, Linux clippy, Windows clippy, MSRV, cargo-deny, and the shell
 lint (shellcheck + shfmt) are separate CI jobs. Reproduce those with
 `cargo xtask ci` or the commands in `.claude/rules/ci.md`.
@@ -243,23 +243,23 @@ lint (shellcheck + shfmt) are separate CI jobs. Reproduce those with
 ## Packaging the macOS DMG
 
 ```sh
-cargo run -p xtask -- macos package    # → target/release/OpenLogi.dmg
+cargo run -p xtask -- macos package    # → target/release/OpenRoadie.dmg
 # Cross-compile a distribution DMG (aarch64 or x86_64):
 cargo run -p xtask -- macos package --target x86_64-apple-darwin
 ```
 
 Environment overrides:
 
-- `OPENLOGI_BUNDLE_ASSETS=1` — bundle every device render into the `.app` for a
+- `ROADIE_BUNDLE_ASSETS=1` — bundle every device render into the `.app` for a
   fully offline build (default: fetched on demand at first launch).
-- `OPENLOGI_SIGN_IDENTITY=<identity>` — codesign the `.app` and `.dmg` with the
+- `ROADIE_SIGN_IDENTITY=<identity>` — codesign the `.app` and `.dmg` with the
   given Developer ID.
-- `OPENLOGI_DMG_BACKGROUND_URL=<url>` — override the branded DMG background
+- `ROADIE_DMG_BACKGROUND_URL=<url>` — override the branded DMG background
   TIFF URL (default: `https://assets.openlogi.org/dmg/dmg-background.tiff`).
 
 The local packaging command and release workflow both use the same branded DMG
 layout: a 760×480 background image in a 760×512 Finder window, with 128px icons
-positioned at `(212, 250)` for `OpenLogi.app` and `(548, 250)` for
+positioned at `(212, 250)` for `OpenRoadie.app` and `(548, 250)` for
 `Applications`.
 
 ## Packaging Linux `.deb` / `.rpm` / `.pkg.tar.zst`
@@ -269,7 +269,7 @@ derived from the host (override with `PKG_ARCH`):
 
 ```sh
 cargo run -p xtask -- linux package
-# → target/release/openlogi_*.deb / .rpm / .pkg.tar.zst
+# → target/release/roadie_*.deb / .rpm / .pkg.tar.zst
 ```
 
 The package contents (binaries, udev rules, systemd user unit, desktop entry,
@@ -286,12 +286,12 @@ downloads and the Homebrew cask. The release workflow also publishes the same
 DMGs to Cloudflare R2 and writes a static updater manifest at:
 
 ```text
-${OPENLOGI_UPDATE_BASE_URL}/channels/stable/latest.json
+${ROADIE_UPDATE_BASE_URL}/channels/stable/latest.json
 ```
 
 The app embeds that manifest URL at build time via
-`OPENLOGI_UPDATE_MANIFEST_URL`, derived from `OPENLOGI_UPDATE_BASE_URL` in the
-release workflow. Release builds also embed `OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY`
+`ROADIE_UPDATE_MANIFEST_URL`, derived from `ROADIE_UPDATE_BASE_URL` in the
+release workflow. Release builds also embed `ROADIE_UPDATE_MINISIGN_PUBLIC_KEY`
 and run with `Verification::Strict`: an update is installed only if the manifest
 asset carries a minisign signature that verifies against that key, plus a
 matching SHA-256. A build without the key embedded (local/dev) fails closed —
@@ -300,11 +300,11 @@ the update check errors rather than installing an unverified artifact.
 Configure the R2/update settings in one 1Password item referenced by the GitHub
 secret `OP_R2_SECRET_ITEM`. The item must contain:
 
-- `OPENLOGI_UPDATE_BASE_URL` — public HTTPS base URL, for example
+- `ROADIE_UPDATE_BASE_URL` — public HTTPS base URL, for example
   `https://updates.openlogi.org`.
-- `OPENLOGI_UPDATE_MINISIGN_PUBLIC_KEY` — base64 minisign public key embedded in
+- `ROADIE_UPDATE_MINISIGN_PUBLIC_KEY` — base64 minisign public key embedded in
   the app and used to verify updater artifacts.
-- `OPENLOGI_UPDATE_MINISIGN_SECRET_KEY` — the passwordless minisign secret key
+- `ROADIE_UPDATE_MINISIGN_SECRET_KEY` — the passwordless minisign secret key
   file, **base64-encoded** (`base64 < minisign.key`), used only in the release
   publish job to sign DMGs before `latest.json` is generated. It is stored
   base64 (not raw) so its two lines survive 1Password's paste handling; the
@@ -373,7 +373,7 @@ contain:
 - `CROWDIN_PERSONAL_TOKEN` — a Crowdin API token with access to the project.
 
 Grant the token only these scopes and restrict its granular access to the
-OpenLogi project:
+OpenRoadie project:
 
 - Projects (List, Get, Create, Edit) — Read.
 - Translation Status — Read Only.
@@ -391,7 +391,7 @@ so git push does not inherit the read-only Actions credential.
 Local helpers (with Crowdin credentials configured):
 
 ```sh
-devenv tasks run openlogi:i18n-upload    # en.yml sources + per-language translations
-devenv tasks run openlogi:i18n-download  # download + merge + i18n tests
+devenv tasks run roadie:i18n-upload    # en.yml sources + per-language translations
+devenv tasks run roadie:i18n-download  # download + merge + i18n tests
 python3 .github/scripts/i18n/merge_crowdin_download.py --self-test
 ```
