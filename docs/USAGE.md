@@ -382,15 +382,69 @@ over synthesized reports as well as real runs, because output that needs
 hardware to produce cannot be checked by running the program on a machine with
 none — which is every machine this project is developed on.
 
+## Monitors
+
+`roadie display` reaches the settings behind your monitor's own menu —
+brightness, contrast, input, volume — over the video cable, using DDC/CI. That
+menu is drawn by the monitor itself, in its own font, where no screen reader
+can read it, so for anyone working by ear this is not a convenience: it is the
+only way in.
+
+Your laptop's built-in screen will never appear. It has no DDC channel at all,
+and its brightness is a system setting rather than a monitor one.
+
+```sh
+roadie display list
+```
+
+names each monitor from its own identification block — "LG ULTRAFINE" rather
+than a port number — and says whether it answers. A monitor that is listed and
+does not answer is still worth listing: on Linux the reason is usually that the
+I²C devices belong to the `i2c` group and you are not in it, and the message
+says so. The other common cause is DDC/CI switched off in the monitor's own
+menu, where a great many ship it off.
+
+```sh
+roadie display brightness 40
+roadie display get contrast
+roadie display set input hdmi2
+```
+
+Brightness takes a percentage. Everything else takes the monitor's own number,
+or a name where it has one — `hdmi1`, `dp2`, `standby`. `roadie display
+capabilities` asks the monitor what it has, which is the only reliable list:
+the numbers above `0x12` for inputs are vendor territory, and USB-C in
+particular has no standard number at all.
+
+Two writes are refused unless you insist, and both refusals name what you
+would have to do to undo them. Powering a monitor off can stop it answering the
+computer entirely, leaving the button on its bezel as the only way back;
+`roadie display save` writes to the monitor's own memory, which can only be
+rewritten a limited number of times. Neither happens by accident.
+
 ## Lights, backlight, and snapshots
 
 Three commands inherited from upstream, listed here because `roadie devices`
 now points at them and a command it names should be one you can read about.
 
-`roadie light` drives a standalone Logitech light such as a Litra: `list`
-shows each light and the controls it advertises, and `on`, `off`, `brightness`
-and `temperature` change it. Brightness takes either a percentage or native
-lumens; temperature takes Kelvin.
+`roadie light` drives the lights on your desk, whichever way they are reached:
+a Logitech Litra over USB, and an Elgato Key Light over Wi-Fi. They share one
+command rather than having two, because the question you are asking is "what
+lights do I have" and an answer covering only the ones on a cable would be
+worse for sounding complete.
+
+`list` shows each light and what it is doing, and `on`, `off`, `brightness`
+and `temperature` change it. Brightness takes a percentage for either family,
+or native lumens for a Litra; temperature takes Kelvin for both — an Elgato
+light actually counts in mireds, which run backwards, and the conversion is
+done for you.
+
+Elgato lights are found by asking the network, which takes a couple of seconds
+and needs them to be on the same network as this computer. `--no-network` skips
+the look if all your lights are on USB, and `--wait` changes how long it
+listens. If you have more than one light, `--device` takes part of a name — the
+name you gave it in Elgato's app — or part of its address, and an ambiguous
+name is refused with both candidates listed rather than guessed at.
 
 `roadie backlight` reads or sets a keyboard's backlight over HID++, and `on`
 and `off` are persistent — the keyboard keeps the setting rather than reverting
@@ -578,6 +632,11 @@ The tools exposed are:
 | `read_smartshift` / `set_smartshift` | Scroll-wheel mode and the speed the ratchet releases at |
 | `set_lighting` | Backlight on/off, colour, brightness |
 | `set_light` | A standalone light such as a Litra: power, brightness, colour temperature |
+| `list_network_lights` | Elgato Key Lights on the network, and what each is doing |
+| `set_network_light` | One Key Light: power, brightness and colour temperature, in a single request |
+| `list_displays` | Monitors attached, whether each answers over DDC, and why not when it does not |
+| `read_display_settings` | A monitor's brightness, input, contrast and volume, with the maximum it reports |
+| `set_display_setting` | Change one monitor setting, reporting what the monitor actually took |
 | `watch_input` | Watch for a few seconds and report what was pressed |
 | `list_cameras` | Every attached webcam, of any brand, with the id the camera tools take |
 | `read_camera_controls` | A webcam's controls with current values, accepted ranges, and auto modes |
