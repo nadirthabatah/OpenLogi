@@ -473,20 +473,26 @@ pub fn layout_key(
 ///
 /// Fails when the layout cannot be read, the key description is not usable,
 /// or the file cannot be written.
-pub fn set_layout_key(name: &str, key: layout::Key) -> Result<Option<layout::Key>> {
+pub fn set_layout_key(name: &str, key: &layout::Key) -> Result<Option<layout::Key>> {
     let path = library::resolve(name)?;
-    let mut parsed = if path.exists() {
-        read_layout(&path)?
+    let (source, was) = if path.exists() {
+        let source = std::fs::read_to_string(&path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        // Parsed only to report what the edit replaced, and to refuse a file
+        // that is not a layout before writing to it. The edit itself is
+        // applied to the text, so the person's comments survive it.
+        let parsed = layout::Layout::parse(&path, &source).map_err(|error| anyhow!("{error}"))?;
+        let was = parsed
+            .keys
+            .iter()
+            .find(|held| held.index == key.index)
+            .cloned();
+        (source, was)
     } else {
-        layout::Layout::default()
+        (String::new(), None)
     };
-    let was = parsed
-        .keys
-        .iter()
-        .find(|held| held.index == key.index)
-        .cloned();
-    parsed.set(key);
-    write_layout(&path, &parsed)?;
+    let edited = layout::edit::set_key(&source, key).map_err(|error| anyhow!("{error}"))?;
+    write_layout_text(&path, &edited)?;
     Ok(was)
 }
 
@@ -502,11 +508,14 @@ pub fn unset_layout_key(name: &str, index: u16) -> Result<Option<layout::Key>> {
     if !path.exists() {
         return Err(anyhow!("there is no layout at {}", path.display()));
     }
-    let mut parsed = read_layout(&path)?;
+    let source = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let parsed = layout::Layout::parse(&path, &source).map_err(|error| anyhow!("{error}"))?;
     let was = parsed.keys.iter().find(|key| key.index == index).cloned();
-    if was.is_some() {
-        parsed.remove(index);
-        write_layout(&path, &parsed)?;
+    let (edited, removed) =
+        layout::edit::remove_key(&source, index).map_err(|error| anyhow!("{error}"))?;
+    if removed {
+        write_layout_text(&path, &edited)?;
     }
     Ok(was)
 }
@@ -538,22 +547,35 @@ fn set_key(path: &Path, args: &SetArgs) -> Result<ExitCode> {
     }
     let action = args.action.as_deref().map(parse_action).transpose()?;
 
-    let mut layout = if path.exists() {
-        read_layout(path)?
+    // Read as text and edited as text, so the comments and spacing in a file
+    // someone wrote survive an edit to one key of it. Parsed as well, but only
+    // to refuse a file that is not a layout and to say whether the key was
+    // already there.
+    let source = if path.exists() {
+        std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read {}", path.display()))?
     } else {
-        layout::Layout::default()
+        String::new()
     };
-    let existing = layout.keys.iter().any(|key| key.index == args.key);
-    layout.set(layout::Key {
-        index: args.key,
-        label: args.label.clone(),
-        image: args.image.clone(),
-        colour: args.colour.clone(),
-        background: args.background.clone(),
-        action,
-    });
+    let existing = layout::Layout::parse(path, &source)
+        .map_err(|error| anyhow!("{error}"))?
+        .keys
+        .iter()
+        .any(|key| key.index == args.key);
+    let edited = layout::edit::set_key(
+        &source,
+        &layout::Key {
+            index: args.key,
+            label: args.label.clone(),
+            image: args.image.clone(),
+            colour: args.colour.clone(),
+            background: args.background.clone(),
+            action,
+        },
+    )
+    .map_err(|error| anyhow!("{error}"))?;
 
-    write_layout(path, &layout)?;
+    write_layout_text(path, &edited)?;
     println!(
         "key {} {} in {}",
         args.key,
@@ -574,8 +596,13 @@ fn unset_key(path: &Path, key: u16) -> Result<ExitCode> {
         eprintln!("There is no layout at {}.", path.display());
         return Ok(ExitCode::from(NOTHING_FOUND));
     }
-    let mut layout = read_layout(path)?;
-    if !layout.remove(key) {
+    let source = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    // Parsed to refuse a file that is not a layout before writing to it.
+    layout::Layout::parse(path, &source).map_err(|error| anyhow!("{error}"))?;
+    let (edited, removed) =
+        layout::edit::remove_key(&source, key).map_err(|error| anyhow!("{error}"))?;
+    if !removed {
         // Told "removed", someone believes something changed, and the next
         // thing they do is wonder why the deck looks the same.
         eprintln!(
@@ -584,7 +611,7 @@ fn unset_key(path: &Path, key: u16) -> Result<ExitCode> {
         );
         return Ok(ExitCode::from(NOTHING_FOUND));
     }
-    write_layout(path, &layout)?;
+    write_layout_text(path, &edited)?;
     println!("key {key} removed from {}", path.display());
     Ok(ExitCode::SUCCESS)
 }
@@ -606,8 +633,7 @@ pub fn parse_action(name: &str) -> Result<openlogi_core::binding::Action> {
 }
 
 /// Write a layout back to its file, creating the library if it is new.
-fn write_layout(path: &Path, layout: &layout::Layout) -> Result<()> {
-    let body = layout.to_toml().map_err(|error| anyhow!("{error}"))?;
+fn write_layout_text(path: &Path, body: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;

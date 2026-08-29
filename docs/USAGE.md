@@ -209,6 +209,23 @@ written in the file rather than passed here. That is not an oversight: those
 are the actions `run` refuses without `--accept-actions`, and adding one should
 be a deliberate act of editing, not a flag on a convenience command.
 
+### Your file stays your file
+
+`set` and `unset` edit the layout's text rather than rewriting it from what
+they parsed, so the comments you wrote, your blank lines, and the order you put
+things in all survive an edit. That is the same choice OpenLogi already made
+for `config.toml`; layouts were simply missed.
+
+It matters most for the person least able to notice: a rewrite reports success,
+the layout still works, and the only thing gone is the note you left yourself
+about which key is the mic mute. Nothing on screen changes, and there is no
+reason to re-read a file that said it worked.
+
+A new key is appended rather than sorted into place. Sorting would move whole
+blocks around, and a comment at the top of the file — which is attached to
+whatever comes first — would travel with it. Nothing downstream cares about the
+order.
+
 ### Layouts have a home
 
 A bare word is a **name**: `streaming` means the layout saved under that name,

@@ -417,6 +417,62 @@ fn a_layout_can_be_created_listed_and_not_clobbered() {
         .expect_says("already exists");
 }
 
+/// A layout is a file someone owns, and editing one key of it must not throw
+/// away the rest of what they wrote.
+///
+/// End-to-end rather than only in the unit tests because the failure it guards
+/// is silent: the edit reports success, the layout still works, and the only
+/// thing gone is the note the person left themselves. Nobody re-reads a file
+/// that said it succeeded — least of all by ear.
+#[test]
+fn editing_a_key_keeps_the_comments_someone_wrote() {
+    let sandbox = Sandbox::new("layout-comments");
+    let layout = sandbox.path("deck.toml");
+    std::fs::write(
+        &layout,
+        "# My streaming deck.\n\
+         # Key 0 is the mic mute — do not move it, muscle memory.\n\
+         brightness = 80\n\
+         \n\
+         [[keys]]\n\
+         index = 0\n\
+         label = \"MUTE MIC\"\n\
+         background = \"802020\"\n",
+    )
+    .expect("a layout to edit");
+    let path = layout.to_string_lossy().into_owned();
+
+    sandbox
+        .run(&["streamdeck", "set", &path, "1", "--label", "REC"])
+        .expect_status(0);
+
+    let after = std::fs::read_to_string(&layout).expect("the layout is still there");
+    assert!(after.contains("# My streaming deck."), "{after}");
+    assert!(after.contains("muscle memory"), "{after}");
+    assert!(after.contains("brightness = 80"), "{after}");
+    assert!(after.contains("REC"), "{after}");
+
+    // Replacing a key still clears what it no longer carries: a key left with
+    // both a label and a background nobody asked for is a key nobody chose.
+    sandbox
+        .run(&["streamdeck", "set", &path, "0", "--label", "MUTE"])
+        .expect_status(0);
+    let after = std::fs::read_to_string(&layout).expect("still there");
+    assert!(
+        !after.contains("802020"),
+        "the old background survived: {after}"
+    );
+    assert!(after.contains("muscle memory"), "{after}");
+
+    // And removing a key leaves the file's own header alone.
+    sandbox
+        .run(&["streamdeck", "unset", &path, "1"])
+        .expect_status(0);
+    let after = std::fs::read_to_string(&layout).expect("still there");
+    assert!(after.contains("# My streaming deck."), "{after}");
+    assert!(!after.contains("REC"), "{after}");
+}
+
 /// A whole layout built from the command line, never opening a text editor.
 ///
 /// For anyone this is convenience; for someone working by dictation it is the

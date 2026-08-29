@@ -171,8 +171,8 @@ pub fn set_layout_key(arguments: &Value) -> Result<String, String> {
         optional_text(arguments, "background"),
         action,
     );
-    let was =
-        crate::cmd::streamdeck::set_layout_key(&layout, key).map_err(|error| format!("{error}"))?;
+    let was = crate::cmd::streamdeck::set_layout_key(&layout, &key)
+        .map_err(|error| format!("{error}"))?;
     rendered(&json!({
         "layout": layout,
         "key": index,
