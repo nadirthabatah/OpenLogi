@@ -7,6 +7,7 @@ use anyhow::Result;
 use clap::Parser;
 use tracing_subscriber::{EnvFilter, fmt};
 
+pub mod bundle;
 mod cmd;
 pub mod profile;
 
