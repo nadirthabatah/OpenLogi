@@ -5476,6 +5476,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "openlogi-catalog"
+version = "0.8.1"
+dependencies = [
+ "openlogi-device-registry",
+ "openlogi-streamdeck",
+]
+
+[[package]]
 name = "openlogi-cli"
 version = "0.8.1"
 dependencies = [
@@ -5484,7 +5492,9 @@ dependencies = [
  "image",
  "openlogi-assets",
  "openlogi-camera",
+ "openlogi-catalog",
  "openlogi-core",
+ "openlogi-device-registry",
  "openlogi-hid",
  "openlogi-inject",
  "openlogi-ipc",
@@ -5599,6 +5609,7 @@ dependencies = [
  "image",
  "objc2-io-kit",
  "openlogi-async-hid",
+ "openlogi-catalog",
  "openlogi-core",
  "openlogi-device",
  "openlogi-hidpp",

@@ -24,6 +24,7 @@ futures-concurrency = "7"
 serde_json.workspace = true
 atomic-write-file = { workspace = true }
 openlogi-device = { version = "0.8.1", path = "../openlogi-device" }
+openlogi-catalog = { version = "0.8.1", path = "../openlogi-catalog" }
 openlogi-streamdeck = { version = "0.8.1", path = "../openlogi-streamdeck" }
 
 # Native Win32 HID report writes (windows_hid.rs) — a fallback for async-hid's

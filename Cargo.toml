@@ -10,6 +10,7 @@ members = [
     "crates/openlogi-hid",
     "crates/openlogi-device",
     "crates/openlogi-streamdeck",
+    "crates/openlogi-catalog",
     "crates/openlogi-camera",
     "crates/openlogi-permissions",
     "crates/openlogi-assets",

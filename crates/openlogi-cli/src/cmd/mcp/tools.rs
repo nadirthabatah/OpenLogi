@@ -17,6 +17,7 @@ mod decks;
 mod inventory;
 mod lighting;
 mod monitor;
+mod peripherals;
 mod pointer;
 mod profiles;
 
@@ -62,6 +63,7 @@ fn no_arguments_schema() -> Value {
 pub fn catalog() -> Value {
     let mut tools = Vec::new();
     tools.extend(inventory::tools());
+    tools.extend(peripherals::tools());
     tools.extend(camera::tools());
     tools.extend(pointer::tools());
     tools.extend(lighting::tools());
@@ -85,6 +87,7 @@ pub async fn call(params: &Value) -> Result<Value, String> {
     let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
     let outcome = match name {
         "list_devices" => inventory::list_devices().await,
+        "list_peripherals" => peripherals::list_peripherals().await,
         "reload_config" => inventory::reload_config().await,
         "read_dpi" => pointer::read_dpi(&arguments).await,
         "set_dpi" => pointer::set_dpi(&arguments).await,
@@ -179,8 +182,9 @@ mod tests {
     /// The dispatch arms in [`super::call`], as the catalog must advertise
     /// them. Kept here so a tool added to one and not the other fails a test
     /// rather than surfacing as "unknown tool" at run time.
-    const DISPATCHED: [&str; 21] = [
+    const DISPATCHED: [&str; 22] = [
         "list_devices",
+        "list_peripherals",
         "reload_config",
         "read_dpi",
         "set_dpi",

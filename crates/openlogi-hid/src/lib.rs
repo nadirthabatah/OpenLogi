@@ -20,6 +20,7 @@ pub mod host;
 pub mod permissions;
 pub mod probe_cache;
 pub mod streamdeck;
+pub mod survey;
 
 // The device layer, verbatim. `host` shadows the entry points that need a
 // backend with versions that supply this host's; everything else is the same
