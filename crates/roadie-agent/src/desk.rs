@@ -145,7 +145,13 @@ pub async fn list_network_lights() -> Vec<NetworkLightSummary> {
             roadie_keylight::discover(DISCOVERY_WAIT)
                 .unwrap_or_default()
                 .iter()
-                .filter_map(|light| Some(summarize_light(light, light.read().ok()?)))
+                .map(|light| match light.read() {
+                    Ok(state) => summarize_light(light, state),
+                    // Kept rather than dropped. It announced itself, so it is
+                    // there; saying so is something a person can act on, and a
+                    // light that silently vanishes from the list is not.
+                    Err(error) => unreachable_light(light, &error.to_string()),
+                })
                 .collect()
         },
         Vec::new,
@@ -161,6 +167,25 @@ fn summarize_light(light: &KeyLight, state: Light) -> NetworkLightSummary {
         on: state.is_on(),
         brightness: state.brightness,
         kelvin: state.kelvin(),
+        reachable: true,
+        unreachable_reason: None,
+    }
+}
+
+/// A light that announced itself and then would not say what it is doing.
+///
+/// The state fields are left at zero and mean nothing; `reachable` is what a
+/// reader must consult first, which is why it exists rather than a sentinel
+/// value in `brightness`.
+fn unreachable_light(light: &KeyLight, why: &str) -> NetworkLightSummary {
+    NetworkLightSummary {
+        id: SocketAddr::new(light.address(), light.port()).to_string(),
+        name: light.name().to_owned(),
+        on: false,
+        brightness: 0,
+        kelvin: 0,
+        reachable: false,
+        unreachable_reason: Some(why.to_owned()),
     }
 }
 

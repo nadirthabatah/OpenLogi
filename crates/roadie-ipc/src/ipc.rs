@@ -69,7 +69,10 @@ pub use succession::Identity;
 /// v30: the desk beyond HID++ — monitors over DDC and Elgato lights over the
 ///      network — appended as five on-demand methods plus [`mod@crate::desk`].
 ///      Asked for rather than observed, for the reason that module gives.
-pub const PROTOCOL_VERSION: u32 = 30;
+/// v31: `NetworkLightSummary` carries whether the light answered, so one that
+///      announced itself and then went quiet is listed as unreachable rather
+///      than dropped — matching both the monitor summary and the command line.
+pub const PROTOCOL_VERSION: u32 = 31;
 
 /// Environment variable through which the agent hands a supervised helper the
 /// run token it will serve, so the helper knows which agent it belongs to

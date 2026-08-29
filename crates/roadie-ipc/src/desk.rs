@@ -129,6 +129,12 @@ impl std::fmt::Display for DisplayFailure {
 }
 
 /// One Elgato light found on the network.
+///
+/// Carries whether it answered, for the same reason [`DisplaySummary`] does: a
+/// light that announced itself and then would not say what it is doing is
+/// worth showing, because "your light is there and not answering" is something
+/// a person can act on and its absence from a list is not. Dropping it would
+/// also disagree with the command line, which has always kept it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NetworkLightSummary {
     /// Address and port, which is what addresses it and is stable while the
@@ -137,12 +143,19 @@ pub struct NetworkLightSummary {
     /// The name it was given in Elgato's own app.
     pub name: String,
     /// Whether it is lit.
+    ///
+    /// Meaningless unless [`Self::reachable`]: a light that did not answer did
+    /// not say.
     pub on: bool,
-    /// Brightness, as a percentage.
+    /// Brightness, as a percentage. Likewise meaningless unless reachable.
     pub brightness: u16,
     /// Colour temperature in Kelvin — converted from the mireds the light
-    /// actually counts in, which run the other way.
+    /// actually counts in, which run the other way. Likewise.
     pub kelvin: u16,
+    /// Whether it answered when asked what it is doing.
+    pub reachable: bool,
+    /// Why it did not, when it did not.
+    pub unreachable_reason: Option<String>,
 }
 
 /// A change to a light, with everything that is not being changed left out.
@@ -234,6 +247,24 @@ mod tests {
         // rather than to report a fault.
         let said = DisplayFailure::NotFound.to_string();
         assert!(said.contains("refresh"), "{said}");
+    }
+
+    #[test]
+    fn a_light_that_did_not_answer_is_still_worth_listing() {
+        // Its state fields say nothing, which is why `reachable` gates them:
+        // a light that did not answer did not say how bright it is, and zero
+        // is not the same as unknown.
+        let asleep = NetworkLightSummary {
+            id: "192.168.1.40:9123".to_owned(),
+            name: "Key Light Left".to_owned(),
+            on: false,
+            brightness: 0,
+            kelvin: 0,
+            reachable: false,
+            unreachable_reason: Some("connection timed out".to_owned()),
+        };
+        assert!(!asleep.reachable);
+        assert!(asleep.unreachable_reason.is_some());
     }
 
     #[test]
