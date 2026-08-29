@@ -52,6 +52,18 @@ pub async fn list_peripherals() -> Result<String, String> {
             .iter()
             .map(crate::cmd::devices::display_peripheral),
     );
+    // Two seconds of multicast, the same as `roadie devices`. The cost is
+    // real, and paying it here rather than leaving the network out is what
+    // keeps the promise above true: a script and an assistant reading the same
+    // desk must not be told different things about it.
+    found.extend(
+        roadie_keylight::discover(std::time::Duration::from_secs(2))
+            .unwrap_or_default()
+            .iter()
+            .map(|light| {
+                crate::cmd::devices::key_light_peripheral(light.name(), light.info().ok().as_ref())
+            }),
+    );
 
     // The same rendering `roadie devices --json` prints, so a script and an
     // assistant reading the same desk cannot be told different things.

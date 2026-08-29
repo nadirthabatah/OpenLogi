@@ -14,6 +14,7 @@
 
 use std::fmt::Write as _;
 use std::process::ExitCode;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -42,6 +43,15 @@ pub struct DevicesArgs {
     /// things.
     #[arg(long)]
     pub json: bool,
+    /// Do not look for devices on the network.
+    ///
+    /// Looking costs a couple of seconds. This buys them back for anyone whose
+    /// desk is entirely on cables.
+    #[arg(long)]
+    pub no_network: bool,
+    /// Seconds to spend looking for devices on the network.
+    #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u64).range(1..=30))]
+    pub wait: u64,
 }
 
 /// Survey every peripheral attached and say what can be done with each.
@@ -60,6 +70,9 @@ pub async fn run(args: DevicesArgs) -> Result<ExitCode> {
             .map(camera_peripheral),
     );
     found.extend(display_peripherals());
+    if !args.no_network {
+        found.extend(key_light_peripherals(Duration::from_secs(args.wait)));
+    }
 
     if args.json {
         // Emptiness is data in JSON, not a message: a consumer branches on the
@@ -74,7 +87,7 @@ pub async fn run(args: DevicesArgs) -> Result<ExitCode> {
     }
 
     if found.is_empty() {
-        print!("{}", nothing_found());
+        print!("{}", nothing_found(!args.no_network));
         return Ok(ExitCode::from(NOTHING_FOUND));
     }
 
@@ -92,14 +105,21 @@ pub async fn run(args: DevicesArgs) -> Result<ExitCode> {
 /// It names every source that was searched, monitors included. A sentence that
 /// listed two of the three would be read as a complete list by anyone who
 /// could not see that a third had been looked at.
-fn nothing_found() -> String {
-    "Nothing found.\n\n\
-     No HID device, no camera and no monitor was reported. On Linux that is \
-     usually a permissions problem rather than an empty desk, and on macOS it \
-     can be a missing Input Monitoring grant.\n\n\
-     Run `roadie doctor`: it checks which of those it is and says what to do \
-     about it, in order.\n"
-        .to_owned()
+fn nothing_found(searched_network: bool) -> String {
+    let sources = if searched_network {
+        "No HID device, no camera, no monitor and no Elgato light on the network was \
+         reported."
+    } else {
+        "No HID device, no camera and no monitor was reported, and the network was not \
+         searched because --no-network was given."
+    };
+    format!(
+        "Nothing found.\n\n\
+         {sources} On Linux that is usually a permissions problem rather than an empty \
+         desk, and on macOS it can be a missing Input Monitoring grant.\n\n\
+         Run `roadie doctor`: it checks which of those it is and says what to do \
+         about it, in order.\n"
+    )
 }
 
 /// Turn an enumerated camera into a catalog entry.
@@ -144,6 +164,48 @@ pub fn display_peripheral(display: &roadie_display::Display) -> Peripheral {
         },
     );
     Peripheral::from_display(identity)
+}
+
+/// Turn a discovered Elgato light into a catalog entry.
+///
+/// `info` is the light's own answer to `accessory-info`, which is asked for
+/// rather than skipped because it carries the serial number — and the serial
+/// is what tells two identically named lights apart in
+/// [`Identity::merge_key`]. A light whose firmware is old enough not to report
+/// one merges with another like it, which understates the count rather than
+/// inventing devices that are not there: the same trade the HID path already
+/// makes for a device with no serial.
+pub fn key_light_peripheral(
+    name: &str,
+    info: Option<&roadie_keylight::AccessoryInfo>,
+) -> Peripheral {
+    Peripheral::from_key_light(Identity {
+        ids: IdSource::Network,
+        // A device on the network has no vendor or product id. Zero here is
+        // not a value, and `full_description` prints neither for this scheme.
+        vendor_id: 0,
+        product_id: 0,
+        product: Some(
+            info.map_or_else(|| name.to_owned(), roadie_keylight::AccessoryInfo::describe),
+        ),
+        manufacturer: Some("Elgato".to_owned()),
+        serial_number: info.and_then(|info| info.serial_number.clone()),
+    })
+}
+
+/// Every Elgato light on the network, as catalog entries.
+///
+/// Searched by default rather than behind a flag, because this command's whole
+/// promise is one list of what is on the desk, and a light that this build can
+/// turn on is part of that desk whether it arrived by cable or by Wi-Fi. It
+/// costs a couple of seconds, which `--no-network` buys back for anyone whose
+/// lights are all on USB.
+fn key_light_peripherals(wait: Duration) -> Vec<Peripheral> {
+    roadie_keylight::discover(wait)
+        .unwrap_or_default()
+        .iter()
+        .map(|light| key_light_peripheral(light.name(), light.info().ok().as_ref()))
+        .collect()
 }
 
 /// Every monitor attached, as catalog entries.
@@ -512,12 +574,13 @@ mod tests {
     /// "nothing found" sends someone to check their cables.
     #[test]
     fn an_empty_scan_names_the_likely_cause_and_where_to_go_next() {
-        let text = nothing_found();
+        let text = nothing_found(true);
         assert!(text.contains("permissions"), "{text}");
         assert!(text.contains("Input Monitoring"), "{text}");
-        // Every source the survey actually searched. Naming two of three reads
-        // as a complete list to anyone who cannot see that a third was tried.
-        for source in ["HID device", "camera", "monitor"] {
+        // Every source the survey actually searched. Naming three of four
+        // reads as a complete list to anyone who cannot see that a fourth was
+        // tried.
+        for source in ["HID device", "camera", "monitor", "Elgato light"] {
             assert!(
                 text.contains(source),
                 "the message has to name {source}, which was searched: {text}"
@@ -602,7 +665,11 @@ mod tests {
             (report(&desk, true), "the filtered report"),
             (report(&[], false), "a report of an empty desk"),
             (report(&[desk[0].clone()], false), "a report of one device"),
-            (nothing_found(), "the nothing-found message"),
+            (nothing_found(true), "the nothing-found message"),
+            (
+                nothing_found(false),
+                "the nothing-found message with the network declined",
+            ),
         ] {
             crate::spoken::assert_listenable(&text, what);
             crate::spoken::assert_agrees(&text, what);

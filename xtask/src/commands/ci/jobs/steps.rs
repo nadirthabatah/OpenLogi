@@ -65,7 +65,11 @@ const WASM_PORTABLE_CRATES: [&str; 7] = [
 ];
 
 /// The crates that are portable once their host-facing feature is off.
-const WASM_PORTABLE_NO_DEFAULT_CRATES: [&str; 1] = ["roadie-core"];
+///
+/// `roadie-core` qualifies with its `fs` feature off; `roadie-keylight` with
+/// `net` and `discovery` off, which is the HTTP client and the multicast
+/// responder. What is left of each is the part with no host underneath it.
+const WASM_PORTABLE_NO_DEFAULT_CRATES: [&str; 2] = ["roadie-core", "roadie-keylight"];
 
 /// Every crate the wasm job checks, however it checks it.
 #[cfg(test)]

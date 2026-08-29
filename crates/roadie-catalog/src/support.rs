@@ -30,6 +30,8 @@ pub enum Driver {
     Via,
     /// Any monitor that speaks DDC/CI over its video cable.
     Ddc,
+    /// Elgato Key Lights and Ring Lights, over the network.
+    KeyLight,
 }
 
 impl Driver {
@@ -43,6 +45,7 @@ impl Driver {
             Self::Uvc => "uvc",
             Self::Via => "via",
             Self::Ddc => "ddc",
+            Self::KeyLight => "keylight",
         }
     }
 
@@ -55,7 +58,9 @@ impl Driver {
     pub const fn what_it_configures(self) -> &'static str {
         match self {
             Self::HidPlusPlus => "buttons, pointer speed, scroll wheel, and backlight",
-            Self::Litra => "power, brightness, and colour temperature",
+            // The same answer for both, and not by coincidence: they are
+            // lights, and these are the three things a light has.
+            Self::Litra | Self::KeyLight => "power, brightness, and colour temperature",
             Self::StreamDeck => "key images, labels, brightness, and key actions",
             Self::Uvc => "brightness, contrast, exposure, focus, and zoom",
             Self::Via => "what each key sends, across every keymap layer",
@@ -68,7 +73,10 @@ impl Driver {
     pub const fn command(self) -> &'static str {
         match self {
             Self::HidPlusPlus => "roadie list",
-            Self::Litra => "roadie light",
+            // One command covers both, which is the point of it: the question
+            // someone asks is "what lights do I have", not "what lights do I
+            // have on USB".
+            Self::Litra | Self::KeyLight => "roadie light",
             Self::StreamDeck => "roadie streamdeck",
             Self::Uvc => "roadie camera",
             Self::Via => "roadie via",
@@ -185,6 +193,24 @@ impl Peripheral {
             identity,
             support: Support::Driver {
                 driver: Driver::Ddc,
+                model: None,
+            },
+        }
+    }
+
+    /// Classify an Elgato light found on the network.
+    ///
+    /// Supported because of what it is, like a camera and a monitor: the
+    /// HTTP interface is the same across the whole Key Light family, so there
+    /// is no model table to keep. Being found is a stronger signal here than
+    /// for the other two — a light only appears in this list because it
+    /// answered a multicast query moments ago.
+    #[must_use]
+    pub fn from_key_light(identity: Identity) -> Self {
+        Self {
+            identity,
+            support: Support::Driver {
+                driver: Driver::KeyLight,
                 model: None,
             },
         }
