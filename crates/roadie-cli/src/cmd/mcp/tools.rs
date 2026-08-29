@@ -14,6 +14,7 @@
 
 mod camera;
 mod decks;
+mod displays;
 mod health;
 mod inventory;
 mod keyboards;
@@ -71,6 +72,7 @@ pub fn catalog() -> Value {
     tools.extend(pointer::tools());
     tools.extend(lighting::tools());
     tools.extend(monitor::tools());
+    tools.extend(displays::tools());
     tools.extend(profiles::tools());
     tools.extend(decks::tools());
     tools.extend(keyboards::tools());
@@ -103,6 +105,9 @@ pub async fn call(params: &Value) -> Result<Value, String> {
         "set_light" => lighting::set_light(&arguments).await,
         "watch_input" => monitor::watch_input(&arguments).await,
         "list_cameras" => camera::list_cameras(),
+        "list_displays" => displays::list_displays(),
+        "read_display_settings" => displays::read_display_settings(&arguments),
+        "set_display_setting" => displays::set_display_setting(&arguments),
         "read_camera_controls" => camera::read_camera_controls(&arguments),
         "set_camera_control" => camera::set_camera_control(&arguments),
         "export_profile" => profiles::export_profile(&arguments),
@@ -196,7 +201,7 @@ mod tests {
     /// The dispatch arms in [`super::call`], as the catalog must advertise
     /// them. Kept here so a tool added to one and not the other fails a test
     /// rather than surfacing as "unknown tool" at run time.
-    const DISPATCHED: [&str; 30] = [
+    const DISPATCHED: [&str; 33] = [
         "list_devices",
         "list_peripherals",
         "reload_config",
@@ -210,6 +215,9 @@ mod tests {
         "list_cameras",
         "read_camera_controls",
         "set_camera_control",
+        "list_displays",
+        "read_display_settings",
+        "set_display_setting",
         "export_profile",
         "inspect_profile",
         "import_profile",

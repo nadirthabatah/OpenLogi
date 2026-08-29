@@ -146,6 +146,23 @@ impl Display {
             .map_or_else(|| self.id.0.clone(), Edid::describe)
     }
 
+    /// Whether `query` names this display.
+    ///
+    /// Case-insensitive, and a substring rather than a whole name, because the
+    /// name comes off the panel's own EEPROM and nobody wants to type
+    /// "LG ULTRAFINE" exactly. Matched against the connector handle too, so a
+    /// display with no readable EDID can still be picked out.
+    ///
+    /// The rule lives here rather than in a front end because it is one fact
+    /// about displays, and the CLI and the MCP server would otherwise drift
+    /// into two slightly different ideas of what "the Dell" means.
+    #[must_use]
+    pub fn matches(&self, query: &str) -> bool {
+        let query = query.to_lowercase();
+        self.describe().to_lowercase().contains(&query)
+            || self.id.as_str().to_lowercase().contains(&query)
+    }
+
     /// Read one feature.
     ///
     /// # Errors

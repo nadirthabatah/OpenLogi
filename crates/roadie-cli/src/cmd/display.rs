@@ -200,10 +200,7 @@ fn render_list(rows: &[(String, Reach)]) -> String {
 fn select(args: &SelectArgs) -> Result<Display> {
     let mut displays = roadie_display::enumerate()?;
     if let Some(wanted) = args.display.as_deref() {
-        let wanted = wanted.to_lowercase();
-        let found = displays
-            .iter()
-            .position(|display| display.describe().to_lowercase().contains(&wanted));
+        let found = displays.iter().position(|display| display.matches(wanted));
         return match found {
             Some(at) => Ok(displays.swap_remove(at)),
             None => bail!(

@@ -17,7 +17,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
-use roadie_catalog::{Identity, Peripheral, Support};
+use roadie_catalog::{IdSource, Identity, Peripheral, Support};
 use roadie_device_registry::receiver::ReceiverBrand;
 
 use crate::spoken::counted;
@@ -59,6 +59,7 @@ pub async fn run(args: DevicesArgs) -> Result<ExitCode> {
             .into_iter()
             .map(camera_peripheral),
     );
+    found.extend(display_peripherals());
 
     if args.json {
         // Emptiness is data in JSON, not a message: a consumer branches on the
@@ -87,25 +88,75 @@ pub async fn run(args: DevicesArgs) -> Result<ExitCode> {
 /// the overwhelmingly likely cause is that this process cannot open hidraw,
 /// and "nothing found" with no further word would send someone looking at
 /// their cables.
+///
+/// It names every source that was searched, monitors included. A sentence that
+/// listed two of the three would be read as a complete list by anyone who
+/// could not see that a third had been looked at.
 fn nothing_found() -> String {
     "Nothing found.\n\n\
-     No HID device and no camera was reported. On Linux that is usually a \
-     permissions problem rather than an empty desk, and on macOS it can be a \
-     missing Input Monitoring grant.\n\n\
+     No HID device, no camera and no monitor was reported. On Linux that is \
+     usually a permissions problem rather than an empty desk, and on macOS it \
+     can be a missing Input Monitoring grant.\n\n\
      Run `roadie doctor`: it checks which of those it is and says what to do \
      about it, in order.\n"
         .to_owned()
 }
 
 /// Turn an enumerated camera into a catalog entry.
-fn camera_peripheral(camera: roadie_camera::Camera) -> Peripheral {
+pub fn camera_peripheral(camera: roadie_camera::Camera) -> Peripheral {
     Peripheral::from_camera(Identity {
+        ids: IdSource::Usb,
         vendor_id: camera.vendor_id,
         product_id: camera.product_id,
         product: Some(camera.name),
         manufacturer: None,
         serial_number: camera.serial_number,
     })
+}
+
+/// Turn an enumerated monitor into a catalog entry.
+///
+/// The ids come from the EDID rather than from USB, which is why [`IdSource`]
+/// exists: a display's manufacturer code is a PNP id, and the same number
+/// names a different company in the two schemes.
+///
+/// A monitor with no readable EDID still becomes an entry. It is a real state
+/// — the kernel reports the link before it has read the block, and some KVM
+/// switches never let it — and a display that cannot be named is still a
+/// display on the desk.
+pub fn display_peripheral(display: &roadie_display::Display) -> Peripheral {
+    let identity = display.edid().map_or_else(
+        || Identity {
+            ids: IdSource::Edid,
+            product: Some(display.describe()),
+            ..Identity::default()
+        },
+        |edid| Identity {
+            ids: IdSource::Edid,
+            vendor_id: u16::from_be_bytes([edid.manufacturer[0], edid.manufacturer[1]]),
+            product_id: edid.product_code,
+            product: edid.name.clone(),
+            manufacturer: edid.vendor().map(str::to_owned),
+            // The EDID's serial number is zero when the panel does not carry
+            // one, and a zero would merge two identical monitors into one
+            // entry rather than distinguishing them.
+            serial_number: (edid.serial_number != 0).then(|| edid.serial_number.to_string()),
+        },
+    );
+    Peripheral::from_display(identity)
+}
+
+/// Every monitor attached, as catalog entries.
+///
+/// A failure to enumerate displays is not a failure of the survey: plenty of
+/// machines have no display subsystem this build can read, and taking the
+/// whole desk listing away over it would be the wrong trade.
+fn display_peripherals() -> Vec<Peripheral> {
+    roadie_display::enumerate()
+        .unwrap_or_default()
+        .iter()
+        .map(display_peripheral)
+        .collect()
 }
 
 /// How a receiver family is named in the listing.
@@ -464,6 +515,14 @@ mod tests {
         let text = nothing_found();
         assert!(text.contains("permissions"), "{text}");
         assert!(text.contains("Input Monitoring"), "{text}");
+        // Every source the survey actually searched. Naming two of three reads
+        // as a complete list to anyone who cannot see that a third was tried.
+        for source in ["HID device", "camera", "monitor"] {
+            assert!(
+                text.contains(source),
+                "the message has to name {source}, which was searched: {text}"
+            );
+        }
         assert!(
             text.contains("roadie doctor"),
             "naming the cause is half of it; the other half is the command that \

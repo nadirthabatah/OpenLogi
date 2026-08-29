@@ -21,5 +21,5 @@ pub mod hidpp;
 pub mod identity;
 pub mod support;
 
-pub use identity::Identity;
+pub use identity::{IdSource, Identity};
 pub use support::{Driver, Peripheral, Support};

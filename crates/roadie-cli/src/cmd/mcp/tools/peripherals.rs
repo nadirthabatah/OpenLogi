@@ -15,7 +15,7 @@
 //! would leave the model confidently telling someone their audio interface is
 //! not connected when it is plugged in and lit up.
 
-use roadie_catalog::{Identity, Peripheral};
+use roadie_catalog::Peripheral;
 use serde_json::{Value, json};
 
 use super::{no_arguments_schema, rendered};
@@ -39,18 +39,18 @@ pub async fn list_peripherals() -> Result<String, String> {
     let mut found = roadie_hid::survey::hid_peripherals()
         .await
         .map_err(|error| format!("failed to enumerate HID devices: {error}"))?;
+    // The same two helpers `roadie devices` uses, so a script and an assistant
+    // reading the same desk cannot be told different things about it.
     found.extend(
         roadie_camera::enumerate_all_cameras()
             .into_iter()
-            .map(|camera| {
-                Peripheral::from_camera(Identity {
-                    vendor_id: camera.vendor_id,
-                    product_id: camera.product_id,
-                    product: Some(camera.name),
-                    manufacturer: None,
-                    serial_number: camera.serial_number,
-                })
-            }),
+            .map(crate::cmd::devices::camera_peripheral),
+    );
+    found.extend(
+        roadie_display::enumerate()
+            .unwrap_or_default()
+            .iter()
+            .map(crate::cmd::devices::display_peripheral),
     );
 
     // The same rendering `roadie devices --json` prints, so a script and an
