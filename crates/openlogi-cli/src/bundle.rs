@@ -306,6 +306,13 @@ mod tests {
     ///
     /// The guard was here and nothing tested it, which a mutation sweep found
     /// by removing it and watching every test still pass.
+    ///
+    /// Unix only. Windows has directory symlinks, but creating one needs
+    /// either developer mode or an elevated process, so a test that made one
+    /// would fail on an ordinary machine for a reason that has nothing to do
+    /// with the code under test. The guard itself is not
+    /// platform-conditional; only the making of the link to try it against is.
+    #[cfg(unix)]
     #[test]
     fn a_directory_symlink_pointing_at_its_own_parent_is_skipped_not_followed() {
         let scratch = Scratch::new("symlink-loop");
@@ -339,6 +346,7 @@ mod tests {
     }
 
     /// How many directory levels deep a tree goes.
+    #[cfg(unix)]
     fn walk_depth(root: &Path) -> usize {
         let Ok(entries) = std::fs::read_dir(root) else {
             return 0;
