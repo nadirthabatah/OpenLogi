@@ -46,12 +46,13 @@ const WINDOWS_LINT_CRATES: [&str; 8] = [
 /// `openlogi-core` qualifies only with its `fs` feature off — that feature is
 /// the config file, and a config file needs a filesystem. Hence
 /// `--no-default-features`, which is why this job checks it in its own pass.
-const WASM_PORTABLE_CRATES: [&str; 5] = [
+const WASM_PORTABLE_CRATES: [&str; 6] = [
     "openlogi-device-registry",
     "openlogi-hidpp",
     "openlogi-device",
     "openlogi-streamdeck",
     "openlogi-catalog",
+    "openlogi-via",
 ];
 
 /// The crates that are portable once their host-facing feature is off.

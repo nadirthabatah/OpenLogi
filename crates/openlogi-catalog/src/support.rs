@@ -4,6 +4,7 @@ use openlogi_device_registry::LOGITECH_VENDOR_ID;
 use openlogi_device_registry::litra::find_litra;
 use openlogi_device_registry::receiver::{ReceiverBrand, find_receiver};
 use openlogi_streamdeck::model::identify as identify_deck;
+use openlogi_via::identity::is_via_collection;
 
 use crate::hidpp::is_long_collection;
 use crate::identity::Identity;
@@ -25,6 +26,8 @@ pub enum Driver {
     StreamDeck,
     /// Any UVC webcam, whoever made it.
     Uvc,
+    /// Any QMK keyboard or macro pad with VIA enabled.
+    Via,
 }
 
 impl Driver {
@@ -36,6 +39,7 @@ impl Driver {
             Self::Litra => "litra",
             Self::StreamDeck => "streamdeck",
             Self::Uvc => "uvc",
+            Self::Via => "via",
         }
     }
 
@@ -51,6 +55,7 @@ impl Driver {
             Self::Litra => "power, brightness, and colour temperature",
             Self::StreamDeck => "key images, labels, brightness, and key actions",
             Self::Uvc => "brightness, contrast, exposure, focus, and zoom",
+            Self::Via => "what each key sends, across every keymap layer",
         }
     }
 
@@ -62,6 +67,7 @@ impl Driver {
             Self::Litra => "openlogi light",
             Self::StreamDeck => "openlogi streamdeck",
             Self::Uvc => "openlogi camera",
+            Self::Via => "openlogi via",
         }
     }
 }
@@ -75,6 +81,22 @@ pub enum Support {
         driver: Driver,
         /// The model, when a catalog entry names one.
         model: Option<&'static str>,
+    },
+    /// Probably drivable, but only a check against the device can say.
+    ///
+    /// Some devices are identified by the HID collection they expose rather
+    /// than by a catalog entry, and a usage page is a convention rather than
+    /// a claim the device makes — other firmware uses the same vendor page. A
+    /// survey that enumerates without opening anything can honestly report a
+    /// candidate and no more.
+    ///
+    /// Reporting these as supported would be the worse error of the two: it
+    /// promises a device works and leaves someone to discover otherwise.
+    Candidate {
+        /// The driver that would handle it, if the check passes.
+        driver: Driver,
+        /// What has to be true, in words fit to read aloud.
+        needs: &'static str,
     },
     /// A Logitech receiver: a way in, not a peripheral.
     ///
@@ -149,10 +171,25 @@ impl Peripheral {
     /// which arrives first is not something we control.
     #[must_use]
     pub fn merge(self, other: Self) -> Self {
-        match (&self.support, &other.support) {
-            (Support::Unsupported, _) if !matches!(other.support, Support::Unsupported) => other,
-            _ => self,
+        if rank(&other.support) > rank(&self.support) {
+            other
+        } else {
+            self
         }
+    }
+}
+
+/// How much a verdict says, for choosing between two of them.
+///
+/// Merging the collections of one physical device must keep the one that says
+/// the most: a Logitech mouse enumerates a plain mouse collection alongside
+/// its HID++ one, and which arrives first is not something we control.
+const fn rank(support: &Support) -> u8 {
+    match support {
+        Support::Unsupported => 0,
+        Support::Candidate { .. } => 1,
+        Support::Receiver(_) => 2,
+        Support::Driver { .. } => 3,
     }
 }
 
@@ -179,6 +216,15 @@ fn classify_hid(identity: &Identity, usage_page: u16, usage_id: u16) -> Support 
 
     if let Some(receiver) = find_receiver(vendor, product) {
         return Support::Receiver(receiver.brand);
+    }
+
+    // A candidate rather than a verdict: the vendor usage page VIA uses is
+    // shared with other firmware, so only a protocol handshake proves one.
+    if is_via_collection(usage_page, usage_id) {
+        return Support::Candidate {
+            driver: Driver::Via,
+            needs: "a VIA protocol check, which `openlogi via list` performs",
+        };
     }
 
     if vendor == LOGITECH_VENDOR_ID && is_long_collection(usage_page, usage_id) {
@@ -307,6 +353,50 @@ mod tests {
         );
     }
 
+    /// The honest answer for a device identified only by the collection it
+    /// exposes. Calling it supported would promise a device works and leave
+    /// someone to find out otherwise.
+    #[test]
+    fn a_via_collection_is_a_candidate_not_a_promise() {
+        let found = Peripheral::from_hid(identity(0x4653, 0x0001), 0xff60, 0x0061);
+        let Support::Candidate { driver, needs } = found.support else {
+            panic!("a VIA collection is a candidate: {:?}", found.support);
+        };
+        assert_eq!(driver, Driver::Via);
+        assert!(needs.contains("openlogi via"), "{needs}");
+        assert!(
+            !found.support.is_configurable(),
+            "a candidate has not been confirmed"
+        );
+    }
+
+    /// A candidate says more than nothing and less than a driver. Merging has
+    /// to respect that in both directions, or the collection that arrived
+    /// second decides what a device is.
+    #[test]
+    fn a_candidate_outranks_nothing_and_is_outranked_by_a_driver() {
+        let candidate = Peripheral::from_hid(identity(0x4653, 0x0001), 0xff60, 0x0061);
+        let nothing = Peripheral::from_hid(identity(0x4653, 0x0001), 0x0001, 0x0006);
+        let driver = Peripheral::from_hid(identity(ELGATO_VENDOR_ID, 0x0080), 0xff00, 0x0001);
+
+        assert!(matches!(
+            candidate.clone().merge(nothing.clone()).support,
+            Support::Candidate { .. }
+        ));
+        assert!(matches!(
+            nothing.merge(candidate.clone()).support,
+            Support::Candidate { .. }
+        ));
+        assert!(
+            candidate
+                .clone()
+                .merge(driver.clone())
+                .support
+                .is_configurable()
+        );
+        assert!(driver.merge(candidate).support.is_configurable());
+    }
+
     #[test]
     fn every_driver_has_a_distinct_id_and_a_command() {
         let drivers = [
@@ -314,6 +404,7 @@ mod tests {
             Driver::Litra,
             Driver::StreamDeck,
             Driver::Uvc,
+            Driver::Via,
         ];
         for (index, driver) in drivers.iter().enumerate() {
             assert!(!driver.what_it_configures().is_empty());

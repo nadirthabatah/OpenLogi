@@ -13,6 +13,7 @@ categories = ["hardware-support"]
 [dependencies]
 openlogi-device-registry = { path = "../openlogi-device-registry", version = "0.8.1" }
 openlogi-streamdeck = { path = "../openlogi-streamdeck", version = "0.8.1" }
+openlogi-via = { path = "../openlogi-via", version = "0.8.1" }
 
 [lints]
 workspace = true

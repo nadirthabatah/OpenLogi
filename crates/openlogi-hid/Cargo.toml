@@ -26,6 +26,7 @@ atomic-write-file = { workspace = true }
 openlogi-device = { version = "0.8.1", path = "../openlogi-device" }
 openlogi-catalog = { version = "0.8.1", path = "../openlogi-catalog" }
 openlogi-streamdeck = { version = "0.8.1", path = "../openlogi-streamdeck" }
+openlogi-via = { version = "0.8.1", path = "../openlogi-via" }
 
 # Native Win32 HID report writes (windows_hid.rs) — a fallback for async-hid's
 # write path on Windows, plus the composite short/long endpoint handling in

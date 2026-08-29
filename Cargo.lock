@@ -5481,6 +5481,7 @@ version = "0.8.1"
 dependencies = [
  "openlogi-device-registry",
  "openlogi-streamdeck",
+ "openlogi-via",
 ]
 
 [[package]]
@@ -5499,6 +5500,7 @@ dependencies = [
  "openlogi-inject",
  "openlogi-ipc",
  "openlogi-streamdeck",
+ "openlogi-via",
  "png 0.17.16",
  "serde",
  "serde_json",
@@ -5614,6 +5616,7 @@ dependencies = [
  "openlogi-device",
  "openlogi-hidpp",
  "openlogi-streamdeck",
+ "openlogi-via",
  "serde",
  "serde_json",
  "tempfile",
@@ -5762,6 +5765,13 @@ version = "0.8.1"
 dependencies = [
  "gpui",
  "openlogi-core",
+]
+
+[[package]]
+name = "openlogi-via"
+version = "0.8.1"
+dependencies = [
+ "thiserror 2.0.18",
 ]
 
 [[package]]

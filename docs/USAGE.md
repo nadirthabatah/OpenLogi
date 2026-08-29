@@ -21,6 +21,9 @@ openlogi streamdeck label 0 "MUTE MIC"  # write a label, sized to fit
 openlogi streamdeck example deck.toml   # write a layout file to start from
 openlogi streamdeck apply deck.toml     # apply a whole layout at once
 openlogi streamdeck run deck.toml       # apply it, then act on key presses
+openlogi via                  # QMK/VIA keyboards and macro pads attached
+openlogi via keymap 0         # print layer 0, key by key, with names not numbers
+openlogi via set 0 2 3 F13    # make one key send F13, confirmed by reading it back
 openlogi mcp                  # serve the agent to an AI assistant over MCP (see below)
 openlogi profile export FILE  # write this machine's whole configuration to a file
 openlogi profile inspect FILE # show what a profile holds, without applying it
@@ -189,6 +192,53 @@ identical to a user and have completely different answers.
 
 Running `openlogi` with no subcommand defaults to `list`. Set
 `OPENLOGI_LOG=debug` for verbose tracing in the CLI, GUI, or agent.
+
+## QMK and VIA macro pads
+
+`openlogi via` reads and changes what each key sends on any QMK keyboard or
+macro pad whose firmware was built with VIA enabled. That is one implementation
+for hundreds of boards — the same bargain UVC gives us for cameras, and the
+reason "support every macro pad" is a tractable goal rather than a per-vendor
+slog.
+
+- `openlogi via` (or `via list`) — every attached board, and what each reports:
+  its VIA protocol revision and how many keymap layers it holds. Matching the
+  HID collection only makes a device a *candidate*; the protocol exchange this
+  performs is what confirms one, which is why `openlogi devices` files an
+  unopened board under "probably configurable" rather than promising it works.
+- `openlogi via keymap [layer]` — print a whole layer, key by key. Unassigned
+  positions are skipped, because on a matrix read blind they are the large
+  majority and would bury the keys that exist.
+- `openlogi via get <layer> <row> <column>` — one position.
+- `openlogi via set <layer> <row> <column> <key>` — assign a key.
+
+Keys are named, not numbered: `F13`, `KC_F13`, `f13` and `0x0068` all work, and
+what comes back is `F13` rather than `0x0068`. A keymap dumped as numbers tells
+nobody anything; dumped as names it is something you can reason about, say out
+loud, and write down.
+
+### Why `set` is careful
+
+A wrong keycode written to a keyboard takes a key away from whoever is using
+it, and this tool is then the tool they have to use to fix it. So:
+
+- The protocol revision is checked before anything is written. VIA's payload
+  layouts have changed between revisions, and a board reporting one this build
+  does not implement is **refused rather than guessed at**.
+- A key name that cannot be resolved is refused before the device is even
+  opened — the name is wrong whether or not a keyboard is attached, and "no VIA
+  device found" would send you hunting the wrong problem.
+- Every write is read back and compared. A write that silently did not take
+  would leave you pressing a key that does the old thing while the tool insists
+  it changed; a mismatch is reported with both values instead.
+- Every `set` prints the exact command to undo it, whether or not the change
+  looks risky. The moment you need that is after you have closed the terminal.
+
+Only single-key assignment is implemented. Macros, layer-switching keycodes and
+QMK's quantum keycodes are real and worth adding, but their numbering is QMK's
+own rather than a published standard's, and a wrong entry would rename a key
+that is not what it claims — or be written back to a board. An unnamed keycode
+renders here as its number, which is honest; a misnamed one would not be.
 
 ## Portable profiles
 
