@@ -66,9 +66,11 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 pub mod capabilities;
+pub mod edid;
 pub mod packet;
 pub mod vcp;
 
 pub use capabilities::{Capabilities, CapabilitiesError};
+pub use edid::{Edid, EdidError};
 pub use packet::{I2C_ADDRESS, ProtocolError, Reply, Request};
 pub use vcp::{Feature, InputSource, PowerMode, Value};
