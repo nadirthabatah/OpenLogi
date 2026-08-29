@@ -40,7 +40,7 @@ edition = "2024"
 # CI matrix keeps the number honest for `cargo install`.
 rust-version = "1.98"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/nadirthabatah/OpenLogi"
+repository = "https://github.com/nadirthabatah/OpenRoadie"
 authors = ["AprilNEA <dev@aprilnea.me>", "Nadir Thabatah <nadirthabatah@gmail.com>"]
 description = "Local-first control for the peripherals on your desk: Logitech HID++, Elgato Stream Decks, QMK/VIA macro pads, and UVC webcams"
 

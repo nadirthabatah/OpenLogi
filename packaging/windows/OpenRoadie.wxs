@@ -220,7 +220,7 @@
          crates/roadie-desktop/build.rs) the shell picks up automatically. -->
     <Icon Id="OpenRoadieIco" SourceFile="$(var.IconFile)" />
     <Property Id="ARPPRODUCTICON" Value="OpenRoadieIco" />
-    <Property Id="ARPURLINFOABOUT" Value="https://github.com/nadirthabatah/OpenLogi" />
-    <Property Id="ARPHELPLINK" Value="https://github.com/nadirthabatah/OpenLogi" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/nadirthabatah/OpenRoadie" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/nadirthabatah/OpenRoadie" />
   </Package>
 </Wix>

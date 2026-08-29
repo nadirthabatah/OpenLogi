@@ -63,7 +63,7 @@ Things OpenRoadie does that Options+ won't:
 
 Requires macOS 13 or later.
 
-Download the signed, notarized `.dmg` from the [latest release](https://github.com/nadirthabatah/OpenLogi/releases/latest) and drag `OpenRoadie.app` to `/Applications`.
+Download the signed, notarized `.dmg` from the [latest release](https://github.com/nadirthabatah/OpenRoadie/releases/latest) and drag `OpenRoadie.app` to `/Applications`.
 
 There is no package-manager distribution under the OpenRoadie name yet;
 the `.dmg` from this repository's releases is the install path. (Upstream
@@ -72,7 +72,7 @@ OpenLogi ships Homebrew casks, but those install OpenLogi, not this fork.)
 ### Linux
 
 Download the package for your distribution from the
-[latest release](https://github.com/nadirthabatah/OpenLogi/releases/latest):
+[latest release](https://github.com/nadirthabatah/OpenRoadie/releases/latest):
 
 ```sh
 # Debian / Ubuntu
@@ -95,7 +95,7 @@ package and udev rules and starts the agent with the graphical session:
 {
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   inputs.roadie = {
-    url = "github:nadirthabatah/OpenLogi";
+    url = "github:nadirthabatah/OpenRoadie";
     inputs.nixpkgs.follows = "nixpkgs";
   };
 
@@ -135,7 +135,7 @@ Windows support has been validated end-to-end on Windows 11 with real
 hardware (a wired keyboard and a Unifying-receiver mouse), including
 install, in-place upgrade, and uninstall of the MSI. It is newer than the
 macOS build, so if you hit a rough edge please
-[report it](https://github.com/nadirthabatah/OpenLogi/issues). The agent shows a
+[report it](https://github.com/nadirthabatah/OpenRoadie/issues). The agent shows a
 system-tray icon (Show Main Window / Quit) so the app stays reachable after
 the main window is closed. To disable it on Windows, set
 `show_in_menu_bar = false` in the TOML `[app_settings]` block and restart the

@@ -28,7 +28,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # macOS: full Xcode 26+ with the Metal Toolchain (not only Command Line Tools)
 # Linux: see system libraries under Toolchain above
 # optional helpers: brew install cmake create-dmg sccache
-git clone https://github.com/nadirthabatah/OpenLogi
+git clone https://github.com/nadirthabatah/OpenRoadie
 cd OpenRoadie
 cargo run -p roadie --release -- list
 cargo run -p roadie-desktop --release
