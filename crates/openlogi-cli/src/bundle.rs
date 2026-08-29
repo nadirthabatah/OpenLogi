@@ -294,6 +294,68 @@ mod tests {
         assert!(layouts_in(&bundle).join("streaming.toml").is_file());
     }
 
+    /// A directory symlink pointing at its own parent must not be followed.
+    ///
+    /// Following it recurses until the operating system refuses at around
+    /// forty levels, and what it leaves behind is forty levels of duplicated
+    /// rubbish in a half-written bundle plus an error naming a path nobody can
+    /// read. Someone's layouts folder can contain a link like this for
+    /// perfectly ordinary reasons — a shared icon set, a tidy-up that went
+    /// sideways — and it is not a state they would think to check for before
+    /// exporting.
+    ///
+    /// The guard was here and nothing tested it, which a mutation sweep found
+    /// by removing it and watching every test still pass.
+    #[test]
+    fn a_directory_symlink_pointing_at_its_own_parent_is_skipped_not_followed() {
+        let scratch = Scratch::new("symlink-loop");
+        let library = scratch.join("library");
+        write(&library.join("streaming.toml"), "brightness = 80\n");
+        // A link back to the folder that contains it: the shape that recurses.
+        std::os::unix::fs::symlink(&library, library.join("loop")).expect("a directory symlink");
+
+        let bundle = scratch.join("bundle");
+        let gathered = gather_layouts(&library, &bundle).expect("gathering must terminate");
+
+        assert_eq!(
+            gathered.carried,
+            vec!["streaming".to_owned()],
+            "the real layout must still travel"
+        );
+        assert_eq!(
+            gathered.skipped_links.len(),
+            1,
+            "the link must be reported, not silently dropped: {:?}",
+            gathered.skipped_links
+        );
+
+        // And nothing recursed: the deepest path in the bundle is the one
+        // layout file, not forty copies of the folder inside itself.
+        let deepest = walk_depth(&bundle);
+        assert!(
+            deepest <= 2,
+            "the bundle nests {deepest} levels deep, so the link was followed"
+        );
+    }
+
+    /// How many directory levels deep a tree goes.
+    fn walk_depth(root: &Path) -> usize {
+        let Ok(entries) = std::fs::read_dir(root) else {
+            return 0;
+        };
+        entries
+            .filter_map(Result::ok)
+            .map(|entry| {
+                if entry.path().is_dir() {
+                    1 + walk_depth(&entry.path())
+                } else {
+                    1
+                }
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
     /// The failure this exists to prevent: a bundle that looks complete and
     /// applies to a deck full of blank keys, because the icons a layout names
     /// were left behind.
