@@ -10,6 +10,7 @@ pub mod diag;
 pub mod light;
 pub mod list;
 pub mod snapshot;
+pub mod streamdeck;
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -30,6 +31,8 @@ pub enum Command {
     /// Inspect and control standalone Logitech lights.
     #[command(subcommand)]
     Light(light::LightCmd),
+    /// Drive an Elgato Stream Deck, and check the driver against hardware.
+    Streamdeck(streamdeck::StreamDeckArgs),
 }
 
 impl Command {
@@ -49,6 +52,13 @@ impl Command {
             Self::Assets(cmd) => cmd.run()?,
             Self::Diag(cmd) => cmd.run().await?,
             Self::Light(cmd) => cmd.run().await?,
+            Self::Streamdeck(args) => {
+                return args
+                    .cmd
+                    .unwrap_or(streamdeck::StreamDeckCmd::List)
+                    .run()
+                    .await;
+            }
         }
         Ok(ExitCode::SUCCESS)
     }

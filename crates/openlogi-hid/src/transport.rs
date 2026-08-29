@@ -39,7 +39,7 @@ use openlogi_device::write::matches_litra;
 /// saying out loud what the layering already did — an adapter belongs to the
 /// backend it adapts. `Disconnected` and `NotConnected` fold together; nothing
 /// above the transport acts on the distinction.
-fn backend_error(error: async_hid::HidError) -> BackendError {
+pub(crate) fn backend_error(error: async_hid::HidError) -> BackendError {
     match error {
         async_hid::HidError::Disconnected | async_hid::HidError::NotConnected => {
             BackendError::Disconnected
