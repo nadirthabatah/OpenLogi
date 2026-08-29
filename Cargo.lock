@@ -5488,8 +5488,12 @@ dependencies = [
  "openlogi-ipc",
  "openlogi-streamdeck",
  "png 0.17.16",
+ "serde_json",
  "tarpc",
+ "tempfile",
+ "thiserror 2.0.18",
  "tokio",
+ "toml 0.8.23",
  "tracing",
  "tracing-subscriber",
 ]

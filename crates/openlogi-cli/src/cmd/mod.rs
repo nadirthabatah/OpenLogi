@@ -9,6 +9,8 @@ pub mod camera;
 pub mod diag;
 pub mod light;
 pub mod list;
+pub mod mcp;
+pub mod profile;
 pub mod snapshot;
 pub mod streamdeck;
 
@@ -33,6 +35,12 @@ pub enum Command {
     Light(light::LightCmd),
     /// Drive an Elgato Stream Deck, and check the driver against hardware.
     Streamdeck(streamdeck::StreamDeckArgs),
+    /// Serve the agent to AI assistants over the Model Context Protocol
+    /// (stdio transport; register the command `openlogi mcp` in the client).
+    Mcp(mcp::McpArgs),
+    /// Export, inspect and import portable configuration profiles.
+    #[command(subcommand)]
+    Profile(profile::ProfileCmd),
 }
 
 impl Command {
@@ -59,6 +67,9 @@ impl Command {
                     .run()
                     .await;
             }
+            Self::Mcp(args) => mcp::run(args).await?,
+            // Profile work is plain file I/O — no async runtime needed.
+            Self::Profile(cmd) => return cmd.run(),
         }
         Ok(ExitCode::SUCCESS)
     }
