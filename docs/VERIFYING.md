@@ -12,7 +12,8 @@ the command to undo it.
 
 If you have limited time, do steps 0, 6 and 7. Step 0 clears the permission
 problems that mask everything else, step 6 proves the hub sees your desk, and
-step 7 exercises the code most likely to be wrong.
+step 7 exercises the code most likely to be wrong. Step 10, the monitors, is
+one command and settles more per second spent than anything else here.
 
 ## What is checked without a device, and what is not
 
@@ -313,6 +314,108 @@ a defect and worth reporting with the layout file, because a bundle that looks
 complete and applies to blank keys is exactly the failure this is checked
 against.
 
+## 10. Monitors
+
+The newest code here, and the least proven: no monitor has ever answered any
+of it. The protocol comes from the DDC/CI 1.1 and MCCS 2.2a specifications and
+from `ddcutil`'s reading of them, and the host calls from the documented APIs
+plus what MonitorControl does with them. That is a sound footing and it is not
+verification.
+
+Your laptop's built-in screen will not appear and is not meant to. It has no
+DDC channel at all; its brightness is a system setting rather than a monitor
+one. This needs an external monitor on a cable.
+
+```sh
+./target/release/roadie display list
+```
+
+**Expect:** each external monitor named from its own EDID — "LG ULTRAFINE"
+rather than a port number — and the words "answers and can be controlled".
+
+**If a monitor is named but does not answer:** the name came from the EDID and
+the control channel is separate, so this is the useful half working. On Linux
+the reason will say the `i2c` group; add yourself to it, log out and back in.
+Otherwise the commonest cause by far is DDC/CI switched off in the monitor's
+own menu, where many ship it off. Turn it on and try again.
+
+**If nothing is listed at all on an Apple silicon Mac:** that is a finding
+worth reporting. The registry walk looks for `DCPAVServiceProxy` entries whose
+`Location` is `External`, and a Mac that names them differently is exactly what
+this step exists to discover.
+
+**On an Intel Mac it will say so plainly.** That path uses a different
+mechanism and is deliberately not implemented rather than guessed at.
+
+### Reading, which changes nothing
+
+```sh
+./target/release/roadie display get brightness
+./target/release/roadie display capabilities
+```
+
+**Expect:** a brightness as a percentage *and* as the monitor's own numbers,
+and a capability list naming the model, the settings it has and the inputs it
+can switch between.
+
+**Three things here are worth more than the rest of this document**, because
+they are the parts that could not be checked without a panel:
+
+1. **A reading that comes back at all** confirms the reply checksum seed.
+   Requests and replies are checksummed differently, and a host using the wrong
+   one fails every reply identically — which looks exactly like a monitor that
+   is not answering. If reads work, that seed is right.
+2. **Readings that are consistently wrong by one** would mean the timing
+   floors are too short: DDC has no sequence numbers, so a reply read too early
+   is the answer to the previous question. Ask for brightness twice and then
+   contrast; if the contrast reading equals the brightness one, say so. The
+   echo check should catch this and report it rather than believing it, so this
+   confirms the check works.
+3. **The capability string** is what the input names in the next step come
+   from. If it mentions settings this build does not name, that list is the
+   feature request.
+
+### One write, and how to undo it
+
+```sh
+./target/release/roadie display get brightness
+./target/release/roadie display brightness 40
+```
+
+**Expect:** "set to 40, and reads back the same", or a message saying the
+monitor clamped it lower. Either is a pass; the second is a real property of
+some panels and worth reporting with the model name.
+
+Put it back with `roadie display brightness <the percentage you started with>`.
+
+### The input switch, which is the one to be careful with
+
+Switching a monitor to an input with nothing plugged into it leaves you with a
+dark screen and the bezel buttons as the way back. Do this one only with a
+second machine on the other input, or not at all.
+
+```sh
+./target/release/roadie display capabilities
+./target/release/roadie display set input hdmi2
+```
+
+**Expect:** the monitor to switch. Above value `0x12` is vendor territory and
+USB-C in particular has no standard number, so if your monitor's USB-C input
+is what you want, the capability list is where its number will be — and which
+number works on which panel is exactly the thing nobody has written down.
+
+### The refusal, which should never actually fire
+
+```sh
+./target/release/roadie display set power off
+```
+
+**Expect:** it refuses, tells you the monitor may stop answering the computer
+entirely, and says the way back would be the power button on the monitor
+itself. **Do not pass `--yes`.** The point of running this is to confirm the
+refusal happens, and a monitor that stops answering DDC is a monitor only its
+bezel can recover.
+
 ## What a failure here means
 
 Failures in steps 0b, 1 and 4 are almost always permissions, not defects —
@@ -325,11 +428,17 @@ the build and the platform, which are the first two things anyone reading a
 report has to ask for. `roadie doctor --json` carries the same two fields for
 anything that parses output rather than reading it.
 
-Steps 6, 7 and 8 are explicitly unproven. They are the least verified code in
-the fork — written against published protocols and thoroughly unit-tested
+Steps 6, 7, 8 and 10 are explicitly unproven. They are the least verified code
+in the fork — written against published protocols and thoroughly unit-tested
 against scripted devices, but never run against a physical one — and their
 output is written to be pasted straight into an issue.
 
+Step 10 is the least proven of those, and the one where a single reading
+settles the most: a monitor that answers `roadie display get brightness` at all
+has confirmed the reply checksum seed, which nothing without hardware could.
+
 If you have limited time, do steps 0, 6 and 7 in that order. Step 0 clears the
 permissions that mask everything else, step 6 proves that the hub sees your
-desk, and step 7 exercises the code most likely to be wrong.
+desk, and step 7 exercises the code most likely to be wrong. Step 10 is the
+next one after those, and the cheapest: one command, and it either answers or
+it does not.
