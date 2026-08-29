@@ -329,6 +329,10 @@ it, and this tool is then the tool they have to use to fix it. So:
 - The protocol revision is checked before anything is written. VIA's payload
   layouts have changed between revisions, and a board reporting one this build
   does not implement is **refused rather than guessed at**.
+- A board that goes quiet is given two seconds and then reported, rather than
+  waited on. A command that hangs with nothing on screen is indistinguishable,
+  working by ear, from the program having crashed — which makes it a worse
+  outcome than any error message.
 - A key name that cannot be resolved is refused before the device is even
   opened — the name is wrong whether or not a keyboard is attached, and "no VIA
   device found" would send you hunting the wrong problem.
