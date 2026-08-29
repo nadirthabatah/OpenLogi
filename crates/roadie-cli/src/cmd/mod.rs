@@ -8,6 +8,7 @@ pub mod backlight;
 pub mod camera;
 pub mod devices;
 pub mod diag;
+pub mod display;
 pub mod doctor;
 pub mod light;
 pub mod list;
@@ -32,6 +33,9 @@ pub enum Command {
     Snapshot(snapshot::SnapshotArgs),
     /// Read or write device-level UVC image controls on a webcam.
     Camera(camera::CameraArgs),
+    /// Read and change a monitor's own settings over DDC: brightness,
+    /// contrast, input, and the rest of what its bezel menu offers.
+    Display(display::DisplayArgs),
     /// Manage assets fetched from OpenRoadie's asset mirrors.
     #[command(subcommand)]
     Assets(assets::AssetsCmd),
@@ -69,6 +73,10 @@ impl Command {
             Self::Snapshot(args) => snapshot::run(args)?,
             // UVC control transfers are blocking IOKit — no async runtime needed.
             Self::Camera(args) => camera::run(args)?,
+            // DDC is a blocking ioctl or a blocking framework call, and the
+            // protocol's timing floors are plain sleeps. No async runtime
+            // would have anything to do.
+            Self::Display(args) => args.cmd.unwrap_or(display::DisplayCmd::List).run()?,
             // `assets sync` is blocking HTTP — no need for the async runtime.
             Self::Assets(cmd) => cmd.run()?,
             Self::Diag(cmd) => cmd.run().await?,

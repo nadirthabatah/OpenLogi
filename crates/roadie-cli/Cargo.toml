@@ -29,6 +29,8 @@ image = { version = "0.25", default-features = false, features = [
     "bmp",
 ] }
 roadie-camera = { path = "../roadie-camera", version = "0.8.1" }
+roadie-ddc = { path = "../roadie-ddc", version = "0.8.1" }
+roadie-display = { path = "../roadie-display", version = "0.8.1" }
 roadie-assets = { path = "../roadie-assets", version = "0.8.1" }
 roadie-ipc = { path = "../roadie-ipc", version = "0.8.1" }
 tarpc = { workspace = true }
