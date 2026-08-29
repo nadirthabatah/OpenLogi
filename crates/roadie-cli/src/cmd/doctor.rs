@@ -57,6 +57,8 @@ pub struct Facts {
     pub hid_devices: usize,
     /// Cameras the OS reported.
     pub cameras: usize,
+    /// Monitors, and whether their control channel could be opened.
+    pub monitors: Monitors,
     /// Raw HID nodes present, and how many this process could open.
     ///
     /// `None` off Linux, where there is no equivalent to count.
@@ -69,6 +71,26 @@ pub struct Facts {
     pub config_exists: bool,
     /// Saved Stream Deck layouts.
     pub layouts: usize,
+}
+
+/// What the display layer could see.
+///
+/// Kept apart from the HID and camera counts because a monitor's permission
+/// story is a different one: on Linux the kernel publishes each display's EDID
+/// to anybody, while the I2C node that carries the controls is group-owned. So
+/// a monitor can be found perfectly and still refuse every read, and the two
+/// numbers here are what tells that apart from having no monitor at all.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Monitors {
+    /// How many displays were found, reachable or not.
+    pub found: usize,
+    /// How many of those answered.
+    pub answering: usize,
+    /// Why the first unreachable one could not be opened.
+    ///
+    /// One rather than all of them: they nearly always share a cause, and a
+    /// list of the same sentence repeated is worse to listen to than one.
+    pub unreachable: Option<String>,
 }
 
 /// Which operating system, for advice that differs by it.
@@ -180,6 +202,7 @@ async fn gather() -> Facts {
         platform: platform(),
         hid_devices,
         cameras: roadie_camera::enumerate_all_cameras().len(),
+        monitors: survey_monitors(),
         hidraw: count_hidraw(),
         agent_reachable: agent_reachable().await,
         config_exists: config.as_ref().is_some_and(|path| path.is_file()),
@@ -187,6 +210,35 @@ async fn gather() -> Facts {
         layouts: crate::cmd::streamdeck::layout_library()
             .ok()
             .map_or(0, |path| count_layouts(&path)),
+    }
+}
+
+/// What the display layer can see, and what stopped it.
+///
+/// Deliberately does not look on the network. `doctor` is the fast triage
+/// command, multicast discovery costs seconds, and an Elgato light's problems
+/// are not the permission problems this command exists to sort out.
+fn survey_monitors() -> Monitors {
+    let Ok(mut displays) = roadie_display::enumerate() else {
+        return Monitors::default();
+    };
+    let found = displays.len();
+    let mut answering = 0;
+    let mut unreachable = None;
+    for display in &mut displays {
+        // The MCCS version is the cheapest question there is, and a monitor
+        // that answers it will answer the rest.
+        match display.get(roadie_ddc::Feature::McssVersion) {
+            Ok(_) => answering += 1,
+            Err(error) => {
+                unreachable.get_or_insert_with(|| error.to_string());
+            }
+        }
+    }
+    Monitors {
+        found,
+        answering,
+        unreachable,
     }
 }
 
@@ -334,6 +386,7 @@ pub fn diagnose(facts: &Facts) -> Vec<Check> {
     vec![
         device_access(facts),
         devices_visible(facts),
+        monitors_reachable(facts),
         agent(facts),
         configuration(facts),
         layouts(facts),
@@ -521,7 +574,9 @@ fn devices_visible(facts: &Facts) -> Check {
     let total = facts.hid_devices + facts.cameras;
     let verdict = if total == 0 {
         Verdict::Problem {
-            detail: "no peripheral of any kind was found: no HID device and no camera.".to_owned(),
+            detail: "no HID device and no camera was found. Monitors and Elgato lights \
+                     are checked separately and are not covered by this line."
+                .to_owned(),
             fix: vec![
                 "If the permission check above found a problem, fix that first — it is \
                  almost certainly the cause of this one."
@@ -541,6 +596,59 @@ fn devices_visible(facts: &Facts) -> Check {
     };
     Check {
         name: "Peripherals found",
+        verdict,
+    }
+}
+
+/// Monitors, which have their own permission story.
+///
+/// Its own check rather than folded into the one above, because "found but
+/// not answering" is the interesting state and it has no equivalent for a HID
+/// device: on Linux the EDID is world-readable and the I2C node is not, so a
+/// perfectly working monitor appears in the list and refuses every read. That
+/// is a group membership, it is fixable in one command, and nothing else in
+/// this program would ever tell someone about it.
+fn monitors_reachable(facts: &Facts) -> Check {
+    let monitors = &facts.monitors;
+    let verdict = if monitors.found == 0 {
+        // Not a problem. Plenty of machines have no external monitor, and a
+        // laptop's own screen never speaks DDC.
+        Verdict::Fine(
+            "no external monitor was found; a laptop's own screen never speaks DDC and is \
+             not expected here"
+                .to_owned(),
+        )
+    } else if monitors.answering == monitors.found {
+        Verdict::Fine(format!(
+            "{} found, and all of them answer; roadie display list shows them",
+            counted(monitors.found, "monitor", "monitors")
+        ))
+    } else {
+        Verdict::Problem {
+            detail: format!(
+                "{} found, and {} of them answer. The first one that did not said: {}",
+                counted(monitors.found, "monitor", "monitors"),
+                monitors.answering,
+                monitors
+                    .unreachable
+                    .as_deref()
+                    .unwrap_or("nothing this program could read")
+            ),
+            fix: vec![
+                "On Linux the I2C devices belong to the i2c group. Add your user to it, \
+                 then log out and back in."
+                    .to_owned(),
+                "Otherwise the commonest cause by far is DDC/CI switched off in the \
+                 monitor's own menu, where many ship it off."
+                    .to_owned(),
+                "A monitor connected through some docks and KVM switches cannot carry DDC \
+                 at all, whatever the settings say."
+                    .to_owned(),
+            ],
+        }
+    };
+    Check {
+        name: "Monitors reachable",
         verdict,
     }
 }
@@ -730,7 +838,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        Check, Facts, Hidraw, Platform, Verdict, counted, diagnose, render, render_json,
+        Check, Facts, Hidraw, Monitors, Platform, Verdict, counted, diagnose, render, render_json,
         udev_lines, vendor_in_uevent,
     };
 
@@ -740,6 +848,7 @@ mod tests {
             platform: Platform::Linux,
             hid_devices: 3,
             cameras: 1,
+            monitors: Monitors::default(),
             hidraw: Some(Hidraw {
                 present: 4,
                 openable: 4,
@@ -751,6 +860,93 @@ mod tests {
             config_exists: true,
             layouts: 2,
         }
+    }
+
+    /// Facts for a desk with `found` monitors, `answering` of which answer.
+    fn with_monitors(found: usize, answering: usize) -> Facts {
+        Facts {
+            monitors: Monitors {
+                found,
+                answering,
+                unreachable: (answering < found).then(|| {
+                    "LG ULTRAFINE cannot be reached: /dev/i2c-7: permission denied. The \
+                     I2C devices belong to the i2c group"
+                        .to_owned()
+                }),
+            },
+            ..healthy()
+        }
+    }
+
+    #[test]
+    fn a_desk_with_no_external_monitor_is_not_a_problem() {
+        // Plenty of machines have none, and a laptop's own screen never speaks
+        // DDC. Calling that broken is how a diagnostic loses the trust it
+        // needs to be worth running.
+        let checks = diagnose(&with_monitors(0, 0));
+        assert!(matches!(
+            find(&checks, "Monitors reachable"),
+            Verdict::Fine(_)
+        ));
+    }
+
+    #[test]
+    fn monitors_that_all_answer_are_reported_fine() {
+        let checks = diagnose(&with_monitors(2, 2));
+        let Verdict::Fine(detail) = find(&checks, "Monitors reachable") else {
+            panic!("two answering monitors is not a problem");
+        };
+        assert!(detail.contains("2 monitors"), "{detail}");
+    }
+
+    #[test]
+    fn a_monitor_that_is_seen_but_will_not_answer_names_the_group() {
+        // The state with no equivalent among HID devices, and the reason this
+        // check exists: on Linux the EDID is world-readable and the I2C node
+        // is not, so a working monitor appears in the list and refuses every
+        // read. Nothing else in this program would tell someone about that.
+        let checks = diagnose(&with_monitors(2, 1));
+        let Verdict::Problem { detail, fix } = find(&checks, "Monitors reachable") else {
+            panic!("a monitor that will not answer is a problem worth naming");
+        };
+        assert!(detail.contains("1 of them answer"), "{detail}");
+        assert!(detail.contains("i2c group"), "{detail}");
+        assert!(
+            fix.iter().any(|step| step.contains("i2c group")),
+            "the fix has to be the group membership: {fix:?}"
+        );
+        assert!(
+            fix.iter().any(|step| step.contains("DDC/CI switched off")),
+            "and the other commonest cause: {fix:?}"
+        );
+    }
+
+    #[test]
+    fn one_monitor_takes_the_singular() {
+        let checks = diagnose(&with_monitors(1, 1));
+        let Verdict::Fine(detail) = find(&checks, "Monitors reachable") else {
+            panic!("one answering monitor is not a problem");
+        };
+        assert!(
+            detail.contains("1 monitor found"),
+            "not \"1 monitors\": {detail}"
+        );
+    }
+
+    #[test]
+    fn the_missing_peripherals_line_no_longer_claims_to_cover_everything() {
+        // It counts HID devices and cameras only. Monitors and Elgato lights
+        // are found by other means, and a sentence saying "no peripheral of
+        // any kind" would be read as covering them too.
+        let checks = diagnose(&Facts {
+            hid_devices: 0,
+            cameras: 0,
+            ..healthy()
+        });
+        let Verdict::Problem { detail, .. } = find(&checks, "Peripherals found") else {
+            panic!("nothing at all is a problem");
+        };
+        assert!(detail.contains("checked separately"), "{detail}");
     }
 
     fn find<'a>(checks: &'a [Check], name: &str) -> &'a Verdict {
@@ -1019,6 +1215,7 @@ mod tests {
             platform: Platform::MacOs,
             hid_devices: 0,
             cameras: 0,
+            monitors: Monitors::default(),
             hidraw: None,
             ..healthy()
         };
@@ -1172,6 +1369,7 @@ mod tests {
                     }),
                     hid_devices: 0,
                     cameras: 0,
+                    monitors: Monitors::default(),
                     ..healthy()
                 },
             ),
@@ -1194,6 +1392,7 @@ mod tests {
                     hidraw: None,
                     hid_devices: 0,
                     cameras: 0,
+                    monitors: Monitors::default(),
                     ..healthy()
                 },
             ),
@@ -1391,6 +1590,7 @@ mod tests {
                 }),
                 hid_devices: 0,
                 cameras: 0,
+                monitors: Monitors::default(),
                 ..healthy()
             },
             Facts {
@@ -1407,6 +1607,7 @@ mod tests {
                 hidraw: None,
                 hid_devices: 0,
                 cameras: 0,
+                monitors: Monitors::default(),
                 ..healthy()
             },
             Facts {
