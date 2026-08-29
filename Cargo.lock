@@ -5728,6 +5728,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "openlogi-streamdeck"
+version = "0.8.1"
+dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "openlogi-ui"
 version = "0.8.1"
 dependencies = [
