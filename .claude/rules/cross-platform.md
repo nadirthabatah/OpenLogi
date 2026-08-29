@@ -61,6 +61,14 @@ cargo clippy --target aarch64-unknown-linux-musl \
 Everything that recipe skips — camera on Linux above all — is CI's alone to
 catch.
 
+That recipe earns its keep. `roadie-display`'s I²C ioctl was glibc-clean and
+truncating on musl, because `libc::ioctl` takes a `c_ulong` request against
+glibc and a `c_int` against musl — so a constant typed as either and cast at
+the call site compiles on one and narrows on the other. **Use `libc::Ioctl`**,
+the alias libc defines per target, and there is no cast to get wrong. The same
+shape applies to any libc integer whose width is a target detail: name the
+alias rather than a fixed-width type.
+
 ## macOS can be type-checked from Linux, and usually should be
 
 `cargo check` does not link, so a macOS-only file can be compiled — types,

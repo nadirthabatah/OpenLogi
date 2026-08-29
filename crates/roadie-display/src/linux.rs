@@ -39,7 +39,13 @@ const DRM: &str = "/sys/class/drm";
 /// need the address bound to the file description first, and so works even
 /// when a kernel driver has already claimed the address — which on a graphics
 /// card is common.
-const I2C_RDWR: libc::c_ulong = 0x0707;
+///
+/// Typed as [`libc::Ioctl`] rather than as a fixed-width integer, because that
+/// alias is `c_ulong` against glibc and `c_int` against musl. Writing it as
+/// either and casting at the call site compiles cleanly on the one and
+/// truncates on the other, which is the sort of thing that is only ever found
+/// by building for the other.
+const I2C_RDWR: libc::Ioctl = 0x0707;
 
 /// `I2C_M_RD`: this message is a read.
 const I2C_M_RD: u16 = 0x0001;
@@ -108,7 +114,7 @@ impl I2cBus {
         // call, whose `buf` points at `buffer`'s allocation with `len` bytes
         // available — `len` is clamped to `buffer.len()` above. Both structs
         // are `repr(C)` with the kernel's own layout.
-        let result = unsafe { libc::ioctl(fd, I2C_RDWR as _, &raw mut data) };
+        let result = unsafe { libc::ioctl(fd, I2C_RDWR, &raw mut data) };
         if result < 0 {
             let error = io::Error::last_os_error();
             return Err(DisplayError::Transport {
