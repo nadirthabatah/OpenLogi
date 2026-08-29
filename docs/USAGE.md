@@ -7,6 +7,7 @@ The `openlogi` command-line tool. For install and configuration, see the
 ```sh
 openlogi list                 # paired devices: slot, codename, kind, online, battery
 openlogi devices              # everything plugged in, whoever made it, and what it offers
+openlogi doctor               # why nothing is being found, and what to do about it
 openlogi assets sync          # pre-fetch device renders from the fastest available mirror
 openlogi diag features        # dump every HID++ feature the active device reports
 openlogi diag controls        # dump reprogrammable controls and capability flags
@@ -30,6 +31,47 @@ openlogi profile export my-setup # save the whole setup — configuration and la
 openlogi profile inspect FILE # show what a profile holds, without applying it
 openlogi profile import FILE  # apply a profile, backing up the current one first
 ```
+
+## When nothing is found
+
+`openlogi doctor` is the command to run when something is not working. Every
+other command here assumes it can reach your hardware; when it cannot, the most
+it can honestly say is "nothing found" — and that is the same sentence whether
+your desk is empty, a cable is out, or this program is not allowed to open the
+devices sitting right in front of it. Those have completely different answers,
+and the first is almost never the real cause.
+
+`doctor` checks each thing in turn — permission to open devices, whether
+anything was found, the background agent, where configuration lives, saved
+layouts — and for anything wrong, says what to do about it:
+
+```console
+$ openlogi doctor
+FIX   Permission to open devices: 4 HID devices are attached and this program
+      cannot open any of them. This is a permissions problem, not a hardware
+      one — the devices are there.
+...
+One thing to fix:
+
+Permission to open devices: ...
+  1. Install the udev rules, which give your user account access to HID devices.
+  2. Reload the rules without rebooting: sudo udevadm control --reload-rules && sudo udevadm trigger
+  3. Unplug the device and plug it back in — a rule applies when a device
+     appears, so one already attached keeps the permissions it was given.
+  4. Run openlogi doctor again to confirm.
+```
+
+Three things about that output are deliberate. **The steps are repeated at the
+end as one numbered list**, because someone who has just heard five checks read
+out should not have to scroll back to find the two things they have to do.
+**Permission is checked before "nothing found"**, because the first causes the
+second and fixing them the other way round fixes nothing. And **a missing
+background agent is a note, not a problem** — nothing in the CLI needs one, and
+a diagnostic that calls a working setup broken loses the trust that makes it
+useful.
+
+Exit status `2` means it checked successfully and found something to fix, which
+is not the same as the command failing.
 
 ## Everything plugged in
 

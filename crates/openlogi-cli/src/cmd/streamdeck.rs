@@ -585,6 +585,8 @@ async fn report_nothing_found() -> Result<()> {
         println!("plugged in, the usual causes are:");
         println!("  - on Linux, no permission on its hidraw node (see the udev rules)");
         println!("  - on macOS, this program has not been granted Input Monitoring");
+        println!();
+        println!("`openlogi doctor` works out which of those it is and says what to do.");
         return Ok(());
     }
     println!("An Elgato device IS attached, but this build does not recognize it:");
