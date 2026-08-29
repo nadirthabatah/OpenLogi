@@ -326,9 +326,17 @@ impl StreamDeckCmd {
                     "watching {} — press its keys; interrupt to stop",
                     session.model().name
                 );
+                let name = session.model().name;
                 loop {
-                    for event in session.next_events().await? {
-                        println!("  {}", describe(session.model(), event));
+                    match session.next_events().await {
+                        Ok(events) => {
+                            for event in events {
+                                println!("  {}", describe(session.model(), event));
+                            }
+                        }
+                        Err(error) => {
+                            return Ok(report_loop_ended(name, &error, "watching"));
+                        }
                     }
                 }
             }
@@ -853,8 +861,13 @@ async fn run_layout(
 
     let actions = spawn_action_worker();
 
+    let model_name = model.name;
     loop {
-        for event in session.next_events().await? {
+        let events = match session.next_events().await {
+            Ok(events) => events,
+            Err(error) => return Ok(report_loop_ended(model_name, &error, "running this layout")),
+        };
+        for event in events {
             // Act on the press, not the release: a key that fires twice per
             // push would double every action bound to it.
             if event.action != KeyAction::Pressed {
@@ -885,6 +898,37 @@ async fn run_layout(
             }
         }
     }
+}
+
+/// Exit status for "the device went away while we were using it".
+///
+/// Its own status because it is not a failure of the command: it did what was
+/// asked until the deck stopped being there. A script restarting a macro pad
+/// wants to tell that apart from a layout it cannot parse.
+const DISCONNECTED: u8 = 5;
+
+/// Turn the end of a watch or run loop into something worth reading.
+///
+/// A cable coming loose is the ordinary way one of these loops ends, and it
+/// arrives as "the HID device is not connected" — true, and no use to anyone.
+/// Someone whose macro pad has quietly stopped working needs to be told which
+/// of the two things happened and what to type next, because the deck itself
+/// tells them nothing: its faces are still lit until it loses power, and the
+/// keys simply stop doing anything.
+fn report_loop_ended(
+    model_name: &str,
+    error: &openlogi_hid::backend::BackendError,
+    what: &str,
+) -> ExitCode {
+    if matches!(error, openlogi_hid::backend::BackendError::Disconnected) {
+        println!();
+        println!("The {model_name} was disconnected, so {what} has stopped.");
+        println!("Plug it back in and run the same command again.");
+        return ExitCode::from(DISCONNECTED);
+    }
+    eprintln!();
+    eprintln!("{what} stopped: {error}");
+    ExitCode::FAILURE
 }
 
 /// Start the thread that performs actions, and return the way to reach it.
@@ -1418,5 +1462,47 @@ action = { CustomShortcut = \"cmd+shift+4\" }
             .send(openlogi_core::binding::Action::None)
             .expect("the worker is listening");
         drop(sender);
+    }
+
+    /// The ordinary way a `watch` or `run` loop ends is that someone knocks
+    /// the cable. That arrives as "the HID device is not connected", which is
+    /// true and no use: the deck's faces stay lit until it loses power and its
+    /// keys simply stop doing anything, so there is nothing to tell the person
+    /// what happened except this message.
+    ///
+    /// This path only runs when hardware vanishes, which is precisely why it
+    /// cannot be left to be discovered when hardware vanishes.
+    #[test]
+    fn a_disconnect_is_reported_as_one_and_gets_its_own_status() {
+        use openlogi_hid::backend::BackendError;
+
+        let ended = super::report_loop_ended(
+            "Stream Deck MK.2",
+            &BackendError::Disconnected,
+            "running this layout",
+        );
+        assert_eq!(
+            format!("{ended:?}"),
+            format!("{:?}", std::process::ExitCode::from(super::DISCONNECTED)),
+            "a device that went away is not the same outcome as a command that failed"
+        );
+    }
+
+    /// Anything else is a real failure and must not be dressed up as a
+    /// disconnect, or someone spends the evening reseating a cable.
+    #[test]
+    fn another_failure_is_not_reported_as_a_disconnect() {
+        use openlogi_hid::backend::BackendError;
+
+        let ended = super::report_loop_ended(
+            "Stream Deck MK.2",
+            &BackendError::Backend("the report was malformed".to_owned()),
+            "watching",
+        );
+        assert_eq!(
+            format!("{ended:?}"),
+            format!("{:?}", std::process::ExitCode::FAILURE),
+            "a malformed report is a failure, not an unplugged cable"
+        );
     }
 }

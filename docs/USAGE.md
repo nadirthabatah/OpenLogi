@@ -273,6 +273,12 @@ anything; only a key with no face *and* no action is refused.
 Actions fire on the press, not the release, so a key does its thing once per
 push rather than twice.
 
+If the deck is unplugged while `watch` or `run` is going, the command says so
+in those words and exits with status 5, distinct from a failure. It does not
+reconnect on its own: plug it back in and run the same command again. The deck
+gives you no clue by itself — its faces stay lit until it loses power, and the
+keys simply stop doing anything.
+
 Actions run on their own thread, in the order the keys were pressed. A key
 bound to a build, or to anything else that takes its time, therefore delays the
 actions queued behind it but does not stop the deck reading key presses — a
