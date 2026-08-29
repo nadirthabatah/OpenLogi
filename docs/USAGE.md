@@ -298,7 +298,12 @@ success. Use a picture for anything the font does not carry.
 
 `fill` takes six hex digits; `image` takes any common picture file and scales
 and rotates it to fit the key, so you do not have to know the model's screen
-size or which way its panel is mounted. A picture that is not square is scaled
+size or which way its panel is mounted. Transparency is composited onto black, which is what the key is. Dropping the
+alpha channel instead keeps whatever colour the exporting tool left underneath
+it — often black, so it looks right by accident, and often white, in which case
+an icon arrives as a solid white key with the artwork lost inside it.
+
+A picture that is not square is scaled
 to fit inside the key and centred on black rather than stretched to fill it —
 a wide logo arrives smaller, not squashed into a shape you did not choose.
 
