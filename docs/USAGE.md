@@ -371,6 +371,13 @@ slog.
   would bury the keys that exist. The count at the end means nothing goes
   missing silently.
 - `openlogi via get <layer> <row> <column>` — one position.
+
+Reading a keymap is one USB round trip per position, and VIA gives no way to
+ask a board how big its matrix is — so the read covers an area you choose, and
+stops at 32 by 32 however much more is asked for. That is roughly twice the
+largest edge any real board has. A read cut down says so, because a scan that
+quietly stopped short looks exactly like a keyboard with nothing on it.
+
 - `openlogi via set <layer> <row> <column> <key>` — assign a key.
 
 Keys are named, not numbered: `F13`, `KC_F13`, `f13` and `0x0068` all work, and

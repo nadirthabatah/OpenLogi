@@ -152,8 +152,10 @@ pub async fn list_keyboards() -> Result<String, String> {
 /// Run `read_keymap`.
 pub async fn read_keymap(arguments: &Value) -> Result<String, String> {
     let layer = number(arguments, "layer")?;
-    let rows = optional_number(arguments, "rows")?.unwrap_or(6);
-    let columns = optional_number(arguments, "columns")?.unwrap_or(16);
+    let (rows, rows_capped) =
+        openlogi_hid::via::scan_edge(optional_number(arguments, "rows")?.unwrap_or(6));
+    let (columns, columns_capped) =
+        openlogi_hid::via::scan_edge(optional_number(arguments, "columns")?.unwrap_or(16));
 
     let attached = enumerate().await?;
     let mut session = open_first(&attached).await?;
@@ -176,13 +178,30 @@ pub async fn read_keymap(arguments: &Value) -> Result<String, String> {
             }));
         }
     }
-    rendered(&json!({
-        "layer": layer,
-        "layers": session.layers(),
-        "keys": keys,
-        "unassigned_or_passthrough": quiet,
-        "read_area": { "rows": rows, "columns": columns },
-    }))
+    let mut result = serde_json::Map::new();
+    result.insert("layer".to_owned(), json!(layer));
+    result.insert("layers".to_owned(), json!(session.layers()));
+    result.insert("keys".to_owned(), json!(keys));
+    result.insert("unassigned_or_passthrough".to_owned(), json!(quiet));
+    result.insert(
+        "read_area".to_owned(),
+        json!({ "rows": rows, "columns": columns }),
+    );
+    // A scan that quietly stopped short reads as a keyboard with nothing
+    // there, which is the wrong conclusion for an assistant to reach and
+    // repeat with confidence.
+    if rows_capped || columns_capped {
+        result.insert(
+            "note".to_owned(),
+            json!(format!(
+                "The area asked for was larger than {edge} by {edge} and was cut down \
+                 to it. Every real keyboard matrix is smaller than that, and reading \
+                 further is one USB round trip per position with nothing to find.",
+                edge = openlogi_hid::via::MAX_SCAN_EDGE
+            )),
+        );
+    }
+    rendered(&Value::Object(result))
 }
 
 /// Run `set_key`.

@@ -55,6 +55,35 @@ const MAX_STRAY_REPORTS: usize = 8;
 /// being wrong in the other direction is a spurious failure on a slow board.
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// The largest matrix edge worth scanning when reading a keymap blind.
+///
+/// VIA gives no way to ask a board how big its matrix is, so reading a keymap
+/// means reading positions until you decide to stop, one round trip each. The
+/// caller picks how far; this is where "as far as you like" stops.
+///
+/// 32 is roughly twice the largest edge any real QMK board has, so it costs
+/// nothing anyone would notice and bounds the worst case at about a thousand
+/// round trips instead of the sixty-five thousand a byte allows. The reason to
+/// bound it at all is the assistant: a person who types `--rows 255` waits and
+/// then presses ctrl-C, while a model that asks for it — invited to, by a
+/// description that says to raise the number if a key is missing — leaves its
+/// client waiting on a call with no way to cancel.
+pub const MAX_SCAN_EDGE: u8 = 32;
+
+/// How far to actually scan, given what was asked for.
+///
+/// Returns the edge to use and whether it was cut down, because a scan that
+/// quietly stopped short is indistinguishable from a keyboard with nothing
+/// there — and "nothing there" is the wrong conclusion to hand anyone.
+#[must_use]
+pub fn scan_edge(asked: u8) -> (u8, bool) {
+    if asked > MAX_SCAN_EDGE {
+        (MAX_SCAN_EDGE, true)
+    } else {
+        (asked, false)
+    }
+}
+
 /// A VIA-capable HID collection the OS is reporting.
 ///
 /// A candidate rather than a confirmed VIA device: the vendor usage page this
@@ -345,7 +374,7 @@ mod tests {
     use openlogi_via::command::CommandId;
     use openlogi_via::identity::REPORT_LEN;
 
-    use super::{MAX_STRAY_REPORTS, Session, ViaTransport};
+    use super::{MAX_SCAN_EDGE, MAX_STRAY_REPORTS, Session, ViaTransport, scan_edge};
 
     /// A device that answers from a script.
     ///
@@ -431,6 +460,15 @@ mod tests {
     fn keycode_reply(keycode: u16) -> [u8; REPORT_LEN] {
         let [high, low] = keycode.to_be_bytes();
         reply(CommandId::GetKeycode, &[(4, high), (5, low)])
+    }
+
+    #[test]
+    fn a_scan_wider_than_any_real_board_is_cut_down_and_says_so() {
+        assert_eq!(scan_edge(6), (6, false));
+        assert_eq!(scan_edge(MAX_SCAN_EDGE), (MAX_SCAN_EDGE, false));
+        // A scan that quietly stopped short is indistinguishable from a
+        // keyboard with nothing there, so the caller has to be told.
+        assert_eq!(scan_edge(255), (MAX_SCAN_EDGE, true));
     }
 
     #[tokio::test]
