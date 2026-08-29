@@ -22,6 +22,10 @@ use roadie_hid::{
     DeviceRoute, Dpi, DpiInfo, HapticWaveform, HidppOperation, LightCommand, ReceiverSelector,
     SmartShiftStatus, WriteError,
 };
+use roadie_ipc::desk::{
+    DisplayControl, DisplayFailure, DisplayReading, DisplaySettings, DisplaySummary,
+    NetworkLightChange, NetworkLightFailure, NetworkLightSummary,
+};
 use roadie_ipc::transport;
 use roadie_ipc::{
     ActionRingCommandError, ActionRingInvocation, Agent, AgentSnapshot, AgentStatus, ClientKind,
@@ -282,6 +286,37 @@ impl Agent for AgentServer {
 
     async fn observe_action_ring(self, _: Context, since: Generation) -> RingObservation {
         self.action_ring.observe(since).await
+    }
+
+    async fn list_displays(self, _: Context) -> Vec<DisplaySummary> {
+        crate::desk::list_displays().await
+    }
+
+    async fn read_display(self, _: Context, id: String) -> Result<DisplaySettings, DisplayFailure> {
+        crate::desk::read_display(id).await
+    }
+
+    async fn set_display(
+        self,
+        _: Context,
+        id: String,
+        control: DisplayControl,
+        value: u16,
+    ) -> Result<DisplayReading, DisplayFailure> {
+        crate::desk::set_display(id, control, value).await
+    }
+
+    async fn list_network_lights(self, _: Context) -> Vec<NetworkLightSummary> {
+        crate::desk::list_network_lights().await
+    }
+
+    async fn set_network_light(
+        self,
+        _: Context,
+        id: String,
+        change: NetworkLightChange,
+    ) -> Result<NetworkLightSummary, NetworkLightFailure> {
+        crate::desk::set_network_light(id, change).await
     }
 
     async fn declare_client(self, _: Context, kind: ClientKind) {

@@ -17,6 +17,7 @@
 
 mod autostart;
 mod binary_watch;
+mod desk;
 mod lifecycle;
 mod logging;
 mod overlay;

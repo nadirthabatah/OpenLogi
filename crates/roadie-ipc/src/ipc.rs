@@ -20,6 +20,11 @@ use roadie_core::hid::{
     DeviceRoute, Dpi, DpiInfo, LightCommand, PairingError, PasskeyMethod, ReceiverSelector,
     SmartShiftStatus, WriteError,
 };
+
+use crate::desk::{
+    DisplayControl, DisplayFailure, DisplayReading, DisplaySettings, DisplaySummary,
+    NetworkLightChange, NetworkLightFailure, NetworkLightSummary,
+};
 use serde::{Deserialize, Serialize};
 pub use succession::Identity;
 
@@ -61,7 +66,10 @@ pub use succession::Identity;
 /// v28: `Action::HoldShortcut` appended for lifecycle-held keyboard output.
 /// v29: `Agent::declare_client` + [`ClientKind`] appended — typed demand for
 ///      the macOS dormancy gate.
-pub const PROTOCOL_VERSION: u32 = 29;
+/// v30: the desk beyond HID++ — monitors over DDC and Elgato lights over the
+///      network — appended as five on-demand methods plus [`mod@crate::desk`].
+///      Asked for rather than observed, for the reason that module gives.
+pub const PROTOCOL_VERSION: u32 = 30;
 
 /// Environment variable through which the agent hands a supervised helper the
 /// run token it will serve, so the helper knows which agent it belongs to
@@ -560,4 +568,39 @@ pub trait Agent {
     /// arms only on [`ClientKind::Gui`]. The takeover probe never declares —
     /// it speaks only [`Agent::protocol_version`] — and so never arms.
     async fn declare_client(kind: ClientKind);
+    /// Every monitor attached, and whether each answers over DDC.
+    ///
+    /// Enumerating is cheap; the reachability probe behind it is not, which is
+    /// why this is asked for rather than folded into [`Agent::observe`]. See
+    /// [`mod@crate::desk`].
+    async fn list_displays() -> Vec<DisplaySummary>;
+    /// What one monitor's controls currently read.
+    ///
+    /// Controls the monitor does not implement are absent rather than an
+    /// error — a model without speakers has no volume, and that is a fact
+    /// about it rather than a fault.
+    async fn read_display(id: String) -> Result<DisplaySettings, DisplayFailure>;
+    /// Change one monitor setting, answering with what the monitor then reads.
+    ///
+    /// The value read back rather than the value sent, because a monitor is
+    /// free to clamp, round, or ignore — and a panel that showed the request
+    /// instead of the result would be confidently wrong.
+    async fn set_display(
+        id: String,
+        control: DisplayControl,
+        value: u16,
+    ) -> Result<DisplayReading, DisplayFailure>;
+    /// Elgato lights answering on the local network.
+    ///
+    /// Costs seconds: it listens for multicast announcements. Call it when
+    /// somebody opens the panel, not on a timer.
+    async fn list_network_lights() -> Vec<NetworkLightSummary>;
+    /// Change one network light, answering with what it then reads.
+    ///
+    /// Takes every field at once because the light's whole state goes in one
+    /// request, so a combined change is one round trip and one visible step.
+    async fn set_network_light(
+        id: String,
+        change: NetworkLightChange,
+    ) -> Result<NetworkLightSummary, NetworkLightFailure>;
 }

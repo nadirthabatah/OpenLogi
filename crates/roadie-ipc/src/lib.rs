@@ -11,6 +11,7 @@
 //! the other way around.
 
 pub mod client;
+pub mod desk;
 mod ipc;
 pub mod transport;
 

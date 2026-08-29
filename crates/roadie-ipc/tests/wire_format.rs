@@ -30,6 +30,11 @@ use std::collections::BTreeMap;
 use std::fmt::Write;
 
 use bincode::Options;
+use roadie_ipc::desk::{
+    DisplayControl, DisplayFailure, DisplayReading, DisplaySummary, NetworkLightChange,
+    NetworkLightFailure,
+};
+
 use roadie_core::app::ForegroundApp;
 use roadie_core::binding::{ActionRingIcon, ActionRingSlot};
 use roadie_core::config::Lighting;
@@ -101,7 +106,7 @@ fn representative_smartshift_status() -> SmartShiftStatus {
 /// that makes that visible in the same diff.
 #[test]
 fn protocol_version_is_pinned() {
-    assert_eq!(PROTOCOL_VERSION, 29);
+    assert_eq!(PROTOCOL_VERSION, 30);
 }
 
 #[test]
@@ -596,4 +601,66 @@ fn standalone_light_dtos_commands_and_errors() {
         "0c05636f6c6f72",
     );
     assert_wire(&WriteError::AmbiguousRawDevice, "0d");
+}
+
+/// The desk beyond HID++: monitors and network lights.
+///
+/// Pinned like everything else that crosses the socket. The enums here are the
+/// part worth guarding — `DisplayControl` and both failure types encode a
+/// declaration index, so inserting a variant anywhere but the end silently
+/// re-points every value a running agent has already sent.
+#[test]
+fn display_control_variants_are_positional() {
+    assert_wire(&DisplayControl::Brightness, "00");
+    assert_wire(&DisplayControl::Contrast, "01");
+    assert_wire(&DisplayControl::Volume, "02");
+    assert_wire(&DisplayControl::Input, "03");
+}
+
+#[test]
+fn display_summary_and_reading() {
+    assert_wire(
+        &DisplaySummary {
+            id: "i2c-7".into(),
+            name: "LG ULTRAFINE".into(),
+            reachable: true,
+            unreachable_reason: None,
+        },
+        "056932632d370c4c4720554c54524146494e450100",
+    );
+    assert_wire(
+        &DisplayReading {
+            control: DisplayControl::Brightness,
+            current: 40,
+            maximum: 100,
+        },
+        "002864",
+    );
+}
+
+#[test]
+fn display_failure_variants_are_positional() {
+    assert_wire(&DisplayFailure::NotFound, "00");
+    assert_wire(&DisplayFailure::Unreachable("no".into()), "01026e6f");
+    assert_wire(&DisplayFailure::Refused("no".into()), "02026e6f");
+}
+
+#[test]
+fn network_light_change_is_all_options() {
+    assert_wire(&NetworkLightChange::default(), "000000");
+    assert_wire(
+        &NetworkLightChange {
+            power: Some(true),
+            brightness_percent: Some(40),
+            kelvin: Some(4000),
+        },
+        "0101012801fba00f",
+    );
+}
+
+#[test]
+fn network_light_failure_variants_are_positional() {
+    assert_wire(&NetworkLightFailure::NotFound, "00");
+    assert_wire(&NetworkLightFailure::Unreachable("no".into()), "01026e6f");
+    assert_wire(&NetworkLightFailure::NothingToDo, "02");
 }
