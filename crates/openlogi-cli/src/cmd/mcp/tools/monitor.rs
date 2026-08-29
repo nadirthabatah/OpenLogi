@@ -5,7 +5,7 @@
 //! it and let the agent's hook say what it saw — the fastest path for anyone,
 //! and the only workable one without sight.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use openlogi_ipc::MonitorEvent;
 use serde_json::{Value, json};
@@ -16,10 +16,23 @@ use super::{agent, rpc};
 /// Default watch window when the caller does not pick one.
 const DEFAULT_SECONDS: u64 = 5;
 
-/// Longest watch window allowed. The agent auto-disables monitoring once
-/// polling stops, so an over-long window mostly means an MCP client sitting
-/// on a stalled tool call.
+/// Longest watch window allowed, bounding how long an MCP client sits on a
+/// tool call that cannot answer early.
 const MAX_SECONDS: u64 = 30;
+
+/// How often to poll the agent while watching.
+///
+/// This is a correctness constraint, not a tuning knob. The agent's event
+/// monitor is kept alive *by being polled*: its janitor
+/// (`openlogi_agent_core::event_monitor`, `IDLE_TICK`, three seconds) walks an
+/// unpolled monitor `Polled -> Idle -> Disabled` and **discards the buffer** on
+/// the last step. A single sleep across the whole window therefore loses every
+/// event the user produced — the exact press this tool exists to catch — for
+/// any window past about six seconds, and races the janitor even at five.
+/// Polling once a second holds the monitor at `Polled` with margin to spare.
+///
+/// If upstream ever shortens `IDLE_TICK`, this must shrink with it.
+const POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 /// Tool descriptors owned by this module.
 pub fn tools() -> Vec<Value> {
@@ -55,9 +68,19 @@ pub async fn watch_input(arguments: &Value) -> Result<String, String> {
     // button did you just push".
     rpc(client.poll_event_monitor(context::current())).await?;
 
-    tokio::time::sleep(Duration::from_secs(seconds)).await;
-
-    let events = rpc(client.poll_event_monitor(context::current())).await?;
+    // Poll repeatedly rather than sleeping through the window: see
+    // [`POLL_INTERVAL`]. Each poll both keeps the monitor alive and drains
+    // what has arrived, so events are accumulated here rather than left to
+    // survive in the agent's bounded buffer.
+    let deadline = Instant::now() + Duration::from_secs(seconds);
+    let mut events = Vec::new();
+    while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+        if remaining.is_zero() {
+            break;
+        }
+        tokio::time::sleep(remaining.min(POLL_INTERVAL)).await;
+        events.extend(rpc(client.poll_event_monitor(context::current())).await?);
+    }
     Ok(summarize(&events, seconds))
 }
 
@@ -108,7 +131,9 @@ mod tests {
     use openlogi_ipc::MonitorEvent;
     use serde_json::json;
 
-    use super::{DEFAULT_SECONDS, MAX_SECONDS, summarize, watch_window};
+    use std::time::Duration;
+
+    use super::{DEFAULT_SECONDS, MAX_SECONDS, POLL_INTERVAL, summarize, watch_window};
 
     #[test]
     fn the_window_defaults_and_is_bounded() {
@@ -148,6 +173,23 @@ mod tests {
         let summary = summarize(&events, 5);
         assert!(summary.contains("button Back pressed"));
         assert!(summary.contains("button Back released"));
+    }
+
+    /// The agent's janitor disables an unpolled monitor and drops its buffer
+    /// after two three-second ticks. A watch that polls less often than that
+    /// silently loses the press it was asked to catch, so the margin is
+    /// asserted rather than left to a comment.
+    #[test]
+    fn the_poll_interval_stays_well_inside_the_agents_idle_tick() {
+        const AGENT_IDLE_TICK: Duration = Duration::from_secs(3);
+        assert!(
+            POLL_INTERVAL < AGENT_IDLE_TICK,
+            "polling must refresh the monitor before the janitor can idle it"
+        );
+        assert!(
+            POLL_INTERVAL.as_millis() * 2 <= AGENT_IDLE_TICK.as_millis(),
+            "leave room for scheduling jitter and RPC latency, not just a bare inequality"
+        );
     }
 
     #[test]
