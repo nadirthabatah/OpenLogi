@@ -5,7 +5,9 @@ rules. This file is the other half — the state of *this fork's* work, the
 things that cost real time to learn the first time, and what comes next.
 Read it before picking anything up.
 
-Last updated after PR #12. `master` is clean and everything below is merged.
+Last updated on the `claude/openroadie-handoff-m5hphl` branch, which carries the
+monitor work described in section 6 and is not yet merged. Everything in
+section 3 up to PR #12 is on `master`.
 
 ---
 
@@ -67,27 +69,44 @@ Merged, in order:
 | 9 | The logo, and the retirement of upstream's artwork |
 | 10 | `roadie-ddc` — DDC/CI, MCCS and EDID as a pure crate |
 | 11 | Repository URLs pointed at the post-rename name |
+| 12 | This handoff |
 
 ### Device categories that work today
 
 Logitech HID++ mice and keyboards, Elgato Stream Decks, QMK/VIA keyboards and
-macro pads, UVC webcams, Logitech standalone lights.
+macro pads, UVC webcams, Logitech standalone lights, and — on the branch, not
+yet on `master` — monitors over DDC/CI.
 
-### Monitors are half-built
+### Monitors, as of the branch
 
 `roadie-ddc` is the pure protocol: packet framing, VCP features, capability
 strings, EDID. 91 unit tests, no host I/O, holds the wasm portability claim.
-**Nothing yet reaches an actual monitor** — that needs a host backend, and it
-differs per platform:
+
+`roadie-display` is the host half: the `VcpBackend` seam, the `Ddc` adapter
+carrying framing and timing and retries, backends for all three platforms, and
+`mock::Panel`, a monitor made of software that answers *packets* so everything
+above it can be driven with nothing plugged in. `roadie display` is the CLI,
+`list_displays` / `read_display_settings` / `set_display_setting` are the MCP
+tools, and `roadie devices` includes the screen.
+
+**Still nothing has reached an actual monitor.** The backends differ per
+platform, and the table below is what each one had to be written against:
 
 | Platform | API | Notes |
 | --- | --- | --- |
-| macOS | `IOAVService` on Apple silicon, `IOI2CSendRequest` on Intel | Private framework. What MonitorControl and BetterDisplay use. Never works on the built-in display. |
+| macOS | `IOAVService` on Apple silicon | Private framework, resolved by `dlopen`. What MonitorControl and BetterDisplay use. Never works on the built-in display. Intel's `IOI2CSendRequest` path is deliberately **not** implemented — an Intel Mac is told so plainly rather than handed a second untestable path. |
 | Windows | `dxva2.dll` | Higher level: it does the framing itself, so `roadie-ddc`'s packet layer is unused there |
 | Linux | `/dev/i2c-*`, discovered through `/sys/class/drm/*/ddc/i2c-dev/` | The kernel already publishes each display's EDID at `/sys/class/drm/*/edid`, so displays can be named with no I2C access at all |
 
 That table is why the backend trait belongs at the *VCP* level (`get`, `set`,
 `capabilities`) rather than at the packet level — Windows never sees a packet.
+
+The EDID is read differently on each: Linux from `/sys/class/drm/*/edid`, which
+needs no permission at all; macOS off the EEPROM at I²C address `0x50`, on the
+transport that already exists, so identification needs no second private
+dependency; Windows not at all, which is a real gap — `dxva2` describes most
+panels as "Generic PnP Monitor", so displays there are numbered rather than
+named.
 
 ## 4. Working agreements that cost time to learn
 
@@ -108,6 +127,18 @@ once went unverified this way while the last completed run was fourteen
 commits stale, and "the gate is green" was reported on the strength of it.
 Batch locally, push once, wait. Different branches are safe — the key includes
 the ref.
+
+**macOS compiles here.** `cargo check` does not link, so
+`--target aarch64-apple-darwin` type-checks a macOS-only file — signatures,
+lifetimes, borrows and all — on a Linux container with no Mac anywhere. It
+works for any crate whose macOS dependencies are pure Rust, which the `objc2`
+family is, and it caught every mistake in `roadie-display`'s `IOAVService`
+backend. `rustup target add aarch64-apple-darwin` and then clippy that target
+alongside the Windows one. What it does not prove is anything about *running*:
+no linking, no frameworks resolved, no private symbol confirmed to exist, and
+no `dlsym`'d signature checked against the one Apple ships — a wrong one
+type-checks perfectly and is undefined behaviour when called. The full note is
+in `.claude/rules/cross-platform.md`.
 
 **Clippy reports as warnings; `-D warnings` makes them failures.** Grepping
 output for `^error` hides every one of them. Check the exit code — and not
@@ -161,19 +192,25 @@ and none of that is the same as a device answering.
 nothing destructive, undo commands throughout, in priority order. It is the
 highest-value thing to do the next time hardware and time coincide.
 
-## 6. What comes next: monitors, in build order
+## 6. Monitors: what was built, and why it is shaped this way
 
-The last handoff left "which platform first" open. It is answered here, and the
-answer is that it was the wrong question to block on. Everything except a panel
+**Sections 6.1 through 6.5 are done and on this branch.** They are kept in
+full rather than reduced to a changelog line, because what they carry is the
+reasoning, and the reasoning is what the next person needs when they change
+one of these decisions. What comes after them is 6.6.
+
+The last handoff left "which platform first" open. It was the wrong question
+to block on. Everything except a panel
 actually answering can be built and proven with no hardware attached and no
 macOS host in the room, so the platform choice does not gate the work — it only
 decides which backend gets *verified* first, and that is a hardware question
 Nadir settles at his desk, not a design question a session settles for him.
 
-So: the trait, the Linux backend and a mock land first, because those are the
-parts a Linux container can prove. macOS is written behind the same trait and
-compiled by CI's two macOS jobs. Windows is cross-compiled. Verification then
-starts wherever Nadir happens to be sitting.
+So: the trait, the Linux backend and a mock landed first, because those are
+the parts a Linux container can prove. macOS went in behind the same trait —
+and, as it turned out, could be type-checked here after all; see section 4.
+Windows is cross-compiled. Verification starts wherever Nadir happens to be
+sitting, and `docs/VERIFYING.md` step 10 is the ordered pass for it.
 
 ### 6.1 The seam is a new crate, `roadie-display`
 
@@ -258,7 +295,7 @@ on-screen menu driven by bezel buttons.
 the monitor in the one list it promises. The crate is pure, so this is ordinary
 tested work.
 
-### 6.6 After monitors
+### 6.6 After monitors — this is the part still to do
 
 Unchanged in order, with one note. Audio interfaces starting with the Focusrite
 Scarlett family are per-vendor USB work with no standard underneath, so they
@@ -276,13 +313,12 @@ wastes the time. The split is sharper than it looks, so it is written down.
 Buildable, testable and gate-green with no hardware and no computer in front of
 anyone:
 
-- Everything in 6.1 through 6.5. The mock backend is what makes it true: the
-  CLI, the MCP tools and the survey can all be driven end to end against a
-  scripted display.
-- The macOS FFI. It cannot be compiled in a Linux container, but CI's
-  `tests (macos, arm64)` and `tests (macos, x86_64)` jobs compile it on a PR.
-  CI is the macOS compiler for a travelling session; it is not a substitute for
-  a run.
+- Everything in 6.1 through 6.5, all of which is now done. The mock backend is
+  what made it true: the CLI, the MCP tools and the survey were all driven
+  against a scripted display.
+- The macOS FFI, which turned out to be type-checkable here — see section 4.
+  CI's two macOS jobs still compile it for real on a PR, and neither is a
+  substitute for running it.
 - The Windows backend, cross-compiled locally against `x86_64-pc-windows-gnu`
   and by the `clippy (windows)` job.
 - A mutation sweep over whatever lands. The fork's record is that every gap
