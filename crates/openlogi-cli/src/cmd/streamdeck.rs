@@ -434,6 +434,83 @@ pub async fn apply_saved(name: &str) -> Result<usize> {
     Ok(keys)
 }
 
+/// One key of a layout, re-exported so the MCP server can name the type.
+pub type LayoutKey = layout::Key;
+
+/// Build a layout key from its parts.
+///
+/// A constructor rather than a struct literal at each call site, so the MCP
+/// server does not need the layout module public and the two ways of setting a
+/// key cannot drift in what they consider a key to be.
+#[must_use]
+pub fn layout_key(
+    index: u16,
+    label: Option<String>,
+    image: Option<String>,
+    colour: Option<String>,
+    background: Option<String>,
+    action: Option<openlogi_core::binding::Action>,
+) -> LayoutKey {
+    layout::Key {
+        index,
+        label,
+        image: image.map(PathBuf::from),
+        colour,
+        background,
+        action,
+    }
+}
+
+/// Set one key in a saved layout, for the MCP server.
+///
+/// Returns the key as it was, or `None` if the key was not in the layout, so
+/// a caller can offer to put it back. A file write is permanent in a way a
+/// deck's own screens are not — they go when the cable does — so the previous
+/// value travelling with the answer is what keeps a mistaken change
+/// reversible.
+///
+/// # Errors
+///
+/// Fails when the layout cannot be read, the key description is not usable,
+/// or the file cannot be written.
+pub fn set_layout_key(name: &str, key: layout::Key) -> Result<Option<layout::Key>> {
+    let path = library::resolve(name)?;
+    let mut parsed = if path.exists() {
+        read_layout(&path)?
+    } else {
+        layout::Layout::default()
+    };
+    let was = parsed
+        .keys
+        .iter()
+        .find(|held| held.index == key.index)
+        .cloned();
+    parsed.set(key);
+    write_layout(&path, &parsed)?;
+    Ok(was)
+}
+
+/// Remove one key from a saved layout, for the MCP server.
+///
+/// Returns the key that was removed, or `None` when it was not there.
+///
+/// # Errors
+///
+/// Fails when the layout does not exist, cannot be read, or cannot be written.
+pub fn unset_layout_key(name: &str, index: u16) -> Result<Option<layout::Key>> {
+    let path = library::resolve(name)?;
+    if !path.exists() {
+        return Err(anyhow!("there is no layout at {}", path.display()));
+    }
+    let mut parsed = read_layout(&path)?;
+    let was = parsed.keys.iter().find(|key| key.index == index).cloned();
+    if was.is_some() {
+        parsed.remove(index);
+        write_layout(&path, &parsed)?;
+    }
+    Ok(was)
+}
+
 /// `openlogi streamdeck set`.
 ///
 /// The point of this command is that configuring a deck should never require
@@ -517,7 +594,7 @@ fn unset_key(path: &Path, key: u16) -> Result<ExitCode> {
 /// Goes through the same serde representation the layout file uses, so
 /// whatever a file accepts the command line accepts, and the two cannot come
 /// to disagree about what an action is called.
-fn parse_action(name: &str) -> Result<openlogi_core::binding::Action> {
+pub fn parse_action(name: &str) -> Result<openlogi_core::binding::Action> {
     serde_json::from_value(serde_json::Value::String(name.to_owned())).map_err(|_| {
         anyhow!(
             "{name} is not an action this build knows. Actions are named the way they \
@@ -846,7 +923,7 @@ async fn open_preferred(collections: &[Attached]) -> Result<Session> {
 }
 
 /// Parse a six-hex-digit colour.
-fn parse_colour(text: &str) -> Result<(u8, u8, u8)> {
+pub fn parse_colour(text: &str) -> Result<(u8, u8, u8)> {
     let packed = (text.len() == 6)
         .then(|| u32::from_str_radix(text, 16).ok())
         .flatten()

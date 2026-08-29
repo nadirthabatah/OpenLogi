@@ -504,6 +504,7 @@ The tools exposed are:
 | `set_stream_deck_key_label` | Write a text label on one key, sized to fit |
 | `clear_stream_deck` | Turn every key black |
 | `list_layouts` / `apply_layout` | Saved deck layouts, restored whole by name |
+| `set_layout_key` / `unset_layout_key` | Edit one key of a saved layout, reporting what it replaced |
 | `list_keyboards` | QMK/VIA boards attached, with protocol revision and layer count |
 | `read_keymap` | A layer's keys, by name rather than by number |
 | `set_key` | Change what one key sends, confirmed by reading it back |
@@ -533,10 +534,24 @@ that reads "install the udev rules" as an instruction to itself will either
 fail or, worse, try.
 
 `apply_layout` exists so "put my streaming layout back" is one call rather than
-thirty-two. There is deliberately no tool that *writes* a layout file: a layout
-is something a person composed, and an assistant rewriting one on a
-misunderstanding would destroy work with no copy anywhere — the deck's own
-memory is not a copy, it goes when the cable does.
+thirty-two.
+
+Editing a layout through an assistant took some deciding. The first version of
+these tools deliberately had none: a layout is something a person composed, the
+deck's own memory is not a copy of it, and an assistant rewriting one on a
+misunderstanding would destroy work with nothing to restore from. That holds
+against rewriting a *file* — and not against setting one key, which is what
+people actually ask for. "Put MUTE MIC on the top left of my streaming layout"
+is a sentence, and refusing it while the command line does it happily is a gap
+in the interface a blind user relies on most.
+
+So `set_layout_key` and `unset_layout_key` edit **one key at a time, never the
+whole file**, and every change reports the key as it was, so the assistant can
+offer to put it back. That is the same shape `set_key` takes for keyboards, and
+for the same reason: a permanent change is acceptable when the answer carries
+what it takes to undo it. Actions that run a program or type text still have to
+be written in the file by the person — those are exactly what `run` refuses
+without `--accept-actions`.
 
 The keyboard tools take and give keys by name — `F13`, not `0x0068`. An
 assistant relaying "your key is zero x zero zero six eight" has relayed nothing
