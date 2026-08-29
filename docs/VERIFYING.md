@@ -320,7 +320,10 @@ macOS in particular gates HID reads and input monitoring separately and per
 binary. Step 0 exists to catch those before you reach them.
 
 Failures in steps 2, 3 and 5 are defects worth reporting, with the command and
-its full output.
+its full output. Begin any report with `openlogi doctor` — its first line names
+the build and the platform, which are the first two things anyone reading a
+report has to ask for. `openlogi doctor --json` carries the same two fields for
+anything that parses output rather than reading it.
 
 Steps 6, 7 and 8 are explicitly unproven. They are the least verified code in
 the fork — written against published protocols and thoroughly unit-tested

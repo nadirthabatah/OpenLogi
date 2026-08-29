@@ -633,6 +633,21 @@ pub fn check_json(check: &Check) -> serde_json::Value {
     serde_json::Value::Object(entry)
 }
 
+/// What this build is and where it is running.
+///
+/// Carried in both renderings because this output exists to be pasted into a
+/// bug report, and these are the first two things anyone reading one has to
+/// ask for. Leaving them out costs a round trip, which is a poor trade
+/// anywhere and a worse one for someone working by dictation.
+#[must_use]
+pub fn provenance() -> String {
+    format!(
+        "openlogi {} on {}",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS
+    )
+}
+
 /// The whole diagnosis as JSON.
 #[must_use]
 pub fn render_json(checks: &[Check]) -> String {
@@ -641,6 +656,8 @@ pub fn render_json(checks: &[Check]) -> String {
         .filter(|check| matches!(check.verdict, Verdict::Problem { .. }))
         .count();
     let document = serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "platform": std::env::consts::OS,
         "checks": checks.iter().map(check_json).collect::<Vec<_>>(),
         "problems": problems,
     });
@@ -673,6 +690,8 @@ pub fn render(checks: &[Check], problems: usize) -> String {
 
     if problems == 0 {
         let _ = writeln!(out, "Nothing needs fixing.");
+        let _ = writeln!(out);
+        let _ = writeln!(out, "{}", provenance());
         return out;
     }
 
@@ -699,6 +718,11 @@ pub fn render(checks: &[Check], problems: usize) -> String {
             step += 1;
         }
     }
+    // Last, not first. Someone running this wants to hear what is wrong
+    // before they hear which build it is; the build matters when they report
+    // it, and a report is the whole output anyway.
+    let _ = writeln!(out);
+    let _ = writeln!(out, "{}", provenance());
     out
 }
 
@@ -1194,6 +1218,36 @@ mod tests {
             crate::spoken::assert_listenable(&text, what);
             crate::spoken::assert_agrees(&text, what);
         }
+    }
+
+    /// Both renderings must carry the build and the platform.
+    ///
+    /// This output exists to be pasted into a bug report, and those are the
+    /// first two things anyone reading one has to ask for. A round trip to
+    /// find them out is a poor trade anywhere and a worse one for someone
+    /// working by dictation.
+    #[test]
+    fn the_report_says_which_build_and_which_platform() {
+        let checks = diagnose(&healthy());
+
+        let text = render(&checks, 0);
+        assert!(
+            text.contains(env!("CARGO_PKG_VERSION")),
+            "the text report does not name the version: {text}"
+        );
+        assert!(
+            text.contains(std::env::consts::OS),
+            "the text report does not name the platform: {text}"
+        );
+
+        let json: serde_json::Value =
+            serde_json::from_str(&render_json(&checks)).expect("the report is JSON");
+        assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(json["platform"], std::env::consts::OS);
+
+        // And it still reads well aloud with the new line in front of it.
+        crate::spoken::assert_listenable(&text, "the report with provenance");
+        crate::spoken::assert_agrees(&text, "the report with provenance");
     }
 
     /// The machine that looks fine and behaves worst.
