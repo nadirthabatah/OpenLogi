@@ -9,15 +9,27 @@
 //!
 //! # What is verified, and what is not
 //!
-//! The encodings this drives are unit-tested in `openlogi-streamdeck`, but no
-//! part of this path has run against physical hardware. Two things need a real
-//! device to confirm, and `openlogi streamdeck verify` exists to confirm them:
-//! which HID collection carries the key and image traffic (see
-//! [`Attached::is_preferred_collection`]), and the gen 1 report layouts.
+//! Worth being precise, because "untested driver" is too blunt a description.
+//!
+//! **Tested:** the encodings, in `openlogi-streamdeck`; and this module's own
+//! behaviour — what it sends for a brightness or reset, how it decodes and
+//! diffs key reports, that a foreign report id is skipped rather than fatal,
+//! that a truncated one is an error rather than a row of phantom releases,
+//! that a missed report still resolves both transitions, and that a vanished
+//! device surfaces instead of hanging. Those run against a scripted device
+//! (see the tests below), which is what the [`DeckTransport`] seam exists for.
+//!
+//! **Not tested:** the OS calls themselves, and every assumption about what a
+//! real device does in response. Three things need hardware, and `openlogi
+//! streamdeck verify` exists to settle them: which HID collection carries the
+//! key and image traffic (see [`Attached::is_preferred_collection`]), whether
+//! the original Stream Deck mirrors its keys within a row, and the gen 1
+//! report layouts.
 
 use async_hid::{
     AsyncHidFeatureHandle as _, AsyncHidRead as _, Device, DeviceFeatureHandle, DeviceReader,
 };
+use hidpp::async_trait;
 use openlogi_device::backend::BackendError;
 use openlogi_streamdeck::model::{ELGATO_VENDOR_ID, Model, identify};
 use openlogi_streamdeck::report::{self, Brightness, KeyEvent, KeyStates};
@@ -149,12 +161,49 @@ pub fn preferred(collections: &[Attached]) -> Vec<&Attached> {
     chosen
 }
 
-/// An open Stream Deck: a feature-report handle for control, and a reader for
-/// key events.
-pub struct Session {
-    model: &'static Model,
+/// The two operations a Stream Deck session performs on a transport.
+///
+/// A trait rather than the concrete `async-hid` handles so the session logic
+/// above it — report encoding, decoding, and the key-state diff — is exercised
+/// by tests against a scripted device. Without this seam that logic could only
+/// ever be checked by plugging hardware in, which is the whole difficulty with
+/// a driver.
+#[async_trait]
+pub trait DeckTransport: Send {
+    /// Send one feature report, report id included as byte 0.
+    async fn write_feature_report(&mut self, report: &[u8]) -> Result<(), BackendError>;
+
+    /// Wait for the next input report, returning how many bytes it filled.
+    async fn read_input_report(&mut self, buffer: &mut [u8]) -> Result<usize, BackendError>;
+}
+
+/// The transport this host actually uses.
+struct HostTransport {
     feature: DeviceFeatureHandle,
     reader: DeviceReader,
+}
+
+#[async_trait]
+impl DeckTransport for HostTransport {
+    async fn write_feature_report(&mut self, report: &[u8]) -> Result<(), BackendError> {
+        self.feature
+            .write_feature_report(report)
+            .await
+            .map_err(crate::transport::backend_error)
+    }
+
+    async fn read_input_report(&mut self, buffer: &mut [u8]) -> Result<usize, BackendError> {
+        self.reader
+            .read_input_report(buffer)
+            .await
+            .map_err(crate::transport::backend_error)
+    }
+}
+
+/// An open Stream Deck: a transport, and the key state to diff against.
+pub struct Session {
+    model: &'static Model,
+    transport: Box<dyn DeckTransport>,
     states: KeyStates,
 }
 
@@ -177,12 +226,24 @@ impl Session {
             .open_readable()
             .await
             .map_err(crate::transport::backend_error)?;
-        Ok(Self {
-            model: attached.model,
-            feature,
-            reader,
-            states: KeyStates::released(attached.model),
-        })
+        Ok(Self::with_transport(
+            attached.model,
+            Box::new(HostTransport { feature, reader }),
+        ))
+    }
+
+    /// Build a session over any transport.
+    ///
+    /// Public so a caller can drive a Stream Deck over something other than
+    /// this host's HID stack — and so the tests below can drive one over a
+    /// scripted device.
+    #[must_use]
+    pub fn with_transport(model: &'static Model, transport: Box<dyn DeckTransport>) -> Self {
+        Self {
+            model,
+            transport,
+            states: KeyStates::released(model),
+        }
     }
 
     /// Which Stream Deck this session drives.
@@ -198,10 +259,7 @@ impl Session {
     /// Fails if the feature report cannot be written.
     pub async fn set_brightness(&mut self, brightness: Brightness) -> Result<(), BackendError> {
         let report = report::set_brightness(self.model, brightness);
-        self.feature
-            .write_feature_report(report.as_bytes())
-            .await
-            .map_err(crate::transport::backend_error)
+        self.transport.write_feature_report(report.as_bytes()).await
     }
 
     /// Reset the device to its stock standby screen.
@@ -211,10 +269,7 @@ impl Session {
     /// Fails if the feature report cannot be written.
     pub async fn reset(&mut self) -> Result<(), BackendError> {
         let report = report::reset(self.model);
-        self.feature
-            .write_feature_report(report.as_bytes())
-            .await
-            .map_err(crate::transport::backend_error)
+        self.transport.write_feature_report(report.as_bytes()).await
     }
 
     /// Wait for the next input report and return the key transitions in it.
@@ -231,11 +286,7 @@ impl Session {
     /// short report is an error rather than a row of invented key releases.
     pub async fn next_events(&mut self) -> Result<Vec<KeyEvent>, BackendError> {
         let mut buffer = [0u8; INPUT_BUFFER];
-        let read = self
-            .reader
-            .read_input_report(&mut buffer)
-            .await
-            .map_err(crate::transport::backend_error)?;
+        let read = self.transport.read_input_report(&mut buffer).await?;
         match report::decode_key_states(self.model, &buffer[..read]) {
             Ok(states) => {
                 let events = states.changes_since(&self.states);
@@ -302,12 +353,190 @@ pub fn is_elgato(vendor_id: u16) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::is_elgato;
-    use openlogi_streamdeck::model::ELGATO_VENDOR_ID;
+    use std::collections::VecDeque;
+    use std::sync::{Arc, Mutex};
+
+    use hidpp::async_trait;
+    use openlogi_device::backend::BackendError;
+    use openlogi_streamdeck::model::{ELGATO_VENDOR_ID, Model, identify};
+    use openlogi_streamdeck::report::{Brightness, KeyAction};
+
+    use super::{DeckTransport, Session, is_elgato};
+
+    /// A Stream Deck that exists only in this test: it hands out the input
+    /// reports it was scripted with and records every feature report written
+    /// to it.
+    ///
+    /// This is what lets the session's own behaviour — the encoding it sends,
+    /// the decoding and diffing it does — be checked without a device.
+    #[derive(Default)]
+    struct Scripted {
+        /// Input reports still to be delivered, in order.
+        inputs: VecDeque<Vec<u8>>,
+        /// Every feature report written, in order.
+        written: Arc<Mutex<Vec<Vec<u8>>>>,
+    }
+
+    impl Scripted {
+        fn new(inputs: Vec<Vec<u8>>) -> (Self, Arc<Mutex<Vec<Vec<u8>>>>) {
+            let written = Arc::new(Mutex::new(Vec::new()));
+            (
+                Self {
+                    inputs: inputs.into(),
+                    written: Arc::clone(&written),
+                },
+                written,
+            )
+        }
+    }
+
+    #[async_trait]
+    impl DeckTransport for Scripted {
+        async fn write_feature_report(&mut self, report: &[u8]) -> Result<(), BackendError> {
+            self.written
+                .lock()
+                .expect("the test holds this lock alone")
+                .push(report.to_vec());
+            Ok(())
+        }
+
+        async fn read_input_report(&mut self, buffer: &mut [u8]) -> Result<usize, BackendError> {
+            let Some(report) = self.inputs.pop_front() else {
+                // Scripted input exhausted: behave like a device that went
+                // away rather than blocking the test for ever.
+                return Err(BackendError::Disconnected);
+            };
+            buffer[..report.len()].copy_from_slice(&report);
+            Ok(report.len())
+        }
+    }
+
+    fn mk2() -> &'static Model {
+        identify(ELGATO_VENDOR_ID, 0x0080).expect("the MK.2 is catalogued")
+    }
+
+    /// A gen 2 key report with the listed reported positions held down.
+    fn gen2_report(pressed: &[usize]) -> Vec<u8> {
+        let mut report = vec![0u8; 4 + 15];
+        report[0] = 0x01;
+        for &index in pressed {
+            report[4 + index] = 1;
+        }
+        report
+    }
 
     #[test]
     fn only_elgato_is_a_candidate() {
         assert!(is_elgato(ELGATO_VENDOR_ID));
         assert!(!is_elgato(0x046d));
+    }
+
+    #[tokio::test]
+    async fn brightness_reaches_the_device_as_the_protocol_encodes_it() {
+        let (scripted, written) = Scripted::new(Vec::new());
+        let mut session = Session::with_transport(mk2(), Box::new(scripted));
+
+        session
+            .set_brightness(Brightness::DIM)
+            .await
+            .expect("the scripted device accepts writes");
+
+        let sent = written.lock().expect("uncontended");
+        assert_eq!(sent.len(), 1);
+        assert_eq!(&sent[0][..3], &[0x03, 0x08, Brightness::DIM.percent()]);
+        assert_eq!(sent[0].len(), 32, "gen 2 feature reports are padded to 32");
+    }
+
+    #[tokio::test]
+    async fn reset_reaches_the_device_as_the_protocol_encodes_it() {
+        let (scripted, written) = Scripted::new(Vec::new());
+        let mut session = Session::with_transport(mk2(), Box::new(scripted));
+
+        session.reset().await.expect("accepted");
+
+        let sent = written.lock().expect("uncontended");
+        assert_eq!(&sent[0][..2], &[0x03, 0x02]);
+    }
+
+    #[tokio::test]
+    async fn a_press_and_release_arrive_as_two_events_across_two_reports() {
+        let (scripted, _) = Scripted::new(vec![gen2_report(&[2]), gen2_report(&[])]);
+        let mut session = Session::with_transport(mk2(), Box::new(scripted));
+
+        let pressed = session.next_events().await.expect("a scripted report");
+        assert_eq!(pressed.len(), 1);
+        assert_eq!(pressed[0].key, 2);
+        assert_eq!(pressed[0].action, KeyAction::Pressed);
+
+        let released = session.next_events().await.expect("a scripted report");
+        assert_eq!(released.len(), 1);
+        assert_eq!(released[0].key, 2);
+        assert_eq!(released[0].action, KeyAction::Released);
+    }
+
+    #[tokio::test]
+    async fn holding_a_key_reports_nothing_further() {
+        let (scripted, _) = Scripted::new(vec![
+            gen2_report(&[0]),
+            gen2_report(&[0]),
+            gen2_report(&[0]),
+        ]);
+        let mut session = Session::with_transport(mk2(), Box::new(scripted));
+
+        assert_eq!(session.next_events().await.expect("report").len(), 1);
+        assert!(session.next_events().await.expect("report").is_empty());
+        assert!(session.next_events().await.expect("report").is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_report_this_model_does_not_use_for_keys_is_skipped_not_fatal() {
+        // A device may interleave other report ids on the same collection.
+        // Treating one as an error would end a watch session for a report
+        // that simply is not ours.
+        let mut foreign = gen2_report(&[]);
+        foreign[0] = 0x05;
+        let (scripted, _) = Scripted::new(vec![foreign, gen2_report(&[7])]);
+        let mut session = Session::with_transport(mk2(), Box::new(scripted));
+
+        assert!(
+            session.next_events().await.expect("skipped").is_empty(),
+            "a foreign report yields no events"
+        );
+        let events = session.next_events().await.expect("a key report");
+        assert_eq!(events[0].key, 7);
+    }
+
+    #[tokio::test]
+    async fn a_truncated_key_report_is_an_error_not_a_row_of_phantom_releases() {
+        let mut truncated = gen2_report(&[]);
+        truncated.truncate(9);
+        let (scripted, _) = Scripted::new(vec![truncated]);
+        let mut session = Session::with_transport(mk2(), Box::new(scripted));
+
+        session
+            .next_events()
+            .await
+            .expect_err("a short key report must not decode");
+    }
+
+    #[tokio::test]
+    async fn a_missed_report_still_resolves_both_transitions() {
+        // The report where key 1 came up was never delivered; the next one
+        // shows 5 down instead. Diffing whole snapshots recovers both.
+        let (scripted, _) = Scripted::new(vec![gen2_report(&[1]), gen2_report(&[5])]);
+        let mut session = Session::with_transport(mk2(), Box::new(scripted));
+
+        assert_eq!(session.next_events().await.expect("report").len(), 1);
+        let events = session.next_events().await.expect("report");
+        assert_eq!(events.len(), 2);
+        assert_eq!((events[0].key, events[0].action), (1, KeyAction::Released));
+        assert_eq!((events[1].key, events[1].action), (5, KeyAction::Pressed));
+    }
+
+    #[tokio::test]
+    async fn a_vanished_device_surfaces_rather_than_hanging() {
+        let (scripted, _) = Scripted::new(Vec::new());
+        let mut session = Session::with_transport(mk2(), Box::new(scripted));
+        session.next_events().await.expect_err("the device is gone");
     }
 }
