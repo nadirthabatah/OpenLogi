@@ -199,11 +199,8 @@ async fn verify(collections: &[Attached]) -> Result<ExitCode> {
     println!("Opened: {} ({} keys)", model.name, model.key_count());
     println!();
 
-    print!("Setting brightness to 30%... ");
-    match session
-        .set_brightness(Brightness::new(30).unwrap_or(Brightness::FULL))
-        .await
-    {
+    print!("Setting brightness to {}%... ", Brightness::DIM.percent());
+    match session.set_brightness(Brightness::DIM).await {
         Ok(()) => println!("accepted — the screens should have dimmed."),
         Err(error) => println!("FAILED: {error}"),
     }

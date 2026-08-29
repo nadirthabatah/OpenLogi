@@ -42,6 +42,9 @@ impl Brightness {
     pub const FULL: Self = Self(100);
     /// Screens off, without powering the device down.
     pub const OFF: Self = Self(0);
+    /// Clearly dimmed but still lit — a visible change to check a device by,
+    /// without leaving anyone looking at dark keys if the restore fails.
+    pub const DIM: Self = Self(30);
 
     /// Build a brightness from a percentage.
     ///
@@ -258,6 +261,21 @@ mod tests {
     /// The original: gen 1, 15 keys, reported right-to-left within a row.
     fn original() -> &'static crate::model::Model {
         identify(ELGATO_VENDOR_ID, 0x0060).expect("the original is catalogued")
+    }
+
+    #[test]
+    fn the_named_brightness_levels_are_in_range() {
+        // These are constructed by hand rather than through `new`, so the
+        // invariant `new` enforces is asserted for them too.
+        for level in [Brightness::OFF, Brightness::DIM, Brightness::FULL] {
+            assert!(level.percent() <= 100);
+            assert_eq!(
+                Brightness::new(level.percent()).expect("a valid percentage"),
+                level
+            );
+        }
+        assert!(Brightness::OFF < Brightness::DIM);
+        assert!(Brightness::DIM < Brightness::FULL);
     }
 
     #[test]
