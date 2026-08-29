@@ -43,13 +43,29 @@ and clients that register servers through their own CLI instead take the same
 `openlogi mcp` command and argument. Use an absolute path to the binary if it is
 not on the client's `PATH`, which is often narrower than a login shell's.
 
-The tools exposed are `list_devices`, `read_dpi`, `set_dpi`, and
-`reload_config`. Start from `list_devices`: its output carries, for every
-device, the route object the other tools expect back verbatim, so routes are
-never assembled by hand. Everything runs through the same agent IPC the GUI and
-the rest of this CLI use — the server holds no device handles of its own — and
-a tool call made while no agent is running reports that instead of failing, so
-the assistant can say what to start.
+The tools exposed are:
+
+| Tool | What it does |
+|---|---|
+| `list_devices` | Everything attached, with agent health and a route per device |
+| `read_dpi` / `set_dpi` | Pointer resolution, and the values the sensor supports |
+| `read_smartshift` / `set_smartshift` | Scroll-wheel mode and the speed the ratchet releases at |
+| `set_lighting` | Backlight on/off, colour, brightness |
+| `set_light` | A standalone light such as a Litra: power, brightness, colour temperature |
+| `watch_input` | Watch for a few seconds and report what was pressed |
+| `reload_config` | Re-read `config.toml` |
+
+Start from `list_devices`: its output carries, for every device, the route
+object the other tools expect back verbatim, so routes are never assembled by
+hand. `watch_input` answers the question a device list cannot — *which* button
+is the one under your thumb: press it and the agent's hook reports what it saw,
+which beats reading indices off a diagram and is the only workable route
+without sight.
+
+Everything runs through the same agent IPC the GUI and the rest of this CLI use
+— the server holds no device handles of its own — and a tool call made while no
+agent is running reports that instead of failing, so the assistant can say what
+to start.
 
 Asset synchronization probes `assets.openlogi.org`, the versioned Cloudflare
 Pages release alias, and the pinned jsDelivr npm release concurrently. The first

@@ -6,16 +6,27 @@
 //! malformed `route` argument, a device write failure — is reported as
 //! tool-result text with `isError` set, because that text is what the
 //! language model reads to correct itself and retry.
+//!
+//! Each submodule owns one domain: its tool descriptors and the code that
+//! runs them sit together, so adding a tool touches one file. Dispatch stays
+//! here as a single match, which keeps the whole surface greppable from one
+//! place.
+
+mod inventory;
+mod lighting;
+mod monitor;
+mod pointer;
 
 use std::time::Duration;
 
-use openlogi_core::hid::{DeviceRoute, Dpi};
+use openlogi_core::hid::DeviceRoute;
 use openlogi_ipc::{AgentClient, ClientKind, PROTOCOL_VERSION, client};
 use serde_json::{Value, json};
 use tarpc::context;
 
 /// How long to wait for the agent's socket and handshake.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+
 /// How long to wait for any single RPC to answer.
 const RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -24,59 +35,34 @@ const RPC_TIMEOUT: Duration = Duration::from_secs(5);
 const ROUTE_HELP: &str = "Pass the `route` object exactly as returned by list_devices; \
      do not construct one by hand.";
 
+/// The schema fragment for a `route` argument.
+fn route_schema() -> Value {
+    json!({ "type": "object", "description": ROUTE_HELP })
+}
+
+/// A tool whose only argument is a device route.
+fn route_only_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": { "route": route_schema() },
+        "required": ["route"],
+        "additionalProperties": false,
+    })
+}
+
+/// A tool that takes no arguments at all.
+fn no_arguments_schema() -> Value {
+    json!({ "type": "object", "properties": {}, "additionalProperties": false })
+}
+
 /// The tool catalog served by `tools/list`.
 pub fn catalog() -> Value {
-    let route_schema = json!({
-        "type": "object",
-        "description": ROUTE_HELP,
-    });
-    json!([
-        {
-            "name": "list_devices",
-            "description": "List every peripheral the OpenLogi agent currently sees: \
-                receivers with their paired devices, directly attached and standalone \
-                devices, agent health, and whether a camera is in use. Each device \
-                entry includes the `route` object the other tools take as their \
-                `route` argument.",
-            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
-        },
-        {
-            "name": "read_dpi",
-            "description": "Read a mouse's current pointer resolution (DPI) and the \
-                values the sensor supports.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "route": route_schema },
-                "required": ["route"],
-                "additionalProperties": false,
-            },
-        },
-        {
-            "name": "set_dpi",
-            "description": "Set a mouse's pointer resolution (DPI). Read read_dpi first \
-                when unsure which values the sensor supports.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "route": route_schema,
-                    "dpi": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 65535,
-                        "description": "The DPI value to apply, e.g. 800 or 1600.",
-                    },
-                },
-                "required": ["route", "dpi"],
-                "additionalProperties": false,
-            },
-        },
-        {
-            "name": "reload_config",
-            "description": "Ask the agent to re-read its config.toml and rebuild its \
-                live bindings, after the file was edited on disk.",
-            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
-        },
-    ])
+    let mut tools = Vec::new();
+    tools.extend(inventory::tools());
+    tools.extend(pointer::tools());
+    tools.extend(lighting::tools());
+    tools.extend(monitor::tools());
+    Value::Array(tools)
 }
 
 /// Execute one `tools/call`.
@@ -92,10 +78,15 @@ pub async fn call(params: &Value) -> Result<Value, String> {
     };
     let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
     let outcome = match name {
-        "list_devices" => list_devices().await,
-        "read_dpi" => read_dpi(&arguments).await,
-        "set_dpi" => set_dpi(&arguments).await,
-        "reload_config" => reload_config().await,
+        "list_devices" => inventory::list_devices().await,
+        "reload_config" => inventory::reload_config().await,
+        "read_dpi" => pointer::read_dpi(&arguments).await,
+        "set_dpi" => pointer::set_dpi(&arguments).await,
+        "read_smartshift" => pointer::read_smartshift(&arguments).await,
+        "set_smartshift" => pointer::set_smartshift(&arguments).await,
+        "set_lighting" => lighting::set_lighting(&arguments).await,
+        "set_light" => lighting::set_light(&arguments).await,
+        "watch_input" => monitor::watch_input(&arguments).await,
         other => return Err(format!("unknown tool: {other}")),
     };
     Ok(match outcome {
@@ -145,38 +136,6 @@ async fn rpc<T>(
         .map_err(|error| format!("the agent connection failed: {error}"))
 }
 
-/// `list_devices`: one snapshot, rendered as JSON with a ready-made route
-/// attached to every paired device.
-async fn list_devices() -> Result<String, String> {
-    let client = agent().await?;
-    let snapshot = rpc(client.snapshot(context::current())).await?;
-    let receivers: Vec<Value> = snapshot
-        .inventory
-        .iter()
-        .map(|inventory| {
-            let devices: Vec<Value> = inventory
-                .paired
-                .iter()
-                .map(|device| {
-                    json!({
-                        "device": device,
-                        "route": DeviceRoute::device_route_for(inventory, device.slot),
-                    })
-                })
-                .collect();
-            json!({ "receiver": inventory.receiver, "devices": devices })
-        })
-        .collect();
-    let listing = json!({
-        "status": snapshot.status,
-        "receivers": receivers,
-        "standalone": snapshot.standalone,
-        "camera_active": snapshot.camera_active,
-    });
-    serde_json::to_string_pretty(&listing)
-        .map_err(|error| format!("failed to render the device list: {error}"))
-}
-
 /// Decode the `route` argument every per-device tool takes.
 fn route_argument(arguments: &Value) -> Result<DeviceRoute, String> {
     let Some(route) = arguments.get("route") else {
@@ -187,40 +146,108 @@ fn route_argument(arguments: &Value) -> Result<DeviceRoute, String> {
     })
 }
 
-/// `read_dpi`: current and supported DPI for the routed device.
-async fn read_dpi(arguments: &Value) -> Result<String, String> {
-    let route = route_argument(arguments)?;
-    let client = agent().await?;
-    let info = rpc(client.read_dpi(context::current(), route))
-        .await?
-        .map_err(|error| format!("reading DPI failed: {error}"))?;
-    serde_json::to_string_pretty(&info)
-        .map_err(|error| format!("failed to render the DPI info: {error}"))
+/// Render a value as pretty JSON for a tool result.
+fn rendered(value: &Value) -> Result<String, String> {
+    serde_json::to_string_pretty(value)
+        .map_err(|error| format!("failed to render a result: {error}"))
 }
 
-/// `set_dpi`: apply a DPI value to the routed device.
-async fn set_dpi(arguments: &Value) -> Result<String, String> {
-    let route = route_argument(arguments)?;
-    let requested = arguments
-        .get("dpi")
-        .and_then(Value::as_u64)
-        .ok_or_else(|| "the `dpi` argument must be a positive integer".to_string())?;
-    let dpi = u32::try_from(requested)
-        .ok()
-        .and_then(|value| Dpi::try_from(value).ok())
-        .ok_or_else(|| format!("{requested} is not a representable DPI value"))?;
-    let client = agent().await?;
-    rpc(client.set_dpi(context::current(), route.clone(), dpi))
-        .await?
-        .map_err(|error| format!("setting DPI failed: {error}"))?;
-    Ok(format!("DPI set to {dpi} for {route}"))
-}
+#[cfg(test)]
+mod tests {
+    use serde_json::Value;
 
-/// `reload_config`: have the agent re-read `config.toml`.
-async fn reload_config() -> Result<String, String> {
-    let client = agent().await?;
-    rpc(client.reload_config(context::current()))
-        .await?
-        .map_err(|error| format!("the agent rejected the config on disk: {}", error.message))?;
-    Ok("the agent reloaded its configuration".to_string())
+    use super::catalog;
+
+    /// The dispatch arms in [`super::call`], as the catalog must advertise
+    /// them. Kept here so a tool added to one and not the other fails a test
+    /// rather than surfacing as "unknown tool" at run time.
+    const DISPATCHED: [&str; 9] = [
+        "list_devices",
+        "reload_config",
+        "read_dpi",
+        "set_dpi",
+        "read_smartshift",
+        "set_smartshift",
+        "set_lighting",
+        "set_light",
+        "watch_input",
+    ];
+
+    fn names() -> Vec<String> {
+        let Value::Array(tools) = catalog() else {
+            panic!("the catalog is an array");
+        };
+        tools
+            .iter()
+            .map(|tool| {
+                tool["name"]
+                    .as_str()
+                    .expect("every tool is named")
+                    .to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_catalog_matches_the_dispatch_table_exactly() {
+        let mut advertised = names();
+        advertised.sort();
+        let mut dispatched: Vec<String> = DISPATCHED.iter().map(|s| (*s).to_string()).collect();
+        dispatched.sort();
+        assert_eq!(advertised, dispatched);
+    }
+
+    #[test]
+    fn tool_names_are_unique() {
+        let mut advertised = names();
+        let total = advertised.len();
+        advertised.sort();
+        advertised.dedup();
+        assert_eq!(advertised.len(), total);
+    }
+
+    #[test]
+    fn every_tool_carries_a_description_and_an_object_schema() {
+        let Value::Array(tools) = catalog() else {
+            panic!("the catalog is an array");
+        };
+        for tool in &tools {
+            let name = tool["name"].as_str().expect("named");
+            assert!(
+                tool["description"]
+                    .as_str()
+                    .is_some_and(|text| !text.is_empty()),
+                "{name} has no description"
+            );
+            assert_eq!(
+                tool["inputSchema"]["type"], "object",
+                "{name} has a non-object input schema"
+            );
+            assert_eq!(
+                tool["inputSchema"]["additionalProperties"], false,
+                "{name} accepts undeclared arguments"
+            );
+        }
+    }
+
+    #[test]
+    fn every_declared_required_argument_exists_in_its_schema() {
+        let Value::Array(tools) = catalog() else {
+            panic!("the catalog is an array");
+        };
+        for tool in &tools {
+            let name = tool["name"].as_str().expect("named");
+            let schema = &tool["inputSchema"];
+            let Some(required) = schema["required"].as_array() else {
+                continue;
+            };
+            for field in required {
+                let field = field.as_str().expect("required names are strings");
+                assert!(
+                    schema["properties"].get(field).is_some(),
+                    "{name} requires `{field}` but does not declare it"
+                );
+            }
+        }
+    }
 }
