@@ -1,0 +1,17 @@
+[package]
+name = "roadie-ddc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Pure DDC/CI and MCCS wire protocol: packet framing, VCP features, and capability-string parsing. No host I/O."
+keywords = ["ddc", "ddc-ci", "mccs", "vcp", "monitor"]
+categories = ["hardware-support", "encoding"]
+
+[dependencies]
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

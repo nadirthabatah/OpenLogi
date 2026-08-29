@@ -12,6 +12,7 @@ members = [
     "crates/roadie-streamdeck",
     "crates/roadie-catalog",
     "crates/roadie-via",
+    "crates/roadie-ddc",
     "crates/roadie-camera",
     "crates/roadie-permissions",
     "crates/roadie-assets",
