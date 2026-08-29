@@ -9,6 +9,8 @@ pub mod camera;
 pub mod diag;
 pub mod light;
 pub mod list;
+pub mod mcp;
+pub mod profile;
 pub mod snapshot;
 
 #[derive(Debug, Subcommand)]
@@ -30,6 +32,12 @@ pub enum Command {
     /// Inspect and control standalone Logitech lights.
     #[command(subcommand)]
     Light(light::LightCmd),
+    /// Serve the agent to AI assistants over the Model Context Protocol
+    /// (stdio transport; register the command `openlogi mcp` in the client).
+    Mcp(mcp::McpArgs),
+    /// Export, inspect and import portable configuration profiles.
+    #[command(subcommand)]
+    Profile(profile::ProfileCmd),
 }
 
 impl Command {
@@ -49,6 +57,9 @@ impl Command {
             Self::Assets(cmd) => cmd.run()?,
             Self::Diag(cmd) => cmd.run().await?,
             Self::Light(cmd) => cmd.run().await?,
+            Self::Mcp(args) => mcp::run(args).await?,
+            // Profile work is plain file I/O — no async runtime needed.
+            Self::Profile(cmd) => return cmd.run(),
         }
         Ok(ExitCode::SUCCESS)
     }

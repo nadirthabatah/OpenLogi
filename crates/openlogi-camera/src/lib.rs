@@ -281,6 +281,23 @@ pub fn enumerate_cameras() -> Vec<Camera> {
         .collect()
 }
 
+/// Enumerate every connected UVC camera, whoever made it.
+///
+/// The vendor-neutral counterpart of [`enumerate_cameras`]. The UVC control
+/// path is a class standard, not a Logitech one — the same brightness,
+/// exposure, focus and zoom registers answer on an Elgato Facecam, an Obsbot,
+/// or a laptop's built-in camera — so filtering by vendor at *enumeration*
+/// hides devices that would in fact be controllable.
+///
+/// [`enumerate_cameras`] keeps its filter for callers that mean Logitech
+/// hardware specifically; callers that mean "a webcam on this machine" want
+/// this one. Which controls a given camera actually exposes is still answered
+/// per-device by [`read_camera_state`], never assumed from the vendor id.
+#[must_use]
+pub fn enumerate_all_cameras() -> Vec<Camera> {
+    enumerate_all()
+}
+
 #[cfg(target_os = "macos")]
 fn enumerate_all() -> Vec<Camera> {
     // Wait out any in-flight control seize so the scan can't land in the
