@@ -755,7 +755,11 @@ fn mock_display_readings() -> Vec<DisplayReading> {
     ]
 }
 
-/// Two scripted Key Lights, one of them off.
+/// Three scripted Key Lights: one on, one off, one that will not answer.
+///
+/// The third is the one worth having. A light that announces itself and then
+/// goes quiet is the state a panel is most likely to get wrong, and it cannot
+/// be seen at all against lights that always answer.
 fn mock_lights() -> Vec<NetworkLightSummary> {
     vec![
         NetworkLightSummary {
@@ -764,6 +768,8 @@ fn mock_lights() -> Vec<NetworkLightSummary> {
             on: true,
             brightness: 40,
             kelvin: 4000,
+            reachable: true,
+            unreachable_reason: None,
         },
         NetworkLightSummary {
             id: "192.168.1.41:9123".to_owned(),
@@ -771,6 +777,21 @@ fn mock_lights() -> Vec<NetworkLightSummary> {
             on: false,
             brightness: 20,
             kelvin: 5000,
+            reachable: true,
+            unreachable_reason: None,
+        },
+        NetworkLightSummary {
+            id: "192.168.1.42:9123".to_owned(),
+            name: "Key Light Back".to_owned(),
+            on: false,
+            brightness: 0,
+            kelvin: 0,
+            reachable: false,
+            unreachable_reason: Some(
+                "connection timed out. It answered the search and then stopped answering, \
+                 which usually means it went to sleep or moved to another address."
+                    .to_owned(),
+            ),
         },
     ]
 }
@@ -916,6 +937,13 @@ impl Agent for MockAgent {
             .iter_mut()
             .find(|light| light.id == id)
             .ok_or(NetworkLightFailure::NotFound)?;
+        if !light.reachable {
+            // It could not say what it was doing, so it will not be told what
+            // to do either.
+            return Err(NetworkLightFailure::Unreachable(
+                "that light is not answering".to_owned(),
+            ));
+        }
         if let Some(on) = change.power {
             light.on = on;
         }

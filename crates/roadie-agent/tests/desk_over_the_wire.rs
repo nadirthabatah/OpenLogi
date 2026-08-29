@@ -220,8 +220,43 @@ async fn exercise_lights(client: &AgentClient) {
         .list_network_lights(ctx())
         .await
         .expect("list_network_lights");
-    assert_eq!(lights.len(), 2, "the mock scripts two lights");
-    let first = &lights[0];
+    assert_eq!(lights.len(), 3, "the mock scripts three lights");
+
+    // The one that announced itself and then went quiet is listed rather than
+    // dropped, and says why. Dropping it would mean a light silently
+    // disappearing from somebody's desk, which is the least useful thing a
+    // list can do.
+    let quiet = lights
+        .iter()
+        .find(|light| !light.reachable)
+        .expect("one light does not answer");
+    assert!(
+        quiet
+            .unreachable_reason
+            .as_deref()
+            .is_some_and(|why| why.contains("timed out")),
+        "it says why: {quiet:?}"
+    );
+
+    // And it will not be told what to do either, since it could not say what
+    // it was doing.
+    client
+        .set_network_light(
+            ctx(),
+            quiet.id.clone(),
+            NetworkLightChange {
+                power: Some(true),
+                ..NetworkLightChange::default()
+            },
+        )
+        .await
+        .expect("set_network_light")
+        .expect_err("a light that is not answering cannot be written");
+
+    let first = lights
+        .iter()
+        .find(|light| light.reachable)
+        .expect("one light answers");
 
     let changed = client
         .set_network_light(

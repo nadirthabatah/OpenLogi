@@ -32,7 +32,7 @@ use std::fmt::Write;
 use bincode::Options;
 use roadie_ipc::desk::{
     DisplayControl, DisplayFailure, DisplayReading, DisplaySummary, NetworkLightChange,
-    NetworkLightFailure,
+    NetworkLightFailure, NetworkLightSummary,
 };
 
 use roadie_core::app::ForegroundApp;
@@ -106,7 +106,7 @@ fn representative_smartshift_status() -> SmartShiftStatus {
 /// that makes that visible in the same diff.
 #[test]
 fn protocol_version_is_pinned() {
-    assert_eq!(PROTOCOL_VERSION, 30);
+    assert_eq!(PROTOCOL_VERSION, 31);
 }
 
 #[test]
@@ -655,6 +655,25 @@ fn network_light_change_is_all_options() {
             kelvin: Some(4000),
         },
         "0101012801fba00f",
+    );
+}
+
+/// The summary had no golden until it grew two fields, which is exactly when
+/// one is worth having: appending to a struct changes its encoding's length,
+/// and nothing else in the suite would have noticed.
+#[test]
+fn network_light_summary() {
+    assert_wire(
+        &NetworkLightSummary {
+            id: "192.168.1.40:9123".into(),
+            name: "Key Light Left".into(),
+            on: true,
+            brightness: 40,
+            kelvin: 4000,
+            reachable: true,
+            unreachable_reason: None,
+        },
+        "113139322e3136382e312e34303a393132330e4b6579204c69676874204c6566740128fba00f0100",
     );
 }
 

@@ -446,6 +446,22 @@ impl DeskPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        // A light that would not say what it is doing gets its name and the
+        // reason, and no controls at all: every number on it would be a zero
+        // standing in for "not known", and a slider sitting at zero reads as a
+        // light turned all the way down rather than one that is not answering.
+        if !light.reachable {
+            return v_flex()
+                .gap_2()
+                .p_3()
+                .rounded_md()
+                .bg(pal.panel)
+                .child(div().text_body().child(light.name.clone()))
+                .when_some(light.unreachable_reason.clone(), |card, why| {
+                    card.child(div().text_caption().text_color(pal.text_muted).child(why))
+                })
+                .into_any_element();
+        }
         let brightness = self.light_slider(light, LightKnob::Brightness, window, cx);
         let kelvin = self.light_slider(light, LightKnob::Kelvin, window, cx);
         let id = light.id.clone();
@@ -514,6 +530,7 @@ impl DeskPanel {
                     ),
             )
             .child(Slider::new(&kelvin).horizontal())
+            .into_any_element()
     }
 }
 

@@ -205,6 +205,8 @@ mod tests {
             on,
             brightness: 40,
             kelvin: 4000,
+            reachable: true,
+            unreachable_reason: None,
         }
     }
 
