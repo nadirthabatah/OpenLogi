@@ -504,6 +504,8 @@ you trust the source:
   keyboard.bindings.f14: TypeText — rm -rf ~
 ```
 
+The list of what counts as risky is not maintained by hand alone: a test reads every action variant out of the deserializer itself and fails until each one is classified as risky or reviewed-safe. An action added later that runs something would otherwise pass the audit silently, on the one code path whose whole job is refusing that.
+
 `openlogi profile inspect` shows the same report without applying anything, and
 `--accept-actions` on `import` is how you say you trust the source. Key chords
 are not flagged: they are the ordinary substance of a profile, and flagging
