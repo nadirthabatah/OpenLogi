@@ -11,6 +11,7 @@ members = [
     "crates/openlogi-device",
     "crates/openlogi-streamdeck",
     "crates/openlogi-catalog",
+    "crates/openlogi-via",
     "crates/openlogi-camera",
     "crates/openlogi-permissions",
     "crates/openlogi-assets",

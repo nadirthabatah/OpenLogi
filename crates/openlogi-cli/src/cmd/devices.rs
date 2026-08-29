@@ -112,6 +112,7 @@ pub fn report(found: &[Peripheral], filtered: bool) -> String {
 
     write_configurable(&mut out, &configurable);
     if !filtered {
+        write_candidates(&mut out, found);
         write_receivers(&mut out, found);
         write_unsupported(&mut out, found);
     }
@@ -150,6 +151,31 @@ fn write_configurable(out: &mut String, devices: &[&Peripheral]) {
         }
         let _ = writeln!(out, "    controls: {}", driver.what_it_configures());
         let _ = writeln!(out, "    command: {}", driver.command());
+    }
+    let _ = writeln!(out);
+}
+
+/// Devices that look drivable but have not been confirmed.
+///
+/// Their own group rather than folded into either neighbour. Listing them as
+/// configurable promises a device works; listing them as unsupported hides one
+/// that probably does. Saying which check settles it is the only honest answer —
+/// and it is a check the person can run.
+fn write_candidates(out: &mut String, found: &[Peripheral]) {
+    let candidates: Vec<(&Peripheral, &'static str)> = found
+        .iter()
+        .filter_map(|found| match found.support {
+            Support::Candidate { needs, .. } => Some((found, needs)),
+            _ => None,
+        })
+        .collect();
+    if candidates.is_empty() {
+        return;
+    }
+    let _ = writeln!(out, "Probably configurable ({}):", candidates.len());
+    for (found, needs) in candidates {
+        let _ = writeln!(out, "  {}", found.identity.full_description());
+        let _ = writeln!(out, "    needs: {needs}");
     }
     let _ = writeln!(out);
 }
@@ -316,6 +342,55 @@ mod tests {
         assert!(text.contains("permissions"), "{text}");
         assert!(text.contains("udev"), "{text}");
         assert!(text.contains("Input Monitoring"), "{text}");
+    }
+
+    /// The guard the whole command rests on: **no device ever vanishes**.
+    ///
+    /// The listing filters by support kind, so a support kind nobody thought
+    /// to add a section for is a device silently missing from someone's desk
+    /// — which is the exact failure this command exists to prevent, arriving
+    /// as a compile-clean change. Adding a `Support` variant without a
+    /// section fails here.
+    #[test]
+    fn every_kind_of_device_appears_somewhere_in_the_report() {
+        let every_kind = [
+            Support::Driver {
+                driver: Driver::HidPlusPlus,
+                model: None,
+            },
+            Support::Candidate {
+                driver: Driver::Via,
+                needs: "a check",
+            },
+            Support::Receiver(ReceiverBrand::Unifying),
+            Support::Unsupported,
+        ];
+        for (index, support) in every_kind.into_iter().enumerate() {
+            let name = format!("Device Number {index}");
+            let text = report(&[named(&name, support.clone())], false);
+            assert!(
+                text.contains(&name),
+                "a {support:?} device is missing from the report:\n{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_candidate_is_shown_with_the_check_that_would_settle_it() {
+        let candidate = named(
+            "Some Macro Pad",
+            Support::Candidate {
+                driver: Driver::Via,
+                needs: "a VIA protocol check, which `openlogi via list` performs",
+            },
+        );
+        let text = report(&[candidate], false);
+        assert!(text.contains("Probably configurable"), "{text}");
+        assert!(text.contains("openlogi via list"), "{text}");
+        assert!(
+            !text.contains("Detected, not configurable"),
+            "a candidate is not a refusal: {text}"
+        );
     }
 
     /// Every section that appears is introduced by a heading. A run of

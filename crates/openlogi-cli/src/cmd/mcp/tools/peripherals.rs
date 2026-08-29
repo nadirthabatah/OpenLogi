@@ -98,6 +98,18 @@ fn describe(found: &Peripheral) -> Value {
                 entry.insert("model".to_owned(), json!(model));
             }
         }
+        Support::Candidate { driver, needs } => {
+            entry.insert("likely_driver".to_owned(), json!(driver.id()));
+            entry.insert(
+                "note".to_owned(),
+                json!(format!(
+                    "Attached, and it looks like something the {} driver handles, but \
+                     that is not confirmed without {needs}. Say it is probably \
+                     supported rather than that it is.",
+                    driver.id()
+                )),
+            );
+        }
         Support::Receiver(_) => {
             entry.insert("kind".to_owned(), json!("wireless receiver"));
             entry.insert(

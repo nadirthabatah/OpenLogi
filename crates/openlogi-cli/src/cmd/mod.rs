@@ -14,6 +14,7 @@ pub mod mcp;
 pub mod profile;
 pub mod snapshot;
 pub mod streamdeck;
+pub mod via;
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -39,6 +40,9 @@ pub enum Command {
     Light(light::LightCmd),
     /// Drive an Elgato Stream Deck, and check the driver against hardware.
     Streamdeck(streamdeck::StreamDeckArgs),
+    /// Read and change what each key sends on a QMK keyboard or macro pad
+    /// with VIA enabled.
+    Via(via::ViaArgs),
     /// Serve the agent to AI assistants over the Model Context Protocol
     /// (stdio transport; register the command `openlogi mcp` in the client).
     Mcp(mcp::McpArgs),
@@ -71,6 +75,9 @@ impl Command {
                     .unwrap_or(streamdeck::StreamDeckCmd::List)
                     .run()
                     .await;
+            }
+            Self::Via(args) => {
+                return args.cmd.unwrap_or(via::ViaCmd::List).run().await;
             }
             Self::Mcp(args) => mcp::run(args).await?,
             // Profile work is plain file I/O — no async runtime needed.
