@@ -5481,12 +5481,16 @@ version = "0.8.1"
 dependencies = [
  "anyhow",
  "clap",
+ "image",
  "openlogi-assets",
  "openlogi-camera",
  "openlogi-core",
  "openlogi-hid",
+ "openlogi-inject",
  "openlogi-ipc",
+ "openlogi-streamdeck",
  "png 0.17.16",
+ "serde",
  "serde_json",
  "tarpc",
  "tempfile",
@@ -5592,11 +5596,13 @@ dependencies = [
  "atomic-write-file",
  "futures-concurrency",
  "futures-lite",
+ "image",
  "objc2-io-kit",
  "openlogi-async-hid",
  "openlogi-core",
  "openlogi-device",
  "openlogi-hidpp",
+ "openlogi-streamdeck",
  "serde",
  "serde_json",
  "tempfile",
@@ -5729,6 +5735,14 @@ dependencies = [
  "openlogi-camera",
  "openlogi-core",
  "tracing",
+]
+
+[[package]]
+name = "openlogi-streamdeck"
+version = "0.8.1"
+dependencies = [
+ "image",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

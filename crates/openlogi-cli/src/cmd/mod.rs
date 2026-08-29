@@ -12,6 +12,7 @@ pub mod list;
 pub mod mcp;
 pub mod profile;
 pub mod snapshot;
+pub mod streamdeck;
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -32,6 +33,8 @@ pub enum Command {
     /// Inspect and control standalone Logitech lights.
     #[command(subcommand)]
     Light(light::LightCmd),
+    /// Drive an Elgato Stream Deck, and check the driver against hardware.
+    Streamdeck(streamdeck::StreamDeckArgs),
     /// Serve the agent to AI assistants over the Model Context Protocol
     /// (stdio transport; register the command `openlogi mcp` in the client).
     Mcp(mcp::McpArgs),
@@ -57,6 +60,13 @@ impl Command {
             Self::Assets(cmd) => cmd.run()?,
             Self::Diag(cmd) => cmd.run().await?,
             Self::Light(cmd) => cmd.run().await?,
+            Self::Streamdeck(args) => {
+                return args
+                    .cmd
+                    .unwrap_or(streamdeck::StreamDeckCmd::List)
+                    .run()
+                    .await;
+            }
             Self::Mcp(args) => mcp::run(args).await?,
             // Profile work is plain file I/O — no async runtime needed.
             Self::Profile(cmd) => return cmd.run(),

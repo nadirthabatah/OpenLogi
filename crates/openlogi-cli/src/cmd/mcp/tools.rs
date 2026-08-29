@@ -13,6 +13,7 @@
 //! place.
 
 mod camera;
+mod decks;
 mod inventory;
 mod lighting;
 mod monitor;
@@ -66,6 +67,7 @@ pub fn catalog() -> Value {
     tools.extend(lighting::tools());
     tools.extend(monitor::tools());
     tools.extend(profiles::tools());
+    tools.extend(decks::tools());
     Value::Array(tools)
 }
 
@@ -98,6 +100,11 @@ pub async fn call(params: &Value) -> Result<Value, String> {
         "inspect_profile" => profiles::inspect_profile(&arguments),
         "import_profile" => profiles::import_profile(&arguments),
         "config_location" => profiles::config_location(),
+        "list_stream_decks" => decks::list_stream_decks().await,
+        "set_stream_deck_brightness" => decks::set_stream_deck_brightness(&arguments).await,
+        "set_stream_deck_key_colour" => decks::set_stream_deck_key_colour(&arguments).await,
+        "set_stream_deck_key_label" => decks::set_stream_deck_key_label(&arguments).await,
+        "clear_stream_deck" => decks::clear_stream_deck(&arguments).await,
         other => return Err(format!("unknown tool: {other}")),
     };
     Ok(match outcome {
@@ -172,7 +179,7 @@ mod tests {
     /// The dispatch arms in [`super::call`], as the catalog must advertise
     /// them. Kept here so a tool added to one and not the other fails a test
     /// rather than surfacing as "unknown tool" at run time.
-    const DISPATCHED: [&str; 16] = [
+    const DISPATCHED: [&str; 21] = [
         "list_devices",
         "reload_config",
         "read_dpi",
@@ -189,6 +196,11 @@ mod tests {
         "inspect_profile",
         "import_profile",
         "config_location",
+        "list_stream_decks",
+        "set_stream_deck_brightness",
+        "set_stream_deck_key_colour",
+        "set_stream_deck_key_label",
+        "clear_stream_deck",
     ];
 
     fn names() -> Vec<String> {

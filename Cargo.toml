@@ -9,6 +9,7 @@ members = [
     "crates/openlogi-hidpp-derive",
     "crates/openlogi-hid",
     "crates/openlogi-device",
+    "crates/openlogi-streamdeck",
     "crates/openlogi-camera",
     "crates/openlogi-permissions",
     "crates/openlogi-assets",

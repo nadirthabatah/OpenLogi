@@ -72,7 +72,23 @@ impl fmt::Display for Finding {
 /// Fails only if the configuration cannot be serialized, which would mean a
 /// broken `Serialize` implementation rather than bad input.
 pub fn audit(config: &Config) -> Result<Vec<Finding>, serde_json::Error> {
-    let value = serde_json::to_value(config)?;
+    audit_serializable(config)
+}
+
+/// Audit anything that serializes for actions that would run something.
+///
+/// The same walk as [`audit`], over any structure that can hold an `Action`.
+/// A Stream Deck layout carries them too, and a second implementation of this
+/// rule would be a second place for it to be wrong — the two would drift, and
+/// the one that drifted would be a hole.
+///
+/// # Errors
+///
+/// Fails only if the value cannot be serialized.
+pub fn audit_serializable<T: serde::Serialize>(
+    value: &T,
+) -> Result<Vec<Finding>, serde_json::Error> {
+    let value = serde_json::to_value(value)?;
     let mut findings = Vec::new();
     scan(&value, &mut Vec::new(), &mut findings);
     findings.sort();
