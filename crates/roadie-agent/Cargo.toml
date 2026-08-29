@@ -68,4 +68,5 @@ windows-sys = { workspace = true, features = [
 workspace = true
 
 [dev-dependencies]
+tarpc = { workspace = true }
 tempfile = "3.27.0"
