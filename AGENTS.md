@@ -7,7 +7,11 @@ config. macOS and Linux are first-class; Windows is a young but shipping port.
 Dual-licensed MIT/Apache-2.0; the `design/` brand assets are proprietary.
 
 The developer handbook (toolchain, packaging, release pipeline) is
-[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). This file is the agent-facing contract:
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). [docs/HANDOFF.md](docs/HANDOFF.md) is the
+state of the work: who this is being built for and what that means for output that gets
+read aloud, what is built so far, the working agreements that cost real time to relearn,
+and what comes next. Read it at the start of a session. This file is the agent-facing
+contract:
 the architecture map plus the global workflow. Everything subsystem-specific lives in
 the path-scoped rule files indexed at the bottom — read the matching one before
 touching an area.
