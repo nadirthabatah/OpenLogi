@@ -145,6 +145,10 @@ The tools exposed are:
 | `reload_config` | Re-read `config.toml` |
 | `export_profile` / `inspect_profile` / `import_profile` | Portable profiles, with the same audit as the CLI |
 | `config_location` | Where this machine keeps its configuration file |
+| `list_stream_decks` | Attached Stream Decks, with each one's key count and grid shape |
+| `set_stream_deck_brightness` | A deck's key screen brightness |
+| `set_stream_deck_key_colour` | Fill one key with a colour |
+| `clear_stream_deck` | Turn every key black |
 
 The camera tools reach the device directly rather than through the agent, the
 same way `openlogi camera` does — UVC controls are a host-exposed class
@@ -153,6 +157,13 @@ CLI's own. Enumeration there is deliberately **not** filtered by vendor: the
 same UVC registers answer on an Elgato, an Obsbot or a built-in camera, so
 restricting the list to one manufacturer would hide devices that are in fact
 controllable.
+
+The Stream Deck tools answer with a key's row and column as well as its index,
+for the same reason the CLI does: an index alone is not something anyone can
+act on while looking at a physical grid, and is not something a screen reader
+can make sense of at all. So "set key 7" comes back as "key 7 (row 2, column
+3)", and `list_stream_decks` gives the grid shape so a position can be turned
+into an index in the first place.
 
 `import_profile` is deliberately narrower than the CLI: it has no way to accept
 a profile that runs programs. Whether a profile's source is trustworthy is a
