@@ -27,17 +27,40 @@ pub async fn hid_peripherals() -> Result<Vec<Peripheral>, BackendError> {
         .await?
         .into_iter()
         .map(|device| {
-            let identity = Identity {
-                vendor_id: device.vendor_id,
-                product_id: device.product_id,
-                product: non_empty(&device.name),
-                manufacturer: device.manufacturer.as_deref().and_then(non_empty),
-                serial_number: device.serial_number.as_deref().and_then(non_empty),
-            };
+            let identity = identity_of(
+                device.vendor_id,
+                device.product_id,
+                &device.name,
+                device.manufacturer.as_deref(),
+                device.serial_number.as_deref(),
+            );
             Peripheral::from_hid(identity, device.usage_page, device.usage_id)
         })
         .collect();
     Ok(merge(collections))
+}
+
+/// Build an identity from what the OS reported about one node.
+///
+/// Extracted from the enumeration so the mapping is checkable: enumeration
+/// needs a machine with USB, and this does not. What it guards against is
+/// dull and easy — the product and manufacturer strings swapping places, or a
+/// serial landing in the wrong field — which is exactly the sort of mistake
+/// that survives review and then renames every device in the list.
+fn identity_of(
+    vendor_id: u16,
+    product_id: u16,
+    name: &str,
+    manufacturer: Option<&str>,
+    serial_number: Option<&str>,
+) -> Identity {
+    Identity {
+        vendor_id,
+        product_id,
+        product: non_empty(name),
+        manufacturer: manufacturer.and_then(non_empty),
+        serial_number: serial_number.and_then(non_empty),
+    }
 }
 
 /// A reported string, or `None` when the OS reported an empty one.
@@ -93,7 +116,7 @@ pub fn merge(found: Vec<Peripheral>) -> Vec<Peripheral> {
 mod tests {
     use openlogi_catalog::{Driver, Identity, Peripheral, Support};
 
-    use super::{merge, non_empty};
+    use super::{identity_of, merge, non_empty};
 
     fn peripheral(
         vendor_id: u16,
@@ -172,6 +195,39 @@ mod tests {
         let merged = merge(vec![peripheral(0x1235, 0x8210, None, Support::Unsupported)]);
         assert_eq!(merged.len(), 1);
         assert!(!merged[0].support.is_configurable());
+    }
+
+    /// Every field where it belongs. Dull, and the kind of mistake that
+    /// survives review and then renames every device in the list.
+    #[test]
+    fn every_reported_field_lands_in_its_own_place() {
+        let identity = identity_of(
+            0x046d,
+            0x4082,
+            "MX Master 3S",
+            Some("Logitech"),
+            Some("AB12"),
+        );
+        assert_eq!(identity.vendor_id, 0x046d);
+        assert_eq!(identity.product_id, 0x4082);
+        assert_eq!(identity.product.as_deref(), Some("MX Master 3S"));
+        assert_eq!(identity.manufacturer.as_deref(), Some("Logitech"));
+        assert_eq!(identity.serial_number.as_deref(), Some("AB12"));
+    }
+
+    /// Absent and empty are the same thing here, and both have to reach the
+    /// naming logic as `None` — an empty product name rendered as a name is a
+    /// blank line where a device should be.
+    #[test]
+    fn absent_and_empty_reported_strings_both_become_nothing() {
+        let absent = identity_of(0x046d, 0x4082, "", None, None);
+        assert_eq!(absent.product, None);
+        assert_eq!(absent.manufacturer, None);
+        assert_eq!(absent.serial_number, None);
+
+        let blank = identity_of(0x046d, 0x4082, "  ", Some(""), Some("   "));
+        assert_eq!(blank, absent, "whitespace is not a name");
+        assert_eq!(blank.describe(), "unnamed device 046d:4082");
     }
 
     #[test]

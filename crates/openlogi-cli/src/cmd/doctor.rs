@@ -237,13 +237,24 @@ fn count_hidraw() -> Option<Hidraw> {
 }
 
 /// The USB vendor id behind a `/dev/hidrawN` node.
-///
-/// Read from the kernel's own `uevent` line, `HID_ID=bus:vendor:product`, in
-/// hex. Numeric rather than textual comparison so `0000046D` and `046d` are
-/// the same thing, which they are.
 fn vendor_of(node: &std::path::Path) -> Option<u16> {
     let name = node.file_name()?.to_str()?;
     let uevent = std::fs::read_to_string(format!("/sys/class/hidraw/{name}/device/uevent")).ok()?;
+    vendor_in_uevent(&uevent)
+}
+
+/// The USB vendor id in a kernel `uevent` file's contents.
+///
+/// The kernel writes `HID_ID=bus:vendor:product` with each field as
+/// zero-padded uppercase hex, so this parses hex and compares numerically —
+/// `0000046D` and `046d` are the same number, which they are.
+///
+/// Split from reading the file because this is the part that can be wrong,
+/// and being wrong here is not cosmetic: the id ends up in a udev rule that
+/// someone pastes into `/etc/udev/rules.d` as root. A rule naming the wrong
+/// vendor grants access to the wrong device and not to theirs, and looks
+/// close enough to correct to waste an afternoon.
+fn vendor_in_uevent(uevent: &str) -> Option<u16> {
     uevent.lines().find_map(|line| {
         let rest = line.strip_prefix("HID_ID=")?;
         u16::from_str_radix(rest.split(':').nth(1)?.trim(), 16).ok()
@@ -646,7 +657,8 @@ mod tests {
     use std::path::PathBuf;
 
     use super::{
-        Check, Facts, Hidraw, Platform, Verdict, counted, diagnose, render, render_json, udev_lines,
+        Check, Facts, Hidraw, Platform, Verdict, counted, diagnose, render, render_json,
+        udev_lines, vendor_in_uevent,
     };
 
     /// A machine where everything is fine, to vary one thing at a time from.
@@ -771,6 +783,70 @@ mod tests {
         assert!(
             steps.contains("71-openlogi-local.rules"),
             "it has to go in a separate file, or an upgrade overwrites it: {steps}"
+        );
+    }
+
+    /// The kernel's own format, as `/sys/class/hidraw/hidrawN/device/uevent`
+    /// actually writes it. Getting this wrong puts the wrong four digits into
+    /// a rule someone pastes as root.
+    #[test]
+    fn a_vendor_id_is_read_out_of_a_real_uevent_file() {
+        let uevent = "DRIVER=hid-generic\n\
+                      HID_ID=0003:0000046D:0000C52B\n\
+                      HID_NAME=Logitech USB Receiver\n\
+                      HID_PHYS=usb-0000:00:14.0-3/input2\n\
+                      MODALIAS=hid:b0003g0001v0000046Dp0000C52B\n";
+        assert_eq!(vendor_in_uevent(uevent), Some(0x046d));
+    }
+
+    #[test]
+    fn the_vendor_field_is_the_second_one_not_the_first() {
+        // Field one is the bus (0003 = USB). Reading it instead would report
+        // vendor 0x0003 for every device on the machine — plausible-looking,
+        // uniformly wrong, and the rule would match nothing.
+        assert_eq!(
+            vendor_in_uevent("HID_ID=0003:00000FD9:00000080\n"),
+            Some(0x0fd9)
+        );
+    }
+
+    /// Case and zero-padding vary between kernels and between fields.
+    #[test]
+    fn case_and_padding_do_not_change_the_number() {
+        assert_eq!(
+            vendor_in_uevent("HID_ID=0003:0000046d:0000C52B"),
+            Some(0x046d)
+        );
+        assert_eq!(vendor_in_uevent("HID_ID=3:46D:C52B"), Some(0x046d));
+    }
+
+    /// A file without the line, an empty file, or a malformed one must give
+    /// nothing rather than a wrong number — the advice then omits the rule,
+    /// which is a worse experience and a much better outcome than a rule
+    /// naming a device the person does not own.
+    #[test]
+    fn anything_unparseable_yields_no_vendor_rather_than_a_wrong_one() {
+        assert_eq!(vendor_in_uevent(""), None);
+        assert_eq!(
+            vendor_in_uevent("DRIVER=hid-generic\nHID_NAME=Thing\n"),
+            None
+        );
+        assert_eq!(vendor_in_uevent("HID_ID=0003\n"), None, "no vendor field");
+        assert_eq!(vendor_in_uevent("HID_ID=0003:zzzz:0001\n"), None, "not hex");
+        assert_eq!(
+            vendor_in_uevent("HID_ID=0003:000146D5:0001\n"),
+            None,
+            "wider than a u16 is not a vendor id"
+        );
+    }
+
+    /// A line that merely contains the marker is not the line. `MODALIAS`
+    /// sits in the same file and carries the same digits in another shape.
+    #[test]
+    fn only_a_line_that_starts_with_the_marker_counts() {
+        assert_eq!(
+            vendor_in_uevent("X_HID_ID=0003:0000FFFF:0001\nHID_ID=0003:0000046D:0001\n"),
+            Some(0x046d)
         );
     }
 
