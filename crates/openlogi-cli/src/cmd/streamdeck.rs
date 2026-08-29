@@ -656,7 +656,23 @@ fn write_layout_text(path: &Path, body: &str) -> Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
-    std::fs::write(path, body).with_context(|| format!("failed to write {}", path.display()))
+    // Written to a temporary file and renamed into place, the same way
+    // `config.toml` already is. A plain write truncates first, so a crash, a
+    // power cut or a full disk between the truncate and the write leaves a
+    // layout that is empty or half a file — and the deck's own memory is not a
+    // copy of it, so there is nothing to restore from. That is the same
+    // reasoning `example` refuses to overwrite on, applied to the way the
+    // write itself can fail.
+    //
+    // The mode is left alone rather than forced, unlike the config: a layout
+    // holds no secrets and may deliberately sit somewhere shared.
+    let mut file = atomic_write_file::AtomicWriteFile::options()
+        .open(path)
+        .with_context(|| format!("failed to open {} for writing", path.display()))?;
+    std::io::Write::write_all(&mut file, body.as_bytes())
+        .with_context(|| format!("failed to write {}", path.display()))?;
+    file.commit()
+        .with_context(|| format!("failed to save {}", path.display()))
 }
 
 /// `openlogi streamdeck layouts`.

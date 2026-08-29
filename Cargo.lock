@@ -5490,6 +5490,7 @@ name = "openlogi-cli"
 version = "0.8.1"
 dependencies = [
  "anyhow",
+ "atomic-write-file",
  "clap",
  "image",
  "openlogi-assets",

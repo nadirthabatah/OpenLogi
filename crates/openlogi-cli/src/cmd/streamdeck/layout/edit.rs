@@ -14,7 +14,7 @@
 //! Everything here is text in, text out, so what survives an edit is checked
 //! against files nobody had to write by hand at the time.
 
-use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, value};
+use toml_edit::{ArrayOfTables, DocumentMut, Item, Table, Value, value};
 
 use super::{Key, LayoutError};
 
@@ -27,16 +27,53 @@ fn document(source: &str) -> Result<DocumentMut, LayoutError> {
         })
 }
 
-/// The `[[keys]]` array, created if the document has none yet.
-fn keys_of(document: &mut DocumentMut) -> Result<&mut ArrayOfTables, LayoutError> {
-    if document.get("keys").is_none() {
-        document["keys"] = Item::ArrayOfTables(ArrayOfTables::new());
-    }
-    document["keys"]
-        .as_array_of_tables_mut()
-        .ok_or_else(|| LayoutError::Unwritable {
+/// Make sure `keys` is a form that can be edited, and say which it is.
+///
+/// TOML writes a list of tables two ways and both are valid layouts. A person
+/// writes `[[keys]]` blocks; a serializer writes `keys = []` for an empty list
+/// and `keys = [{ index = 0 }]` for a full one. Handling only the first meant
+/// a layout that had been through a serializer — including one this program
+/// wrote itself, and the empty-list shape used in its own fixtures — could not
+/// be edited at all.
+///
+/// An empty inline array is promoted to `[[keys]]` blocks, which loses nothing
+/// because there is nothing in it and gives the more readable form. A
+/// non-empty one is edited where it is, because rewriting the style of a file
+/// someone wrote is not this function's business.
+fn prepare_keys(document: &mut DocumentMut) -> Result<KeysForm, LayoutError> {
+    match document.get("keys") {
+        None => {
+            document["keys"] = Item::ArrayOfTables(ArrayOfTables::new());
+            Ok(KeysForm::Blocks)
+        }
+        Some(Item::ArrayOfTables(_)) => Ok(KeysForm::Blocks),
+        Some(Item::Value(Value::Array(array))) if array.is_empty() => {
+            // Removed before being put back, so the new `[[keys]]` header does
+            // not inherit the spacing that surrounded `keys = []`. Assigning
+            // over it carries that decoration into the header and produces
+            // `[[\nkeys ]]` — valid TOML, and alarming to read.
+            document.remove("keys");
+            document["keys"] = Item::ArrayOfTables(ArrayOfTables::new());
+            Ok(KeysForm::Blocks)
+        }
+        Some(Item::Value(Value::Array(array)))
+            if array.iter().all(|entry| entry.as_inline_table().is_some()) =>
+        {
+            Ok(KeysForm::Inline)
+        }
+        Some(_) => Err(LayoutError::Unwritable {
             detail: "`keys` is in this file but is not a list of keys".to_owned(),
-        })
+        }),
+    }
+}
+
+/// Which of TOML's two spellings of a list of tables this file uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeysForm {
+    /// `[[keys]]` blocks.
+    Blocks,
+    /// `keys = [{ ... }]`.
+    Inline,
 }
 
 /// Which entry of `keys` holds `index`.
@@ -60,7 +97,15 @@ fn position_of(keys: &ArrayOfTables, index: u16) -> Option<usize> {
 /// `keys` entry that is not a list of key tables.
 pub fn set_key(source: &str, key: &Key) -> Result<String, LayoutError> {
     let mut document = document(source)?;
-    let keys = keys_of(&mut document)?;
+    if prepare_keys(&mut document)? == KeysForm::Inline {
+        return set_key_inline(document, key);
+    }
+    let keys =
+        document["keys"]
+            .as_array_of_tables_mut()
+            .ok_or_else(|| LayoutError::Unwritable {
+                detail: "`keys` stopped being a list of keys while it was being edited".to_owned(),
+            })?;
     if let Some(at) = position_of(keys, key.index) {
         let table = keys.get_mut(at).ok_or_else(|| LayoutError::Unwritable {
             detail: "the key vanished between finding it and editing it".to_owned(),
@@ -86,7 +131,15 @@ pub fn set_key(source: &str, key: &Key) -> Result<String, LayoutError> {
 /// As [`set_key`].
 pub fn remove_key(source: &str, index: u16) -> Result<(String, bool), LayoutError> {
     let mut document = document(source)?;
-    let keys = keys_of(&mut document)?;
+    if prepare_keys(&mut document)? == KeysForm::Inline {
+        return remove_key_inline(document, index);
+    }
+    let keys =
+        document["keys"]
+            .as_array_of_tables_mut()
+            .ok_or_else(|| LayoutError::Unwritable {
+                detail: "`keys` stopped being a list of keys while it was being edited".to_owned(),
+            })?;
     let Some(at) = position_of(keys, index) else {
         return Ok((document.to_string(), false));
     };
@@ -95,6 +148,63 @@ pub fn remove_key(source: &str, index: u16) -> Result<(String, bool), LayoutErro
     // which is fine, but leaving the empty `keys` key behind is tidier to
     // diff than having it appear and disappear as the last key comes and goes.
     Ok((document.to_string(), true))
+}
+
+/// [`set_key`] for a file that spells its keys inline.
+///
+/// The same edit, over `Value::InlineTable` rather than `Table`. Kept apart
+/// rather than abstracted over the two: the shapes differ in enough small ways
+/// that a shared version would be mostly branching, and this pair is short
+/// enough to read.
+fn set_key_inline(mut document: DocumentMut, key: &Key) -> Result<String, LayoutError> {
+    let rendered = rendered_key(key)?;
+    let array = document["keys"]
+        .as_array_mut()
+        .ok_or_else(|| LayoutError::Unwritable {
+            detail: "`keys` stopped being a list of keys while it was being edited".to_owned(),
+        })?;
+    let at = array.iter().position(|entry| {
+        entry
+            .as_inline_table()
+            .and_then(|table| table.get("index"))
+            .and_then(Value::as_integer)
+            .is_some_and(|held| held == i64::from(key.index))
+    });
+    match at {
+        Some(at) => {
+            array.replace(at, Value::InlineTable(rendered));
+        }
+        None => array.push(Value::InlineTable(rendered)),
+    }
+    Ok(document.to_string())
+}
+
+/// [`remove_key`] for a file that spells its keys inline.
+fn remove_key_inline(mut document: DocumentMut, index: u16) -> Result<(String, bool), LayoutError> {
+    let array = document["keys"]
+        .as_array_mut()
+        .ok_or_else(|| LayoutError::Unwritable {
+            detail: "`keys` stopped being a list of keys while it was being edited".to_owned(),
+        })?;
+    let at = array.iter().position(|entry| {
+        entry
+            .as_inline_table()
+            .and_then(|table| table.get("index"))
+            .and_then(Value::as_integer)
+            .is_some_and(|held| held == i64::from(index))
+    });
+    let Some(at) = at else {
+        return Ok((document.to_string(), false));
+    };
+    array.remove(at);
+    Ok((document.to_string(), true))
+}
+
+/// One key as an inline table, built through the serializer.
+fn rendered_key(key: &Key) -> Result<toml_edit::InlineTable, LayoutError> {
+    let mut table = Table::new();
+    apply(&mut table, key)?;
+    Ok(table.into_inline_table())
 }
 
 /// Write one key's fields into `table`, clearing the ones it no longer has.
@@ -376,5 +486,66 @@ label = \"B\"
         let layout = parsed(&twice);
         assert_eq!(layout.keys.len(), 1);
         assert_eq!(layout.keys[0].label.as_deref(), Some("B"));
+    }
+
+    /// TOML spells a list of tables two ways and both are valid layouts. A
+    /// person writes `[[keys]]`; a serializer writes `keys = []` for an empty
+    /// list. Handling only the first meant a layout that had been through a
+    /// serializer — including the empty-list shape used in this project's own
+    /// fixtures — could not be edited at all, and the error blamed the file.
+    #[test]
+    fn a_layout_written_as_an_empty_inline_list_can_still_be_edited() {
+        let source = "# keep me\nbrightness = 80\n\nkeys = []\n";
+        let edited = set_key(source, &key(0, "NEW")).expect("an empty list is a layout");
+        assert!(edited.contains("# keep me"), "{edited}");
+        assert!(edited.contains("[[keys]]"), "{edited}");
+        // The promoted header must not inherit the spacing that surrounded
+        // `keys = []`, which produces `[[\nkeys ]]` — valid, and alarming.
+        assert!(!edited.contains("[[\n"), "{edited}");
+        let layout = parsed(&edited);
+        assert_eq!(layout.brightness, Some(80));
+        assert_eq!(layout.keys[0].label.as_deref(), Some("NEW"));
+    }
+
+    /// A file that spells its keys inline is edited where it is, rather than
+    /// rewritten into the other style. How someone laid their file out is not
+    /// this code's business.
+    #[test]
+    fn a_layout_written_inline_is_edited_in_place() {
+        let source = "# inline style\nkeys = [{ index = 0, label = \"OLD\" }]\n";
+        let edited = set_key(source, &key(0, "NEW")).expect("inline is a layout too");
+        assert!(edited.contains("# inline style"), "{edited}");
+        assert!(
+            edited.contains("keys = ["),
+            "the inline style must survive: {edited}"
+        );
+        assert!(!edited.contains("[[keys]]"), "{edited}");
+        let layout = parsed(&edited);
+        assert_eq!(layout.keys.len(), 1, "replaced, not appended: {edited}");
+        assert_eq!(layout.keys[0].label.as_deref(), Some("NEW"));
+    }
+
+    #[test]
+    fn a_key_can_be_added_to_and_removed_from_an_inline_list() {
+        let source = "keys = [{ index = 0, label = \"A\" }]\n";
+        let edited = set_key(source, &key(1, "B")).expect("added");
+        assert_eq!(parsed(&edited).keys.len(), 2, "{edited}");
+
+        let (edited, removed) = remove_key(&edited, 0).expect("removed");
+        assert!(removed);
+        let layout = parsed(&edited);
+        assert_eq!(layout.keys.len(), 1);
+        assert_eq!(layout.keys[0].label.as_deref(), Some("B"));
+
+        let (_, again) = remove_key(&edited, 0).expect("not there");
+        assert!(!again, "removing what is gone reports so");
+    }
+
+    /// `keys` holding something that is neither shape is still refused: it is
+    /// someone's file and we do not know what it is.
+    #[test]
+    fn a_keys_field_of_the_wrong_kind_is_still_refused() {
+        set_key("keys = 3\n", &key(0, "X")).expect_err("a number is not a list of keys");
+        set_key("keys = [1, 2]\n", &key(0, "X")).expect_err("a list of numbers is not either");
     }
 }
