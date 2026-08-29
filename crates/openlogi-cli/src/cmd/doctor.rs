@@ -24,6 +24,8 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::Args;
 
+use crate::spoken::counted;
+
 /// Exit status for "something is wrong that will stop this program working".
 ///
 /// Distinct from a failure of the command itself: `doctor` succeeded at
@@ -389,10 +391,11 @@ fn udev_fix(blocked_vendors: &[u16]) -> Vec<String> {
     let lines = udev_lines(blocked_vendors);
     if !lines.is_empty() {
         steps.push(format!(
-            "Those rules name the vendors this program drives, and the device(s) you \
+            "Those rules name the vendors this program drives, and the {} you \
              cannot open are not among them. Put {} in \
              /etc/udev/rules.d/71-openlogi-local.rules — a separate file, so upgrading \
              this program does not overwrite it:",
+            counted(lines.len(), "device", "devices"),
             if lines.len() == 1 {
                 "this line".to_owned()
             } else {
@@ -545,19 +548,6 @@ fn layouts(facts: &Facts) -> Check {
     Check {
         name: "Saved layouts",
         verdict,
-    }
-}
-
-/// A count with the right noun for it.
-///
-/// "1 thing(s)" is the kind of thing that gets waved through in a table and is
-/// unbearable read aloud: a screen reader says "thing open paren s close
-/// paren". This output exists to be listened to.
-fn counted(how_many: usize, one: &str, many: &str) -> String {
-    if how_many == 1 {
-        format!("{how_many} {one}")
-    } else {
-        format!("{how_many} {many}")
     }
 }
 
@@ -1006,6 +996,66 @@ mod tests {
             vec!["1", "2", "3", "4", "5", "6", "7"],
             "numbering must run straight through: {text}"
         );
+    }
+
+    /// The sweep over every shape the report takes, including the ones a
+    /// machine with no hardware never produces.
+    #[test]
+    fn every_shape_of_diagnosis_is_worth_listening_to() {
+        let machines = [
+            ("a healthy machine", healthy()),
+            (
+                "a machine with no access",
+                Facts {
+                    hidraw: Some(Hidraw {
+                        present: 3,
+                        openable: 0,
+                        blocked_vendors: vec![0x0fd9],
+                    }),
+                    hid_devices: 0,
+                    cameras: 0,
+                    ..healthy()
+                },
+            ),
+            (
+                "a partly reachable machine",
+                Facts {
+                    hidraw: Some(Hidraw {
+                        present: 3,
+                        openable: 1,
+                        blocked_vendors: vec![0x046d],
+                    }),
+                    ..healthy()
+                },
+            ),
+            (
+                "a mac with nothing readable",
+                Facts {
+                    platform: Platform::MacOs,
+                    hidraw: None,
+                    hid_devices: 0,
+                    cameras: 0,
+                    ..healthy()
+                },
+            ),
+            (
+                "a machine with nowhere to save",
+                Facts {
+                    config: None,
+                    config_exists: false,
+                    layouts: 0,
+                    ..healthy()
+                },
+            ),
+        ];
+        for (what, facts) in machines {
+            let checks = diagnose(&facts);
+            let problems = checks
+                .iter()
+                .filter(|check| matches!(check.verdict, Verdict::Problem { .. }))
+                .count();
+            crate::spoken::assert_listenable(&render(&checks, problems), what);
+        }
     }
 
     /// A consumer that gets a problem without its steps has half of what it

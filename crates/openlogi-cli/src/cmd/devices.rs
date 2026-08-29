@@ -19,6 +19,8 @@ use anyhow::{Context, Result};
 use clap::Args;
 use openlogi_catalog::{Identity, Peripheral, Support};
 use openlogi_device_registry::receiver::ReceiverBrand;
+
+use crate::spoken::counted;
 use serde_json::{Value, json};
 
 /// Exit status for "the scan succeeded and found nothing at all".
@@ -239,13 +241,15 @@ pub fn report(found: &[Peripheral], filtered: bool) -> String {
     if filtered {
         let _ = writeln!(
             out,
-            "{count} of {total} attached device(s) can be configured by this build. \
-             Run without --supported to see the rest."
+            "{count} of {} can be configured by this build. Run without --supported to \
+             see the rest.",
+            counted(total, "attached device", "attached devices")
         );
     } else {
         let _ = writeln!(
             out,
-            "{count} of {total} attached device(s) can be configured by this build."
+            "{count} of {} can be configured by this build.",
+            counted(total, "attached device", "attached devices")
         );
     }
     out
@@ -409,7 +413,7 @@ mod tests {
         let text = report(&[mouse(), interface()], true);
         assert!(!text.contains("Scarlett 2i2"), "{text}");
         assert!(
-            text.contains("1 of 2 attached device(s)"),
+            text.contains("1 of 2 attached devices"),
             "a filtered list must not read as a smaller desk: {text}"
         );
         assert!(text.contains("--supported"), "{text}");
@@ -453,7 +457,7 @@ mod tests {
         let text = report(&[interface()], false);
         assert!(text.contains("Configurable now (0)"), "{text}");
         assert!(text.contains("(none)"), "{text}");
-        assert!(text.contains("0 of 1 attached device(s)"), "{text}");
+        assert!(text.contains("0 of 1 attached device"), "{text}");
     }
 
     /// "Nothing found" on Linux almost always means permissions. Saying only
@@ -517,6 +521,44 @@ mod tests {
             !text.contains("Detected, not configurable"),
             "a candidate is not a refusal: {text}"
         );
+    }
+
+    /// The sweep the end-to-end tests cannot do. On a machine with an empty
+    /// desk — every CI runner without USB, and this project's whole
+    /// development environment — the populated report is never printed, so
+    /// running the program and reading its output would check none of it.
+    #[test]
+    fn every_shape_of_report_is_worth_listening_to() {
+        let desk = [
+            mouse(),
+            interface(),
+            named("USB Receiver", Support::Receiver(ReceiverBrand::Bolt)),
+            named(
+                "Some Macro Pad",
+                Support::Candidate {
+                    driver: Driver::Via,
+                    needs: "a VIA protocol check",
+                },
+            ),
+        ];
+        for (text, what) in [
+            (report(&desk, false), "the full report"),
+            (report(&desk, true), "the filtered report"),
+            (report(&[], false), "a report of an empty desk"),
+            (report(&[desk[0].clone()], false), "a report of one device"),
+            (nothing_found(), "the nothing-found message"),
+        ] {
+            crate::spoken::assert_listenable(&text, what);
+        }
+    }
+
+    /// One device, not "1 device(s)". The singular is the case that gets
+    /// missed, because the plural reads fine to whoever wrote it.
+    #[test]
+    fn a_desk_of_one_is_counted_in_the_singular() {
+        let text = report(&[mouse()], false);
+        assert!(text.contains("1 of 1 attached device "), "{text}");
+        assert!(!text.contains("devices"), "{text}");
     }
 
     /// A `--json` consumer branches on structure, so the structure has to be

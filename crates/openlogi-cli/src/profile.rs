@@ -201,10 +201,10 @@ pub enum ProfileError {
     /// The profile carries actions that would run something, and the caller
     /// did not accept them.
     #[error(
-        "this profile contains {} action(s) that would run a program or type text on your \
+        "this profile contains {} that would run a program or type text on your \
          machine. Nothing has been imported. Review them, then re-run accepting them if you \
          trust the source:\n{}",
-        .findings.len(),
+        crate::spoken::counted(.findings.len(), "action", "actions"),
         .findings.iter().map(|f| format!("  {f}")).collect::<Vec<_>>().join("\n")
     )]
     UntrustedActions {

@@ -13,6 +13,8 @@ use clap::{Args, Subcommand};
 use openlogi_hid::via::{self, Attached, Session};
 use openlogi_via::keycode;
 
+use crate::spoken::counted;
+
 /// Exit status for "the scan succeeded, but no VIA device is attached".
 const NOTHING_FOUND: u8 = 2;
 
@@ -161,9 +163,9 @@ async fn list(attached: &[Attached]) -> Result<ExitCode> {
         // rather than fatal: one unresponsive board should not hide the rest.
         match Session::open(device).await {
             Ok(session) => println!(
-                "    speaks VIA protocol {}, with {} keymap layer(s)",
+                "    speaks VIA protocol {}, with {}",
                 session.protocol(),
-                session.layers()
+                counted(session.layers().into(), "keymap layer", "keymap layers")
             ),
             Err(error) => println!("    did not answer as a VIA device: {error}"),
         }

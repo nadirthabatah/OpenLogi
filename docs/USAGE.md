@@ -275,6 +275,26 @@ identical to a user and have completely different answers.
 Running `openlogi` with no subcommand defaults to `list`. Set
 `OPENLOGI_LOG=debug` for verbose tracing in the CLI, GUI, or agent.
 
+## Output written to be heard
+
+For someone who cannot see the screen, the command line is not a fallback
+interface — it is often the only one. So the output here follows rules, and
+those rules are checked rather than remembered:
+
+- **Counts use words.** "1 device", never "1 device(s)" — a screen reader says
+  "device open paren s close paren", every time, in every line.
+- **No drawn rules, boxes, or tick marks.** A line of `====` is heard as
+  repeated punctuation or as nothing at all, box-drawing characters are read
+  one per character, and a tick alone carries meaning that a listener never
+  receives. Anything a symbol would say is said in a word as well.
+- **Every status line is labelled.** `doctor` prefixes each check with `OK`,
+  `NOTE` or `FIX`, so nothing depends on colour or position.
+
+A test sweeps the rendered output of every command for those patterns. It runs
+over synthesized reports as well as real runs, because output that needs
+hardware to produce cannot be checked by running the program on a machine with
+none — which is every machine this project is developed on.
+
 ## QMK and VIA macro pads
 
 `openlogi via` reads and changes what each key sends on any QMK keyboard or

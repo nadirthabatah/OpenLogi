@@ -216,6 +216,131 @@ fn via_lists_or_explains_itself() {
     }
 }
 
+/// Patterns that make terminal output worse to listen to than to look at.
+///
+/// This project's accessibility rule is that the command line is a
+/// first-class interface, not a fallback — for someone who cannot see the
+/// screen it is often the only one. That rule is easy to state and easy to
+/// erode: nobody sets out to make output unlistenable, they add a tidy table
+/// or a tick mark and it happens.
+const UNLISTENABLE: &[(&str, &str)] = &[
+    (
+        "(s)",
+        "a screen reader says \"thing open paren s close paren\"; write the word out",
+    ),
+    (
+        "\u{2500}",
+        "box-drawing characters are read out as their names, one per character",
+    ),
+    ("\u{2502}", "box-drawing characters"),
+    ("\u{250c}", "box-drawing characters"),
+    ("\u{2514}", "box-drawing characters"),
+    (
+        "\u{2588}",
+        "block characters are read out one per character",
+    ),
+    (
+        "\u{2713}",
+        "a tick alone carries the meaning; say the word as well",
+    ),
+    ("\u{2714}", "a tick alone carries the meaning"),
+    ("\u{2717}", "a cross alone carries the meaning"),
+    ("\u{2718}", "a cross alone carries the meaning"),
+    ("\u{274c}", "a cross alone carries the meaning"),
+    ("\u{2705}", "a tick alone carries the meaning"),
+];
+
+/// Whether a line is a rule made of repeated punctuation.
+///
+/// Read aloud, `========` is either silence or eight spoken "equals" — never
+/// the section break it looks like.
+fn is_a_drawn_rule(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.len() >= 8
+        && trimmed
+            .chars()
+            .all(|character| matches!(character, '=' | '-' | '*' | '_' | '~' | '#'))
+}
+
+/// Everything this project's own commands print has to be worth listening to.
+///
+/// Scoped to the commands this project authors, which is the same scoping the
+/// accessibility document applies to its merge-blocking rules: it is a
+/// standard we hold our own work to, not a veto on inherited code.
+///
+/// Deliberately a sweep rather than an assertion per command. A rule checked
+/// only where someone remembered to check it is a rule that holds until the
+/// next command is added.
+#[test]
+fn nothing_this_project_prints_is_hostile_to_a_screen_reader() {
+    let sandbox = Sandbox::new("listenable");
+    let file = sandbox.path("setup.toml");
+    sandbox.run(&["streamdeck", "example", "streaming"]);
+
+    let invocations: &[&[&str]] = &[
+        &["doctor"],
+        &["doctor", "--json"],
+        &["devices"],
+        &["devices", "--supported"],
+        &["devices", "--json"],
+        &["streamdeck"],
+        &["streamdeck", "layouts"],
+        &["streamdeck", "example", "streaming"],
+        &["via"],
+        &["via", "keymap", "0"],
+        &["profile", "export", file.to_str().expect("utf-8")],
+        &["profile", "inspect", file.to_str().expect("utf-8")],
+        &["profile", "import", file.to_str().expect("utf-8")],
+    ];
+
+    for arguments in invocations {
+        let run = sandbox.run(arguments);
+        let said = run.said();
+        for (pattern, why) in UNLISTENABLE {
+            assert!(
+                !said.contains(pattern),
+                "`openlogi {}` printed {pattern:?} — {why}\n{said}",
+                arguments.join(" ")
+            );
+        }
+        for line in said.lines() {
+            assert!(
+                !is_a_drawn_rule(line),
+                "`openlogi {}` printed a drawn rule, {line:?}, which is read aloud as \
+                 repeated punctuation or as nothing at all\n{said}",
+                arguments.join(" ")
+            );
+        }
+    }
+}
+
+/// Anything wrong has to be said in words, not only signalled by a colour or
+/// a symbol. This checks the shape rather than the absence: `doctor` labels
+/// every line, so every label is a word someone can hear.
+#[test]
+fn doctor_labels_every_line_with_a_word() {
+    let sandbox = Sandbox::new("labels");
+    let run = sandbox.run(&["doctor"]);
+    run.expect_status_in(&[0, 2]);
+    let stdout = run.stdout();
+    // The check list is everything before the first blank line; what follows
+    // is prose, headings and numbered steps.
+    let checks: Vec<&str> = stdout
+        .lines()
+        .take_while(|line| !line.trim().is_empty())
+        .collect();
+    assert!(!checks.is_empty(), "doctor printed no checks:\n{stdout}");
+    for line in checks {
+        assert!(
+            ["OK ", "NOTE ", "FIX "]
+                .iter()
+                .any(|label| line.starts_with(label)),
+            "a check with no word saying how it came out — a colour or a symbol \
+             would leave this line meaningless to anyone not looking at it: {line:?}"
+        );
+    }
+}
+
 /// `--json` has to be *only* JSON. A stray human sentence on stdout — a
 /// warning, a "nothing found" line — makes the output unparseable, and that is
 /// the kind of thing that gets added later by someone being helpful.
@@ -346,7 +471,7 @@ fn a_whole_setup_survives_being_exported_and_imported() {
     sandbox
         .run(&["profile", "import", bundle.to_str().expect("utf-8")])
         .expect_status(0)
-        .expect_says("1 layout(s) restored: streaming");
+        .expect_says("1 layout restored: streaming");
 
     sandbox
         .run(&["streamdeck", "layouts"])

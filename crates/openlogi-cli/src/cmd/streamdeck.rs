@@ -9,6 +9,8 @@
 //! paste into an issue, which is a far better way to close that gap than
 //! asking a user to describe what happened.
 
+use crate::spoken::counted;
+
 mod layout;
 mod library;
 
@@ -480,8 +482,8 @@ async fn apply(collections: &[Attached], file: &Path, layout: &layout::Layout) -
         );
     }
     println!(
-        "applied {} key(s) from {}",
-        layout.keys.len(),
+        "applied {} from {}",
+        counted(layout.keys.len(), "key", "keys"),
         file.display()
     );
     Ok(ExitCode::SUCCESS)
@@ -499,10 +501,10 @@ fn refuse_untrusted(layout: &layout::Layout) -> Result<bool> {
         return Ok(false);
     }
     eprintln!(
-        "this layout binds {} action(s) that would run a program or type text on your \
+        "this layout binds {} that would run a program or type text on your \
          machine. Nothing has been applied. Review them, then re-run with \
          --accept-actions if you trust the source:",
-        findings.len()
+        counted(findings.len(), "action", "actions")
     );
     for finding in &findings {
         eprintln!("  {finding}");
@@ -537,7 +539,10 @@ async fn run_layout(
     let mut session = open_preferred(collections).await?;
     let model = session.model();
     println!();
-    println!("Running {} bound key(s). Interrupt to stop.", bound.len());
+    println!(
+        "Running {}. Interrupt to stop.",
+        counted(bound.len(), "bound key", "bound keys")
+    );
     for (index, action) in &bound {
         println!(
             "  key {index} ({}) -> {action:?}",

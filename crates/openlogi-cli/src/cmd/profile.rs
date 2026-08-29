@@ -8,6 +8,7 @@ use clap::{Args, Subcommand};
 
 use crate::bundle;
 use crate::profile;
+use crate::spoken::counted;
 
 /// Exit status for "the profile was refused because it carries actions that
 /// would run something" — distinct from a read or parse failure, so a script
@@ -77,8 +78,8 @@ impl ProfileCmd {
                     println!("  no actions that would run a program or type text");
                 } else {
                     println!(
-                        "  {} action(s) that would run a program or type text:",
-                        findings.len()
+                        "  {} that would run a program or type text:",
+                        counted(findings.len(), "action", "actions")
                     );
                     for finding in &findings {
                         println!("    {finding}");
@@ -105,8 +106,8 @@ impl ProfileCmd {
                         match restore_layouts(&args.file) {
                             Ok(names) if !names.is_empty() => {
                                 println!(
-                                    "  {} layout(s) restored: {}",
-                                    names.len(),
+                                    "  {} restored: {}",
+                                    counted(names.len(), "layout", "layouts"),
                                     names.join(", ")
                                 );
                             }
@@ -124,8 +125,8 @@ impl ProfileCmd {
                         }
                         if !imported.accepted.is_empty() {
                             println!(
-                                "  {} action(s) that run a program or type text were accepted:",
-                                imported.accepted.len()
+                                "  {} that run a program or type text were accepted:",
+                                counted(imported.accepted.len(), "action", "actions")
                             );
                             for finding in &imported.accepted {
                                 println!("    {finding}");
@@ -193,8 +194,8 @@ fn export(named: &Path) -> Result<ExitCode> {
         println!("  no saved layouts to carry (openlogi streamdeck layouts lists them)");
     } else {
         println!(
-            "  {} layout(s): {}",
-            gathered.carried.len(),
+            "  {}: {}",
+            counted(gathered.carried.len(), "layout", "layouts"),
             gathered.carried.join(", ")
         );
     }
