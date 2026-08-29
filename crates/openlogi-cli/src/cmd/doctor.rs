@@ -76,12 +76,18 @@ pub enum Platform {
 }
 
 /// Raw HID nodes on a Linux machine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hidraw {
     /// How many `/dev/hidraw*` nodes exist.
     pub present: usize,
     /// How many of them this process could open for reading.
     pub openable: usize,
+    /// USB vendor ids of the nodes that could not be opened.
+    ///
+    /// Carried so the advice can be a rule someone pastes rather than a
+    /// research task. "Write a udev rule" is not a step; a line with the right
+    /// four hex digits already in it is.
+    pub blocked_vendors: Vec<u16>,
 }
 
 /// How a check came out.
@@ -195,14 +201,54 @@ fn count_hidraw() -> Option<Hidraw> {
                 .is_some_and(|name| name.starts_with("hidraw"))
         })
         .collect();
-    let openable = nodes
-        .iter()
-        .filter(|path| std::fs::File::open(path).is_ok())
-        .count();
+
+    let mut openable = 0;
+    let mut blocked_vendors: Vec<u16> = Vec::new();
+    for node in &nodes {
+        if std::fs::File::open(node).is_ok() {
+            openable += 1;
+            continue;
+        }
+        if let Some(vendor) = vendor_of(node)
+            && !blocked_vendors.contains(&vendor)
+        {
+            blocked_vendors.push(vendor);
+        }
+    }
+    blocked_vendors.sort_unstable();
     Some(Hidraw {
         present: nodes.len(),
         openable,
+        blocked_vendors,
     })
+}
+
+/// The USB vendor id behind a `/dev/hidrawN` node.
+///
+/// Read from the kernel's own `uevent` line, `HID_ID=bus:vendor:product`, in
+/// hex. Numeric rather than textual comparison so `0000046D` and `046d` are
+/// the same thing, which they are.
+fn vendor_of(node: &std::path::Path) -> Option<u16> {
+    let name = node.file_name()?.to_str()?;
+    let uevent = std::fs::read_to_string(format!("/sys/class/hidraw/{name}/device/uevent")).ok()?;
+    uevent.lines().find_map(|line| {
+        let rest = line.strip_prefix("HID_ID=")?;
+        u16::from_str_radix(rest.split(':').nth(1)?.trim(), 16).ok()
+    })
+}
+
+/// The udev lines that would give this user access to `vendors`.
+///
+/// Written out in full, ready to paste. Someone told to "add a udev rule" has
+/// been given a research task; someone handed the line with the right four hex
+/// digits already in it has been given a step.
+fn udev_lines(vendors: &[u16]) -> Vec<String> {
+    vendors
+        .iter()
+        .map(|vendor| {
+            format!("SUBSYSTEM==\"hidraw\", ATTRS{{idVendor}}==\"{vendor:04x}\", TAG+=\"uaccess\"")
+        })
+        .collect()
 }
 
 /// Layout files in a directory.
@@ -253,7 +299,7 @@ pub fn diagnose(facts: &Facts) -> Vec<Check> {
 /// problem makes an attached device invisible, and being told "no devices
 /// found" first would send someone to check their cables.
 fn device_access(facts: &Facts) -> Check {
-    let verdict = match (facts.platform, facts.hidraw) {
+    let verdict = match (facts.platform, facts.hidraw.as_ref()) {
         (Platform::Linux, Some(hidraw)) => linux_access(hidraw),
         (Platform::Linux, None) => Verdict::Undetermined(
             "could not read /dev to look for HID devices, which is unusual and worth \
@@ -275,7 +321,7 @@ fn device_access(facts: &Facts) -> Check {
 }
 
 /// The Linux reading of the hidraw counts.
-fn linux_access(hidraw: Hidraw) -> Verdict {
+fn linux_access(hidraw: &Hidraw) -> Verdict {
     if hidraw.present == 0 {
         return Verdict::Undetermined(
             "no /dev/hidraw devices exist at all, so there is nothing to have permission \
@@ -292,19 +338,7 @@ fn linux_access(hidraw: Hidraw) -> Verdict {
                  there.",
                 counted(hidraw.present, "HID device is", "HID devices are")
             ),
-            fix: vec![
-                "Install the udev rules, which give your user account access to HID \
-                 devices. The project ships them; see the README for the file and where \
-                 it goes."
-                    .to_owned(),
-                "Reload the rules without rebooting: sudo udevadm control --reload-rules \
-                 && sudo udevadm trigger"
-                    .to_owned(),
-                "Unplug the device and plug it back in — a rule applies when a device \
-                 appears, so one already attached keeps the permissions it was given."
-                    .to_owned(),
-                "Run openlogi doctor again to confirm.".to_owned(),
-            ],
+            fix: udev_fix(&hidraw.blocked_vendors),
         };
     }
     if hidraw.openable < hidraw.present {
@@ -315,14 +349,7 @@ fn linux_access(hidraw: Hidraw) -> Verdict {
                  not.",
                 hidraw.openable, hidraw.present
             ),
-            fix: vec![
-                "The udev rules are installed but do not cover every device. If a rule \
-                 lists vendor ids, it needs one for the peripheral that is not working."
-                    .to_owned(),
-                "openlogi devices lists what was found, with the vendor and product ids \
-                 a rule needs."
-                    .to_owned(),
-            ],
+            fix: udev_fix(&hidraw.blocked_vendors),
         };
     }
     Verdict::Fine(format!(
@@ -333,6 +360,48 @@ fn linux_access(hidraw: Hidraw) -> Verdict {
             "attached HID devices"
         )
     ))
+}
+
+/// The steps that give this user access to the devices it cannot open.
+///
+/// Written around the vendors actually blocked. The shipped rules name the
+/// vendors this program drives rather than matching every HID device — a
+/// wildcard would hand the logged-in user everything on the bus — so a
+/// peripheral from a vendor not in that list needs a line, and this is that
+/// line with the digits already filled in.
+fn udev_fix(blocked_vendors: &[u16]) -> Vec<String> {
+    let mut steps = vec![
+        "Install the udev rules this project ships: sudo cp \
+         packaging/linux/udev/70-openlogi.rules /etc/udev/rules.d/"
+            .to_owned(),
+    ];
+    let lines = udev_lines(blocked_vendors);
+    if !lines.is_empty() {
+        steps.push(format!(
+            "Those rules name the vendors this program drives, and the device(s) you \
+             cannot open are not among them. Put {} in \
+             /etc/udev/rules.d/71-openlogi-local.rules — a separate file, so upgrading \
+             this program does not overwrite it:",
+            if lines.len() == 1 {
+                "this line".to_owned()
+            } else {
+                format!("these {} lines", lines.len())
+            }
+        ));
+        steps.extend(lines.into_iter().map(|line| format!("    {line}")));
+    }
+    steps.push(
+        "Reload the rules without rebooting: sudo udevadm control --reload-rules && \
+         sudo udevadm trigger"
+            .to_owned(),
+    );
+    steps.push(
+        "Unplug the device and plug it back in — a rule applies when a device appears, \
+         so one already attached keeps the permissions it was given."
+            .to_owned(),
+    );
+    steps.push("Run openlogi doctor again to confirm.".to_owned());
+    steps
 }
 
 /// The macOS reading, which is a consent grant rather than a file mode.
@@ -527,7 +596,7 @@ pub fn render(checks: &[Check], problems: usize) -> String {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{Check, Facts, Hidraw, Platform, Verdict, counted, diagnose, render};
+    use super::{Check, Facts, Hidraw, Platform, Verdict, counted, diagnose, render, udev_lines};
 
     /// A machine where everything is fine, to vary one thing at a time from.
     fn healthy() -> Facts {
@@ -538,6 +607,7 @@ mod tests {
             hidraw: Some(Hidraw {
                 present: 4,
                 openable: 4,
+                blocked_vendors: Vec::new(),
             }),
             agent_reachable: true,
             config: Some(PathBuf::from("/home/me/.config/openlogi/config.toml")),
@@ -577,6 +647,7 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 4,
             openable: 0,
+            blocked_vendors: Vec::new(),
         });
         facts.hid_devices = 0;
         facts.cameras = 0;
@@ -616,6 +687,83 @@ mod tests {
         assert!(permission < devices, "{names:?}");
     }
 
+    /// The step that matters most on Linux. "Add a udev rule" is a research
+    /// task; a line with the right four hex digits already in it is a step
+    /// someone can carry out without knowing what udev is.
+    #[test]
+    fn a_blocked_vendor_produces_the_exact_rule_line_to_paste() {
+        let mut facts = healthy();
+        facts.hidraw = Some(Hidraw {
+            present: 2,
+            openable: 0,
+            // Elgato and a made-up macro pad vendor.
+            blocked_vendors: vec![0x0fd9, 0x4653],
+        });
+        facts.hid_devices = 0;
+        facts.cameras = 0;
+
+        let checks = diagnose(&facts);
+        let Verdict::Problem { fix, .. } = find(&checks, "Permission to open devices") else {
+            panic!("unopenable devices must be a problem");
+        };
+        let steps = fix.join("\n");
+        assert!(
+            steps.contains(r#"ATTRS{idVendor}=="0fd9""#),
+            "the vendor id has to be in the line, in lower-case hex: {steps}"
+        );
+        assert!(steps.contains(r#"ATTRS{idVendor}=="4653""#), "{steps}");
+        assert!(
+            steps.contains(r#"SUBSYSTEM=="hidraw""#),
+            "a line that is not a valid rule is worse than no line: {steps}"
+        );
+        assert!(steps.contains(r#"TAG+="uaccess""#), "{steps}");
+        assert!(
+            steps.contains("71-openlogi-local.rules"),
+            "it has to go in a separate file, or an upgrade overwrites it: {steps}"
+        );
+    }
+
+    /// Hex, not decimal. A rule reading `idVendor=="4057"` for Elgato matches
+    /// nothing, and looks close enough to right to waste an afternoon.
+    #[test]
+    fn vendor_ids_in_rules_are_four_hex_digits() {
+        assert_eq!(
+            udev_lines(&[0x0fd9]),
+            vec![r#"SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0fd9", TAG+="uaccess""#.to_owned()]
+        );
+        // Leading zeros are significant in a udev match.
+        assert!(udev_lines(&[0x046d])[0].contains(r#""046d""#));
+        assert!(udev_lines(&[0x0001])[0].contains(r#""0001""#));
+    }
+
+    /// When the blocked vendors could not be read, the advice must still be
+    /// usable rather than trailing off into a sentence with no line under it.
+    #[test]
+    fn advice_without_vendor_ids_is_still_a_complete_set_of_steps() {
+        let mut facts = healthy();
+        facts.hidraw = Some(Hidraw {
+            present: 2,
+            openable: 0,
+            blocked_vendors: Vec::new(),
+        });
+        facts.hid_devices = 0;
+        facts.cameras = 0;
+
+        let checks = diagnose(&facts);
+        let Verdict::Problem { fix, .. } = find(&checks, "Permission to open devices") else {
+            panic!("unopenable devices must be a problem");
+        };
+        let steps = fix.join("\n");
+        assert!(steps.contains("70-openlogi.rules"), "{steps}");
+        assert!(steps.contains("udevadm"), "{steps}");
+        assert!(steps.contains("plug it back in"), "{steps}");
+        assert!(
+            !steps.contains("71-openlogi-local.rules"),
+            "with no ids to offer, do not send someone to write a file they cannot \
+             fill in: {steps}"
+        );
+    }
+
     /// Some devices reachable and some not is its own answer: half a desk
     /// working looks like a flaky program rather than an incomplete rule.
     #[test]
@@ -624,15 +772,19 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 4,
             openable: 2,
+            blocked_vendors: vec![0x0fd9],
         });
         let checks = diagnose(&facts);
         let Verdict::Problem { detail, fix } = find(&checks, "Permission to open devices") else {
             panic!("a partly reachable desk is a problem");
         };
         assert!(detail.contains("2 of 4"), "{detail}");
+        // This is the case where a generated rule helps most: the rules are
+        // installed and working for some devices, so "install the udev rules"
+        // alone would read as advice already followed.
         assert!(
-            fix.iter().any(|step| step.contains("openlogi devices")),
-            "it has to say how to get the ids a rule needs: {fix:?}"
+            fix.iter().any(|step| step.contains(r#""0fd9""#)),
+            "it has to name the vendor that is actually blocked: {fix:?}"
         );
     }
 
@@ -644,6 +796,7 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 0,
             openable: 0,
+            blocked_vendors: Vec::new(),
         });
         let checks = diagnose(&facts);
         let Verdict::Undetermined(detail) = find(&checks, "Permission to open devices") else {
@@ -737,6 +890,7 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 4,
             openable: 0,
+            blocked_vendors: Vec::new(),
         });
         facts.hid_devices = 0;
         facts.cameras = 0;
@@ -758,6 +912,7 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 4,
             openable: 0,
+            blocked_vendors: Vec::new(),
         });
         facts.hid_devices = 0;
         facts.cameras = 0;
@@ -791,6 +946,7 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 4,
             openable: 0,
+            blocked_vendors: Vec::new(),
         });
         facts.hid_devices = 0;
         facts.cameras = 0;
@@ -810,6 +966,7 @@ mod tests {
                 hidraw: Some(Hidraw {
                     present: 4,
                     openable: 0,
+                    blocked_vendors: Vec::new(),
                 }),
                 hid_devices: 0,
                 cameras: 0,
@@ -819,6 +976,7 @@ mod tests {
                 hidraw: Some(Hidraw {
                     present: 4,
                     openable: 1,
+                    blocked_vendors: Vec::new(),
                 }),
                 ..healthy()
             },

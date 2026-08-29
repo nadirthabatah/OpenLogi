@@ -54,12 +54,26 @@ FIX   Permission to open devices: 4 HID devices are attached and this program
 One thing to fix:
 
 Permission to open devices: ...
-  1. Install the udev rules, which give your user account access to HID devices.
-  2. Reload the rules without rebooting: sudo udevadm control --reload-rules && sudo udevadm trigger
-  3. Unplug the device and plug it back in — a rule applies when a device
+  1. Install the udev rules this project ships: sudo cp
+     packaging/linux/udev/70-openlogi.rules /etc/udev/rules.d/
+  2. Those rules name the vendors this program drives, and the device(s) you
+     cannot open are not among them. Put this line in
+     /etc/udev/rules.d/71-openlogi-local.rules — a separate file, so upgrading
+     this program does not overwrite it:
+  3.     SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0fd9", TAG+="uaccess"
+  4. Reload the rules without rebooting: sudo udevadm control --reload-rules && sudo udevadm trigger
+  5. Unplug the device and plug it back in — a rule applies when a device
      appears, so one already attached keeps the permissions it was given.
-  4. Run openlogi doctor again to confirm.
+  6. Run openlogi doctor again to confirm.
 ```
+
+That third line is the point. The shipped rules name the vendors this program
+drives rather than matching every HID device — a wildcard would hand the
+logged-in user every HID device on the machine, which is a much worse trade
+than one extra line of setup. So a peripheral from a vendor not on that list
+needs a rule, and `doctor` reads the vendor id off the device you cannot open
+and writes the line for you. "Add a udev rule" is a research task; a line with
+the right four hex digits already in it is a step.
 
 Three things about that output are deliberate. **The steps are repeated at the
 end as one numbered list**, because someone who has just heard five checks read
