@@ -152,21 +152,27 @@ fn explain(error: &io::Error) -> String {
         Some(libc::EACCES) => "permission denied. The I2C devices belong to the i2c group; \
              adding your user to it, logging out and back in is what grants access"
             .to_owned(),
-        Some(libc::ENOENT) => {
-            "no such device. The graphics driver did not publish an I2C line for this \
-             connector, so this display cannot be controlled over DDC on this machine"
-                .to_owned()
-        }
         _ => error.to_string(),
     }
 }
 
 /// Every connected display, whether or not its control line can be opened.
 pub(crate) fn enumerate() -> Result<Vec<Display>, DisplayError> {
-    let entries = fs::read_dir(DRM).map_err(|error| DisplayError::Access {
-        path: DRM.to_owned(),
-        reason: explain(&error),
-    })?;
+    let entries = match fs::read_dir(DRM) {
+        Ok(entries) => entries,
+        // No display subsystem at all: a container, a headless server, a
+        // kernel built without DRM. That is not a failure to enumerate, it is
+        // an enumeration whose answer is none — and reporting it as an error
+        // would turn "you have no monitors" into "something went wrong",
+        // which is a worse answer to the same question.
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(DisplayError::Access {
+                path: DRM.to_owned(),
+                reason: explain(&error),
+            });
+        }
+    };
 
     let mut displays = Vec::new();
     for entry in entries.flatten() {

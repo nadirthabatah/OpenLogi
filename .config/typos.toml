@@ -22,6 +22,10 @@ extend-ignore-identifiers-re = ["^(?:ALS|AlsAutomatic|AlsSaturated)$"]
 # monitors under. It is data from the displays themselves, not an abbreviation
 # we chose, so it cannot be spelled any other way.
 ACI = "ACI"
+# Plug and Play, capitalised as Microsoft spells it. This is the literal text
+# `dxva2` puts in a monitor's description ("Generic PnP Monitor"), so quoting it
+# any other way would quote something Windows does not say.
+PnP = "PnP"
 PNGs = "PNGs"
 SWCustomHighligt2 = "SWCustomHighligt2"
 udid = "udid"

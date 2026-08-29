@@ -90,26 +90,17 @@ fn a_connector_with_no_bus_at_all_reports_none() {
 }
 
 #[test]
-fn enumeration_on_a_machine_with_no_displays_is_empty_rather_than_an_error() {
-    // This is the container's own case, and it is the one that matters for
-    // the tests: a build machine with no graphics hardware must not make
-    // `roadie display list` fail. Either an empty list or a missing /sys/class/drm
-    // is a correct answer here; a panic or a hang is not.
-    match super::enumerate() {
-        Ok(displays) => {
-            for display in &displays {
-                assert!(
-                    !display.describe().is_empty(),
-                    "every display in the list has something to call it"
-                );
-            }
-        }
-        Err(error) => {
-            let message = error.to_string();
-            assert!(
-                message.contains("/sys/class/drm"),
-                "the only acceptable failure is the DRM directory itself: {message}"
-            );
-        }
+fn a_machine_with_no_display_subsystem_reports_none_rather_than_failing() {
+    // The build container's own case, and it went the wrong way the first
+    // time: with no /sys/class/drm at all this returned an error, so
+    // `roadie display list` said "something went wrong" where the true answer
+    // was "you have no monitors". A container, a headless server and a kernel
+    // built without DRM are all that shape, and none of them is a fault.
+    let displays = super::enumerate().expect("no display subsystem is an answer, not a failure");
+    for display in &displays {
+        assert!(
+            !display.describe().is_empty(),
+            "every display in the list has something to call it"
+        );
     }
 }
