@@ -126,6 +126,19 @@ impl VcpBackend for PhysicalMonitor {
             return Err(self.failed("asking how long the capability string is"));
         }
 
+        // The only length in this backend that comes from outside the program:
+        // the two transfer paths size their buffers from fixed arrays this
+        // crate owns, while this one is whatever the driver says. A driver
+        // that reports success and a length of zero would leave an empty
+        // `Vec`, whose pointer is dangling — so it is refused here rather than
+        // handed to the API, which is the one case where the safety comment
+        // below could otherwise be vacuously true.
+        if length == 0 {
+            return Err(DisplayError::Capabilities {
+                name: self.name.clone(),
+                source: roadie_ddc::CapabilitiesError::Empty,
+            });
+        }
         let length = length as usize;
         let mut buffer = vec![0_u8; length];
         // SAFETY: the handle is live, and the buffer has exactly the `length`
