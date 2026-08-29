@@ -36,7 +36,14 @@ every command that takes a key also prints its row and column — so "key 7" and
 and rotates it to fit the key, so you do not have to know the model's screen
 size or which way its panel is mounted.
 
-**`openlogi streamdeck verify` is worth running first.** The Stream Deck
+**`openlogi streamdeck verify` is worth running first.** It now checks the
+write path as well as the read path: it dims and restores the screens, paints
+the top-left key orange, and then asks you to press that same key. If a
+*different* key turns orange, key numbering is wrong for that model; if the
+colour appears but looks rotated, the catalogue's rotation is wrong; and if the
+key you press reports as anything other than row 1, column 1, the key ordering
+is wrong. Each of those is a distinct, reportable finding rather than a vague
+"it didn't work". The Stream Deck
 protocol layer is thoroughly unit-tested but has never met a physical device,
 and two things cannot be settled without one: which HID collection carries the
 key traffic, and whether the original 2015 Stream Deck reports its keys

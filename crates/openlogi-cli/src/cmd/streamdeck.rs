@@ -281,10 +281,23 @@ async fn verify(collections: &[Attached]) -> Result<ExitCode> {
     println!();
 
     let mut session = open_preferred(collections).await?;
-    let model = session.model();
-    println!("Opened: {} ({} keys)", model.name, model.key_count());
+    println!(
+        "Opened: {} ({} keys)",
+        session.model().name,
+        session.model().key_count()
+    );
     println!();
 
+    check_brightness(&mut session).await;
+    let painted = check_key_image(&mut session).await;
+    check_key_press(&mut session, painted).await;
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Dim the screens and restore them — a visible change that needs no
+/// interpretation, so it separates "the device is listening" from everything
+/// subtler that follows.
+async fn check_brightness(session: &mut Session) {
     print!("Setting brightness to {}%... ", Brightness::DIM.percent());
     match session.set_brightness(Brightness::DIM).await {
         Ok(()) => println!("accepted — the screens should have dimmed."),
@@ -296,9 +309,45 @@ async fn verify(collections: &[Attached]) -> Result<ExitCode> {
         Err(error) => println!("FAILED: {error}"),
     }
     println!();
+}
 
+/// Paint one key and say what a wrong result would look like.
+///
+/// Returns whether the write was accepted, so the key-press step can tell the
+/// reader whether the two paths agreed.
+async fn check_key_image(session: &mut Session) -> bool {
+    let model = session.model();
+    print!("Painting the top-left key orange... ");
+    let encoded = match render::solid(model, 0xff, 0x88, 0x00)
+        .and_then(|picture| render::key_image(model, &picture))
+    {
+        Ok(encoded) => encoded,
+        Err(error) => {
+            println!("FAILED to encode: {error}");
+            return false;
+        }
+    };
+    if let Err(error) = session.set_key_image(0, &encoded).await {
+        println!("FAILED to write: {error}");
+        return false;
+    }
+    println!("accepted.");
+    println!();
+    println!("  Look at the device. The TOP-LEFT key should now be orange.");
+    println!("  If a *different* key changed colour, key numbering is wrong for");
+    println!("  this model. If the colour is there but the image looks rotated or");
+    println!("  mirrored, the catalogue's rotation for this model is wrong.");
+    println!("  Either is worth reporting, with the collection list above.");
+    println!();
+    true
+}
+
+/// Ask for the top-left key and report whether it arrived where the catalogue
+/// says it should — the question this whole command exists to answer.
+async fn check_key_press(session: &mut Session, painted: bool) {
+    let model = session.model();
     println!(
-        "Now press the TOP-LEFT key on the {} and hold it briefly.",
+        "Now press the TOP-LEFT key on the {} — the one you were just looking at.",
         model.name
     );
     println!("Waiting up to {} seconds...", WATCH.as_secs());
@@ -317,37 +366,43 @@ async fn verify(collections: &[Attached]) -> Result<ExitCode> {
     })
     .await;
 
-    match observed {
-        Ok(Ok(event)) => {
-            let position = model.key_position(event.key);
-            println!("Saw: {}", describe(model, event));
-            match position {
-                Ok(p) if p.row == 1 && p.column == 1 => {
-                    println!();
-                    println!("CORRECT — the top-left key reported as row 1, column 1.");
-                    println!("Key ordering for this model is right.");
-                }
-                Ok(p) => {
-                    println!();
-                    println!(
-                        "MISMATCH — the top-left key reported as row {}, column {}.",
-                        p.row, p.column
-                    );
-                    println!("The key ordering for this model is wrong in the catalogue.");
-                    println!("Please open an issue with the two lines above and the");
-                    println!("collection list at the top of this output.");
-                }
-                Err(error) => println!("The reported key is out of range: {error}"),
-            }
+    let event = match observed {
+        Ok(Ok(event)) => event,
+        Ok(Err(error)) => {
+            println!("Reading key events FAILED: {error}");
+            return;
         }
-        Ok(Err(error)) => println!("Reading key events FAILED: {error}"),
         Err(_) => {
             println!("No key press seen in {} seconds.", WATCH.as_secs());
             println!("Either no key was pressed, or this collection does not carry key");
             println!("events — in which case the usage-page choice above is wrong.");
+            return;
         }
+    };
+
+    println!("Saw: {}", describe(model, event));
+    match model.key_position(event.key) {
+        Ok(p) if p.row == 1 && p.column == 1 => {
+            println!();
+            println!("CORRECT — the top-left key reported as row 1, column 1.");
+            println!("Key ordering for this model is right.");
+            if painted {
+                println!("If that was also the key that turned orange, the write and");
+                println!("read paths agree and this model is fully confirmed.");
+            }
+        }
+        Ok(p) => {
+            println!();
+            println!(
+                "MISMATCH — the top-left key reported as row {}, column {}.",
+                p.row, p.column
+            );
+            println!("The key ordering for this model is wrong in the catalogue.");
+            println!("Please open an issue with the two lines above and the");
+            println!("collection list at the top of this output.");
+        }
+        Err(error) => println!("The reported key is out of range: {error}"),
     }
-    Ok(ExitCode::SUCCESS)
 }
 
 #[cfg(test)]
