@@ -202,7 +202,23 @@ devenv tasks run openlogi:ci                 # same, from devenv
 ```
 
 The runner sets `RUSTFLAGS=-D warnings` the way CI does. Jobs that need another
-OS are reported as skipped; a skip is not a pass. The full job map (and which
+OS are reported as skipped; a skip is not a pass.
+
+The Windows cross-lint needs two things a plain checkout does not have, and
+skips without them:
+
+```sh
+rustup target add x86_64-pc-windows-gnu
+sudo apt-get install gcc-mingw-w64-x86-64   # or the equivalent for your distro
+```
+
+The C compiler is for `ring`, which `openlogi-{assets,cli}` and the root
+`openlogi` pull in through ureq. Without it those three drop out of the lint,
+and `openlogi-cli` is where most of the workspace's test code lives — a test is
+exactly where a Unix-only call such as `std::os::unix::fs::symlink` gets
+written without thinking about it, compiles fine locally, and fails the Windows
+build in CI fifteen minutes later. With mingw the same failure appears in about
+forty seconds. The full job map (and which
 diff requires which job) is [`.claude/rules/ci.md`](../.claude/rules/ci.md).
 
 ### Pre-push gate

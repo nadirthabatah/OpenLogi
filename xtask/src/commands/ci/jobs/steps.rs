@@ -17,15 +17,20 @@ use crate::support::manifest::workspace_package;
 ///
 /// `clippy --target` is check-only (no linker needed), but a C-compiling build
 /// dependency does need a cross C toolchain: `openlogi-{assets,cli}` and the
-/// root `openlogi` pull ureq → ring, whose `curve25519.c` cannot cross-compile
-/// from macOS without mingw. They have no Windows-specific code, so this is the
-/// ring-free agent/leaf subset; CI covers the rest natively. The GUI crates are
+/// root `openlogi` pull ureq → ring, whose `curve25519.c` needs a Windows C
+/// compiler to cross-compile. With mingw installed it builds, so those three
+/// are in the list; without it they are skipped along with everything else,
+/// because the whole job needs the windows-gnu std anyway. The GUI crates stay
 /// out because GPUI has no Windows backend.
 ///
 /// A crate missing here is a crate whose Windows paths nothing checks until CI
 /// — which is how three `chunks_exact` sites in `openlogi-camera` survived a
-/// whole lint sweep.
-const WINDOWS_LINT_CRATES: [&str; 8] = [
+/// whole lint sweep, and later how a test calling `std::os::unix::fs::symlink`
+/// reached CI and failed the Windows build there. That second one is why
+/// `openlogi-cli` is on this list now: it holds the most test code in the
+/// workspace, and a test is exactly where a Unix-only call gets written
+/// without thinking about it.
+const WINDOWS_LINT_CRATES: [&str; 11] = [
     "openlogi-core",
     "openlogi-hidpp",
     "openlogi-hid",
@@ -34,6 +39,9 @@ const WINDOWS_LINT_CRATES: [&str; 8] = [
     "openlogi-camera",
     "openlogi-agent",
     "openlogi-agent-core",
+    "openlogi-assets",
+    "openlogi-cli",
+    "openlogi",
 ];
 
 /// The crates that must keep compiling with no OS underneath them.
