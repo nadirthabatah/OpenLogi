@@ -259,7 +259,9 @@ label = "COPY"
 action = "Copy"
 ```
 
-`openlogi streamdeck apply` only paints the faces. `openlogi streamdeck run
+`openlogi streamdeck apply` only paints the faces. Applying a layout that has
+actions on it says so, because a deck that looks exactly right and does
+nothing is indistinguishable from a broken one. `openlogi streamdeck run
 deck.toml` applies the layout and then stays running: each time you press a
 bound key, its action fires. Actions come from the same catalogue every other
 device here uses, so a Stream Deck key and a mouse button are bound the same

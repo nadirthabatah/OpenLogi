@@ -755,7 +755,38 @@ async fn apply(collections: &[Attached], file: &Path, layout: &layout::Layout) -
         counted(layout.keys.len(), "key", "keys"),
         file.display()
     );
+    note_unbound_actions(layout);
     Ok(ExitCode::SUCCESS)
+}
+
+/// Say that a layout's actions are not bound by painting it.
+///
+/// `apply` writes the faces and returns; `run` is what stays and acts on
+/// presses. Someone who applies a layout with actions on it gets a deck that
+/// looks exactly right and does nothing, and pressing a key that does nothing
+/// is indistinguishable from a broken device — most of all to someone who
+/// cannot see that the face is there.
+fn note_unbound_actions(layout: &layout::Layout) {
+    if let Some(note) = unbound_action_note(layout) {
+        print!("{note}");
+    }
+}
+
+/// The note itself, so the wording is checked without needing a device.
+fn unbound_action_note(layout: &layout::Layout) -> Option<String> {
+    let bound = layout
+        .keys
+        .iter()
+        .filter(|key| key.action.is_some())
+        .count();
+    if bound == 0 {
+        return None;
+    }
+    Some(format!(
+        "  {} an action, which painting the layout does not bind.\n  To act on \
+         presses, leave `openlogi streamdeck run` running instead.\n",
+        counted(bound, "key of these has", "keys of these have")
+    ))
 }
 
 /// Report a layout's program-running actions, if it has any.
@@ -1251,5 +1282,46 @@ action = { CustomShortcut = \"cmd+shift+4\" }
                 "the message must say what is wanted: {error}"
             );
         }
+    }
+
+    /// Painting a layout does not bind its actions, and a deck that looks
+    /// exactly right and does nothing is indistinguishable from a broken one
+    /// — most of all to someone who cannot see that the face is there.
+    #[test]
+    fn a_layout_with_actions_is_said_to_need_run() {
+        use openlogi_core::binding::Action;
+
+        let with_action = |index: u16, action: Option<Action>| layout::Key {
+            index,
+            label: Some("X".to_owned()),
+            image: None,
+            colour: None,
+            background: None,
+            action,
+        };
+        let none_bound = layout::Layout {
+            brightness: None,
+            keys: vec![with_action(0, None)],
+        };
+        assert_eq!(super::unbound_action_note(&none_bound), None);
+
+        let one_bound = layout::Layout {
+            brightness: None,
+            keys: vec![with_action(0, Some(Action::Copy)), with_action(1, None)],
+        };
+        let said = super::unbound_action_note(&one_bound).expect("a note");
+        assert!(said.contains("1 key of these has an action"), "{said}");
+        assert!(said.contains("streamdeck run"), "{said}");
+
+        let two_bound = layout::Layout {
+            brightness: None,
+            keys: vec![
+                with_action(0, Some(Action::Copy)),
+                with_action(1, Some(Action::Paste)),
+            ],
+        };
+        let said = super::unbound_action_note(&two_bound).expect("a note");
+        assert!(said.contains("2 keys of these have an action"), "{said}");
+        crate::spoken::assert_agrees(&said, "the unbound-action note");
     }
 }
