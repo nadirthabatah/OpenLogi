@@ -55,3 +55,7 @@ workspace = true
 openlogi-streamdeck = { path = "../openlogi-streamdeck", features = ["render"] }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 tempfile = "3"
+# `start_paused`, so the read-timeout test proves the timeout without a test
+# suite that actually waits for it. Same feature, same reason, as
+# openlogi-agent-core.
+tokio = { workspace = true, features = ["test-util"] }

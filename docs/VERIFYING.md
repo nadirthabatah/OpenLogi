@@ -223,6 +223,8 @@ many keymap layers it holds.
 **If it says "did not answer as a VIA device":** the firmware may not have VIA
 enabled, or the HID collection this driver picks is the wrong one for that
 board. Either way that line is the finding — report it with the board's name.
+A board that goes completely silent is given two seconds and then reported the
+same way, rather than left waiting.
 
 **If it refuses the protocol revision:** that is the driver being careful
 rather than a fault. VIA payload layouts have changed between revisions and

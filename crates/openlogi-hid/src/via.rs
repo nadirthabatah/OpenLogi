@@ -25,6 +25,8 @@
 //! it. So: the protocol revision is checked before any write, the write is
 //! read back and compared, and a mismatch is reported rather than swallowed.
 
+use std::time::Duration;
+
 use async_hid::{AsyncHidRead as _, AsyncHidWrite as _, Device, DeviceReader, DeviceWriter};
 use hidpp::async_trait;
 use openlogi_device::backend::BackendError;
@@ -40,6 +42,18 @@ use crate::transport::enumerate_devices;
 /// skipping them forever is not — a board that never answers would hang the
 /// caller with no explanation, which is worse than an error.
 const MAX_STRAY_REPORTS: usize = 8;
+
+/// How long to wait for any single answer.
+///
+/// The stray-report limit only helps when reports keep arriving. A board that
+/// goes silent — wrong collection, firmware without VIA, a device that is not
+/// a keyboard at all — would otherwise leave the caller waiting forever with
+/// nothing on screen, which for someone working by ear is indistinguishable
+/// from the program having crashed.
+///
+/// Generous rather than tight: QMK answers in milliseconds, and the cost of
+/// being wrong in the other direction is a spurious failure on a slow board.
+const ANSWER_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// A VIA-capable HID collection the OS is reporting.
 ///
@@ -284,7 +298,20 @@ impl Session {
         let mut buffer = [0_u8; REPORT_LEN];
         let mut strays = 0_usize;
         while strays <= MAX_STRAY_REPORTS {
-            let filled = self.transport.read_input_report(&mut buffer).await?;
+            let filled = tokio::time::timeout(
+                ANSWER_TIMEOUT,
+                self.transport.read_input_report(&mut buffer),
+            )
+            .await
+            .map_err(|_| {
+                unexpected(&format!(
+                    "the device did not answer command {:#04x} within {} seconds. It may \
+                     not be a VIA device, or the HID collection this driver picked may be \
+                     the wrong one for it.",
+                    command.id() as u8,
+                    ANSWER_TIMEOUT.as_secs()
+                ))
+            })??;
             match Response::parse(command, &buffer[..filled]) {
                 Ok(response) => return Ok(response),
                 // Not this command's answer. A QMK board sends unrelated raw
@@ -330,6 +357,11 @@ mod tests {
     struct Scripted {
         written: Arc<Mutex<Vec<Vec<u8>>>>,
         replies: Vec<[u8; REPORT_LEN]>,
+        /// Never answer once the script is spent, rather than erroring.
+        ///
+        /// The difference matters: an error is something the code already
+        /// handles, and silence is the case the timeout exists for.
+        silent_when_spent: bool,
     }
 
     impl Scripted {
@@ -338,7 +370,19 @@ mod tests {
         }
 
         fn recording(replies: Vec<[u8; REPORT_LEN]>, written: Arc<Mutex<Vec<Vec<u8>>>>) -> Self {
-            Self { written, replies }
+            Self {
+                written,
+                replies,
+                silent_when_spent: false,
+            }
+        }
+
+        /// A device that answers the script and then goes quiet.
+        fn then_silent(replies: Vec<[u8; REPORT_LEN]>) -> Self {
+            Self {
+                silent_when_spent: true,
+                ..Self::new(replies)
+            }
         }
     }
 
@@ -354,6 +398,12 @@ mod tests {
 
         async fn read_input_report(&mut self, buffer: &mut [u8]) -> Result<usize, BackendError> {
             if self.replies.is_empty() {
+                if self.silent_when_spent {
+                    // Never resolves. Under `start_paused` tokio advances its
+                    // clock once every task is idle, so the timeout fires
+                    // without the test actually waiting.
+                    std::future::pending::<()>().await;
+                }
                 return Err(BackendError::Backend("the script ran out".to_owned()));
             }
             let reply = self.replies.remove(0);
@@ -441,6 +491,27 @@ mod tests {
         assert!(
             text.contains(&format!("sent {} unrelated", MAX_STRAY_REPORTS + 1)),
             "{text}"
+        );
+    }
+
+    /// A silent device must produce an error rather than a wait with nothing
+    /// on screen. The stray limit cannot catch this: it only counts reports
+    /// that arrive, and here none do.
+    #[tokio::test(start_paused = true)]
+    async fn a_device_that_says_nothing_at_all_times_out_rather_than_hanging() {
+        // The handshake, then silence.
+        let mut session = Session::with_transport(Box::new(Scripted::then_silent(handshake())))
+            .await
+            .expect("the handshake succeeds");
+        let error = session
+            .keycode(0, 0, 0)
+            .await
+            .expect_err("silence must surface");
+        let text = format!("{error}");
+        assert!(text.contains("did not answer"), "{text}");
+        assert!(
+            text.contains("wrong one for it"),
+            "the message has to name the likely cause, not just the timeout: {text}"
         );
     }
 
