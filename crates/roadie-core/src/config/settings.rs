@@ -105,13 +105,18 @@ pub enum AppIcon {
     #[serde(rename = "roadie", alias = "openlogi")]
     #[strum(serialize = "roadie")]
     OpenRoadie,
-    /// The geometric mark on a faceted, light-refracting fill.
-    Prism,
+    /// The logo's letter mark: the R drawn from cables and racing stripes.
+    ///
+    /// Reads as `"letter"`, with `"prism"` accepted so a config written before
+    /// the artwork changed still parses.
+    #[serde(rename = "letter", alias = "prism")]
+    #[strum(serialize = "letter")]
+    Letter,
 }
 
 impl AppIcon {
     /// Every icon, in the order Settings offers them.
-    pub const ALL: [Self; 2] = [Self::OpenRoadie, Self::Prism];
+    pub const ALL: [Self; 2] = [Self::OpenRoadie, Self::Letter];
 
     /// Whether this is the icon the installed bundle already wears — the one
     /// case a frontend applies by clearing its override rather than by handing

@@ -4,7 +4,10 @@
 <h4 align="right"><a href="../README.md">English</a> | <strong>简体中文</strong> | <a href="README.ja.md">日本語</a> | <a href="README.de.md">Deutsch</a> | <a href="README.fr.md">Français</a> | <a href="README.ko.md">한국어</a></h4>
 
 
-<h1 align="center">OpenRoadie</h1>
+<p align="center">
+    <img src="../design/logo/openroadie-lockup-720.png" width="440" alt="OpenRoadie"/>
+</p>
+
 <p align="center">OpenRoadie is a fork of <a href="https://github.com/AprilNEA/OpenLogi">OpenLogi</a> by @AprilNEA.</p>
 <p align="center"><strong>⚡️ 本地优先的 Logitech Options+ 平替 <br/>通过 HID++ 与 UVC 协议解锁 Logitech 鼠标、键盘与摄像头的完整能力</strong></p>
 

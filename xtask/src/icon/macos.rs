@@ -162,7 +162,7 @@ impl IconPipeline for AppBundle {
 fn document(icon: AppIcon) -> &'static str {
     match icon {
         AppIcon::OpenRoadie => "design/icon/roadie.icon",
-        AppIcon::Prism => "design/icon/roadie-prism.icon",
+        AppIcon::Letter => "design/icon/roadie-letter.icon",
     }
 }
 

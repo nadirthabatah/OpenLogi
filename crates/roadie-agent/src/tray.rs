@@ -63,7 +63,7 @@ thread_local! {
 const fn glyph(icon: AppIcon) -> &'static [u8] {
     match icon {
         AppIcon::OpenRoadie => include_bytes!("../assets/tray-icon@2x.png"),
-        AppIcon::Prism => include_bytes!("../assets/tray-icon-prism@2x.png"),
+        AppIcon::Letter => include_bytes!("../assets/tray-icon-letter@2x.png"),
     }
 }
 
