@@ -207,8 +207,10 @@ slog.
   performs is what confirms one, which is why `openlogi devices` files an
   unopened board under "probably configurable" rather than promising it works.
 - `openlogi via keymap [layer]` — print a whole layer, key by key. Unassigned
-  positions are skipped, because on a matrix read blind they are the large
-  majority and would bury the keys that exist.
+  and pass-through positions are skipped and counted rather than printed: on
+  any layer above the first they are nearly the whole matrix, and listing them
+  would bury the keys that exist. The count at the end means nothing goes
+  missing silently.
 - `openlogi via get <layer> <row> <column>` — one position.
 - `openlogi via set <layer> <row> <column> <key>` — assign a key.
 

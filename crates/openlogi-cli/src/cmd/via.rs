@@ -114,6 +114,11 @@ impl ViaCmd {
 /// decimal. Names are what people say and remember; the numeric forms are what
 /// firmware references print, and refusing either would make someone translate
 /// by hand between two things that mean the same key.
+///
+/// A name wins over the same text read as a number, which matters for the
+/// digits: `1` is the "1" key, not keycode 1. Someone typing it means the key
+/// they can see on their board, and the numeric reading would give them a
+/// pass-through — a key that appears to do nothing.
 fn resolve(argument: &str) -> Result<u16> {
     let text = argument.trim();
     if let Some(keycode) = keycode::parse(text) {
@@ -175,16 +180,35 @@ async fn keymap(attached: &[Attached], args: &KeymapArgs) -> Result<ExitCode> {
         args.rows.saturating_sub(1),
         args.columns.saturating_sub(1)
     );
+    let mut quiet = 0_u32;
+    let mut shown = 0_u32;
     for row in 0..args.rows {
         for column in 0..args.columns {
             let code = session.keycode(args.layer, row, column).await?;
-            // Unassigned positions are the overwhelming majority of a matrix
-            // read blind, and printing them would bury the keys that exist.
-            if code == keycode::NONE {
+            // Unassigned and pass-through positions are the great majority of
+            // a matrix read blind — on any layer above the first, nearly all
+            // of it — and printing them would bury the keys that exist. They
+            // are counted rather than dropped, so nothing goes missing
+            // silently.
+            if code == keycode::NONE || code == keycode::TRANSPARENT {
+                quiet += 1;
                 continue;
             }
+            shown += 1;
             println!("  row {row}, column {column}: {}", keycode::describe(code));
         }
+    }
+    if shown == 0 {
+        println!("  (nothing assigned on this layer)");
+    }
+    println!();
+    println!("{shown} assigned, {quiet} unassigned or passed through to the layer below.");
+    if args.layer == 0 && shown == 0 {
+        println!(
+            "Layer 0 with nothing on it usually means the matrix is larger than the \
+             {} rows by {} columns read here; pass --rows and --columns to widen it.",
+            args.rows, args.columns
+        );
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -257,6 +281,18 @@ mod tests {
         assert_eq!(resolve("0x0068").expect("hex"), 0x0068);
         assert_eq!(resolve("0X0068").expect("upper-case hex"), 0x0068);
         assert_eq!(resolve("104").expect("decimal"), 104);
+    }
+
+    /// A subtle one worth pinning: `1` is the name of the "1" key, not the
+    /// number 1. Someone typing `set 0 0 0 1` means the key they can see on
+    /// their board, and a numeric reading would make it a pass-through
+    /// instead — a key that appears to do nothing.
+    #[test]
+    fn a_name_wins_over_the_same_text_read_as_a_number() {
+        assert_eq!(resolve("1").expect("the 1 key"), 0x001e);
+        assert_eq!(resolve("0").expect("the 0 key"), 0x0027);
+        // Anything with no name still reads as a number.
+        assert_eq!(resolve("200").expect("a number"), 200);
     }
 
     #[test]
