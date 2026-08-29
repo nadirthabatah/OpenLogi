@@ -6650,6 +6650,7 @@ dependencies = [
  "roadie-assets",
  "roadie-camera",
  "roadie-core",
+ "roadie-ddc",
  "roadie-hook",
  "roadie-ipc",
  "roadie-permissions",

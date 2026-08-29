@@ -31,6 +31,10 @@ use roadie_core::config::Lighting;
 use roadie_core::hid::{
     DeviceRoute, Dpi, DpiInfo, LightCommand, ReceiverSelector, SmartShiftStatus, WriteError,
 };
+use roadie_ipc::desk::{
+    DisplayControl, DisplayFailure, DisplayReading, DisplaySettings, DisplaySummary,
+    NetworkLightChange, NetworkLightFailure, NetworkLightSummary,
+};
 use roadie_ipc::{
     AgentClient, AgentSnapshot, ClientKind, ConfigReloadError, Generation, OBSERVE_HOLD,
     Observation, PROTOCOL_VERSION, PairingCommandError, PairingFailure,
@@ -129,6 +133,44 @@ pub enum Command {
     /// auto-disables it once polls stop.
     #[cfg(all(target_os = "macos", debug_assertions))]
     PollEventMonitor(oneshot::Sender<Vec<roadie_ipc::MonitorEvent>>),
+    /// Monitors and Elgato lights. Every one carries a reply channel because
+    /// none of them is fire-and-forget: a panel showing a device's state has
+    /// nothing to show until the device answers, and both writes report what
+    /// the device took rather than what it was asked for.
+    ListDisplays(oneshot::Sender<Vec<DisplaySummary>>),
+    ReadDisplay(
+        String,
+        oneshot::Sender<Result<DisplaySettings, DisplayFailure>>,
+    ),
+    SetDisplay(
+        String,
+        DisplayControl,
+        u16,
+        oneshot::Sender<Result<DisplayReading, DisplayFailure>>,
+    ),
+    ListNetworkLights(oneshot::Sender<Vec<NetworkLightSummary>>),
+    SetNetworkLight(
+        String,
+        NetworkLightChange,
+        oneshot::Sender<Result<NetworkLightSummary, NetworkLightFailure>>,
+    ),
+}
+
+/// How long to let a desk command run before giving up on it.
+///
+/// tarpc's default deadline is ten seconds, which is the right order for a
+/// HID++ write and far too short here: finding Elgato lights means listening
+/// to multicast for three seconds and then reading each light that answered,
+/// and a DDC exchange carries a mandatory wait between its two halves. A
+/// deadline that expires mid-scan looks exactly like "you have no monitors",
+/// which is the one wrong answer worth spending seconds to avoid.
+const DESK_DEADLINE: Duration = Duration::from_secs(45);
+
+/// A context with [`DESK_DEADLINE`] instead of tarpc's default.
+fn desk_context() -> context::Context {
+    let mut ctx = context::current();
+    ctx.deadline = Instant::now() + DESK_DEADLINE;
+    ctx
 }
 
 /// Handle the GUI holds to talk to the agent: a stream of state updates and a
@@ -590,6 +632,27 @@ async fn handle(
         #[cfg(all(target_os = "macos", debug_assertions))]
         Command::PollEventMonitor(reply) => {
             let _ = reply.send(rpc_result(client.poll_event_monitor(ctx).await)?);
+        }
+        Command::ListDisplays(reply) => {
+            let _ = reply.send(rpc_result(client.list_displays(desk_context()).await)?);
+        }
+        Command::ReadDisplay(id, reply) => {
+            let _ = reply.send(rpc_result(client.read_display(desk_context(), id).await)?);
+        }
+        Command::SetDisplay(id, control, value, reply) => {
+            let _ = reply.send(rpc_result(
+                client.set_display(desk_context(), id, control, value).await,
+            )?);
+        }
+        Command::ListNetworkLights(reply) => {
+            let _ = reply.send(rpc_result(
+                client.list_network_lights(desk_context()).await,
+            )?);
+        }
+        Command::SetNetworkLight(id, change, reply) => {
+            let _ = reply.send(rpc_result(
+                client.set_network_light(desk_context(), id, change).await,
+            )?);
         }
     }
     Ok(())

@@ -80,7 +80,7 @@ impl KeyLight {
 
     /// The port it answers on.
     ///
-    /// Nearly always [`PORT`](crate::PORT), but a light is addressed by both
+    /// Nearly always [`crate::PORT`], but a light is addressed by both
     /// halves, and a caller storing a handle to come back to needs the pair.
     #[must_use]
     pub const fn port(&self) -> u16 {
