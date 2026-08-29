@@ -216,52 +216,6 @@ fn via_lists_or_explains_itself() {
     }
 }
 
-/// Patterns that make terminal output worse to listen to than to look at.
-///
-/// This project's accessibility rule is that the command line is a
-/// first-class interface, not a fallback — for someone who cannot see the
-/// screen it is often the only one. That rule is easy to state and easy to
-/// erode: nobody sets out to make output unlistenable, they add a tidy table
-/// or a tick mark and it happens.
-const UNLISTENABLE: &[(&str, &str)] = &[
-    (
-        "(s)",
-        "a screen reader says \"thing open paren s close paren\"; write the word out",
-    ),
-    (
-        "\u{2500}",
-        "box-drawing characters are read out as their names, one per character",
-    ),
-    ("\u{2502}", "box-drawing characters"),
-    ("\u{250c}", "box-drawing characters"),
-    ("\u{2514}", "box-drawing characters"),
-    (
-        "\u{2588}",
-        "block characters are read out one per character",
-    ),
-    (
-        "\u{2713}",
-        "a tick alone carries the meaning; say the word as well",
-    ),
-    ("\u{2714}", "a tick alone carries the meaning"),
-    ("\u{2717}", "a cross alone carries the meaning"),
-    ("\u{2718}", "a cross alone carries the meaning"),
-    ("\u{274c}", "a cross alone carries the meaning"),
-    ("\u{2705}", "a tick alone carries the meaning"),
-];
-
-/// Whether a line is a rule made of repeated punctuation.
-///
-/// Read aloud, `========` is either silence or eight spoken "equals" — never
-/// the section break it looks like.
-fn is_a_drawn_rule(line: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.len() >= 8
-        && trimmed
-            .chars()
-            .all(|character| matches!(character, '=' | '-' | '*' | '_' | '~' | '#'))
-}
-
 /// Everything this project's own commands print has to be worth listening to.
 ///
 /// Scoped to the commands this project authors, which is the same scoping the
@@ -301,22 +255,11 @@ fn nothing_this_project_prints_is_hostile_to_a_screen_reader() {
 
     for arguments in invocations {
         let run = sandbox.run(arguments);
-        let said = run.said();
-        for (pattern, why) in UNLISTENABLE {
-            assert!(
-                !said.contains(pattern),
-                "`openlogi {}` printed {pattern:?} — {why}\n{said}",
-                arguments.join(" ")
-            );
-        }
-        for line in said.lines() {
-            assert!(
-                !is_a_drawn_rule(line),
-                "`openlogi {}` printed a drawn rule, {line:?}, which is read aloud as \
-                 repeated punctuation or as nothing at all\n{said}",
-                arguments.join(" ")
-            );
-        }
+        let what = format!("`openlogi {}`", arguments.join(" "));
+        // The one list, reached through the crate, rather than a copy kept
+        // here. A copy is how the two come to disagree about what the rule is.
+        openlogi_cli::spoken::assert_listenable(&run.said(), &what);
+        openlogi_cli::spoken::assert_agrees(&run.said(), &what);
     }
 }
 
@@ -415,6 +358,57 @@ fn a_layout_can_be_created_listed_and_not_clobbered() {
         .run(&["streamdeck", "example", "streaming"])
         .expect_status(4)
         .expect_says("already exists");
+}
+
+/// A bundle carrying an action that would run a program is refused, and the
+/// refusal has to leave the layouts alone too.
+///
+/// The guard lives in control flow — layouts are restored only inside the
+/// success arm — and control flow is exactly what a later refactor reorders
+/// without noticing. A layout file is a thing people send each other, so a
+/// refused import that had already written half of itself is the failure worth
+/// spending a test on.
+#[test]
+fn a_refused_bundle_import_writes_neither_configuration_nor_layouts() {
+    let sandbox = Sandbox::new("refused-bundle");
+    let bundle = sandbox.path("bundle");
+    let layouts = bundle.join("layouts");
+    std::fs::create_dir_all(&layouts).expect("a bundle to import");
+    std::fs::write(
+        bundle.join("config.toml"),
+        "schema_version = 6\n\
+         \n\
+         [devices]\n\
+         \n\
+         [keyboard.bindings.f13]\n\
+         RunShellCommand = \"wipe\"\n",
+    )
+    .expect("a configuration carrying a risky action");
+    std::fs::write(
+        layouts.join("theirs.toml"),
+        "brightness = 10\n\nkeys = []\n",
+    )
+    .expect("a layout in the bundle");
+
+    sandbox
+        .run(&["profile", "import", &bundle.to_string_lossy()])
+        .expect_status(3)
+        .expect_says("RunShellCommand");
+
+    // Nothing from the bundle may have landed: not the configuration, and not
+    // the layout that travelled beside it.
+    let library = sandbox.path("config/openlogi/layouts/theirs.toml");
+    assert!(
+        !library.exists(),
+        "a refused import left a layout behind at {}",
+        library.display()
+    );
+    let live = sandbox.path("config/openlogi/config.toml");
+    assert!(
+        !live.exists(),
+        "a refused import left a configuration behind at {}",
+        live.display()
+    );
 }
 
 /// A layout is a file someone owns, and editing one key of it must not throw

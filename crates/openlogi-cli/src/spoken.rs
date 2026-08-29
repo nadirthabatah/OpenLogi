@@ -30,8 +30,7 @@ pub fn counted(how_many: usize, one: &str, many: &str) -> String {
 }
 
 /// Patterns that make terminal output worse to hear than to read.
-#[cfg(test)]
-const UNLISTENABLE: &[(&str, &str)] = &[
+pub const UNLISTENABLE: &[(&str, &str)] = &[
     (
         "(s)",
         "a screen reader says \"open paren s close paren\"; use spoken::counted",
@@ -58,6 +57,56 @@ const UNLISTENABLE: &[(&str, &str)] = &[
     ("\u{2705}", "a tick alone carries the meaning"),
 ];
 
+/// Verbs that a singular count in front of them makes ungrammatical.
+///
+/// `counted` gets the noun right and stops there, so "1 action that run a
+/// program ... were accepted" is what a count wedged into the middle of a
+/// sentence gives — correct-looking in the plural case the author tested, wrong
+/// in the singular one they did not. Read aloud it is worse than on the page,
+/// because nothing is scannable: the sentence simply arrives broken.
+///
+/// The fix is always to put the verb before the count, or to fold it into the
+/// noun that `counted` chooses. These patterns are what a singular count
+/// followed by a plural verb looks like.
+const DISAGREEING: &[&str] = &[
+    " that run ",
+    " that type ",
+    " that are ",
+    " that were ",
+    " that have ",
+    " were accepted",
+    " are not ",
+    " have been ",
+    " were found",
+];
+
+/// Fail if a singular count is followed by a plural verb.
+///
+/// Only the "1 " case can be wrong this way, so that is all this looks for.
+///
+/// # Panics
+///
+/// Whenever a line starts a count at one and then uses a plural verb.
+pub fn assert_agrees(text: &str, what: &str) {
+    for line in text.lines() {
+        let Some(at) = line.find("1 ") else {
+            continue;
+        };
+        // "11 devices" and "21 devices" are not the singular case.
+        if line[..at].ends_with(|c: char| c.is_ascii_digit()) {
+            continue;
+        }
+        let rest = &line[at..];
+        for pattern in DISAGREEING {
+            assert!(
+                !rest.contains(pattern),
+                "{what} says {pattern:?} after a count of one, which reads as \
+                 a broken sentence: {line}"
+            );
+        }
+    }
+}
+
 /// Fail if `text` carries anything hostile to a screen reader.
 ///
 /// `what` names what produced it, so a failure says which output to fix.
@@ -67,7 +116,6 @@ const UNLISTENABLE: &[(&str, &str)] = &[
 /// Whenever `text` carries such a pattern. Panicking is the point: this is a
 /// test assertion, and the message names the pattern, why it matters, and the
 /// output it came from.
-#[cfg(test)]
 pub fn assert_listenable(text: &str, what: &str) {
     for (pattern, why) in UNLISTENABLE {
         assert!(

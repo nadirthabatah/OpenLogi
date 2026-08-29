@@ -376,14 +376,13 @@ fn linux_access(hidraw: &Hidraw) -> Verdict {
             fix: udev_fix(&hidraw.blocked_vendors),
         };
     }
-    Verdict::Fine(format!(
-        "all {} can be opened",
-        counted(
-            hidraw.present,
-            "attached HID device",
-            "attached HID devices"
-        )
-    ))
+    // Not "all 1 attached HID device", which is what a count alone gives for
+    // the commonest case on a desk with one thing plugged in.
+    Verdict::Fine(if hidraw.present == 1 {
+        "the attached HID device can be opened".to_owned()
+    } else {
+        format!("all {} attached HID devices can be opened", hidraw.present)
+    })
 }
 
 /// The steps that give this user access to the devices it cannot open.
@@ -402,11 +401,14 @@ fn udev_fix(blocked_vendors: &[u16]) -> Vec<String> {
     let lines = udev_lines(blocked_vendors);
     if !lines.is_empty() {
         steps.push(format!(
-            "Those rules name the vendors this program drives, and the {} you \
-             cannot open are not among them. Put {} in \
-             /etc/udev/rules.d/71-openlogi-local.rules — a separate file, so upgrading \
-             this program does not overwrite it:",
-            counted(lines.len(), "device", "devices"),
+            "Those rules name the vendors this program drives, and the {} not among \
+             them. Put {} in /etc/udev/rules.d/71-openlogi-local.rules — a separate \
+             file, so upgrading this program does not overwrite it:",
+            counted(
+                lines.len(),
+                "device you cannot open is",
+                "devices you cannot open are"
+            ),
             if lines.len() == 1 {
                 "this line".to_owned()
             } else {
@@ -1130,7 +1132,9 @@ mod tests {
                 .iter()
                 .filter(|check| matches!(check.verdict, Verdict::Problem { .. }))
                 .count();
-            crate::spoken::assert_listenable(&render(&checks, problems), what);
+            let text = render(&checks, problems);
+            crate::spoken::assert_listenable(&text, what);
+            crate::spoken::assert_agrees(&text, what);
         }
     }
 

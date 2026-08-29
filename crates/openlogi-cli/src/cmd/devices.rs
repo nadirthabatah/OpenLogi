@@ -549,6 +549,7 @@ mod tests {
             (nothing_found(), "the nothing-found message"),
         ] {
             crate::spoken::assert_listenable(&text, what);
+            crate::spoken::assert_agrees(&text, what);
         }
     }
 

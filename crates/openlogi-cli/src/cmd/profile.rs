@@ -124,8 +124,11 @@ impl ProfileCmd {
                             }
                         }
                         if !imported.accepted.is_empty() {
+                            // The verb leads, so nothing after the count has to
+                            // agree with it: "1 action ... were accepted" is what
+                            // a count wedged into the middle of a sentence gives.
                             println!(
-                                "  {} that run a program or type text were accepted:",
+                                "  accepted {} that would run a program or type text:",
                                 counted(imported.accepted.len(), "action", "actions")
                             );
                             for finding in &imported.accepted {
