@@ -40,8 +40,10 @@ pub mod device;
 pub mod packet;
 pub mod risk;
 mod tables;
+pub mod transaction;
 
 pub use config::{ConfigItem, ConfigSet, Descriptor};
 pub use device::{Model, VENDOR_ID, find};
 pub use packet::{Packet, ProtocolError, Request, Response, Sequence};
 pub use risk::{Acknowledged, Risk};
+pub use transaction::{Plan, PlanError, plan_write};
