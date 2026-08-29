@@ -156,6 +156,15 @@ next `cargo check` moves it again. Let the lock pick up the genuinely new
 packages, then `cargo update -p gpui --precise cc053a4a...`, then check that
 `git diff Cargo.lock` shows only the new crates.
 
+**A mutation can survive because the data happens to be sorted.** Swapping
+"take the newest applicable firmware table" for "take the last one listed"
+changed nothing in `roadie-scarlett`, because the tables are listed oldest
+first. That is a fragility rather than an equivalence: a table added out of
+order would have selected the wrong layout silently. The fix is a test with
+deliberately jumbled data, which is the only thing that can tell the two apart
+— and separately an assertion that the real data *is* ordered, which the code
+does not rely on but which catches the mistake.
+
 **Clippy reports as warnings; `-D warnings` makes them failures.** Grepping
 output for `^error` hides every one of them. Check the exit code — and not
 after a pipe, where `$?` is the last command's status, not clippy's.
@@ -367,12 +376,53 @@ wrong one morning. Multicast is how the light stays findable without anyone
 maintaining that — and it is also why a guest network or a VPN can hide a light
 that is working perfectly.
 
-### 6.7 After the lights — this is the part still to do
+### 6.7 Scarlett, the protocol half
 
-Audio interfaces starting with the Focusrite Scarlett family. They are
-per-vendor USB work with no standard underneath, so they cost the most per
-device, and Nadir asked about them directly. Then headsets, MIDI pads, RGB on
-other brands, and other vendors' mice and keyboards.
+`roadie-scarlett` is the wire format and the device tables, with no I/O — the
+shape `roadie-ddc` landed in before `roadie-display` followed it. A Scarlett's
+audio is standard USB audio class and needs nothing from us; what needs a
+protocol is everything around it.
+
+**The licensing position, because it will be asked about.** Focusrite publishes
+no specification. The authoritative description is the Linux kernel's
+`mixer_scarlett2.c` by Geoffrey D. Bennett, which is GPL-2.0 while this project
+is MIT/Apache-2.0. What was taken is facts — opcodes, byte offsets, field
+widths, and which model uses which table. A register offset is a fact about a
+piece of hardware in the way a pinout is; it is not authored expression. No
+code, comment, structure or naming was reproduced. This is the same footing
+`roadie-ddc` stands on with `ddcutil`, which is also GPL. Nadir approved this
+explicitly. The crate documentation states it in full, deliberately, so that an
+auditor finds it in the source rather than in a commit message.
+
+Three things in it are worth keeping:
+
+**The start-up exception nearly ate the sequence check.** Fetching a reply is a
+separate transfer from sending the request, so a stale reply is a real, intact
+answer to an older question and only the echoed sequence number tells them
+apart. Start-up is the exception: the request carrying sequence 1 is answered
+with 0. Phrased as a rule about the number, that exception collides *exactly*
+with the failure the check exists to catch — every session's second request
+carries 1, and the leftover reply from its first carries 0. The first version
+had that bug and its own test caught it. Tied to the two commands that only
+ever run at start-up, it cannot happen.
+
+**Phantom power is one bit in a shared byte.** Writing the byte outright
+switches 48 V off on every other input pair, silently, while the panel shows
+only the pair that was asked for. So a bit-sized setting is planned as a
+read-modify-write, and `apply_bit` exists as its own function to be tested
+without a device.
+
+**The gate is as narrow as the monitor one.** Only switching phantom power
+*on* is risky: off is how somebody makes the interface safe again, and a
+confirmation in front of the safe direction is an obstacle in the wrong place.
+The acknowledgement names the pair it was given for, so agreeing once cannot be
+spent on every input.
+
+### 6.8 After Scarlett — this is the part still to do
+
+The Scarlett host layer: a USB control-transfer backend, then the CLI and MCP
+surfaces. Then headsets, MIDI pads, RGB on other brands, and other vendors'
+mice and keyboards.
 
 ## 7. What a session can do with nobody at the desk
 
