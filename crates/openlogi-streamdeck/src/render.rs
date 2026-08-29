@@ -82,9 +82,8 @@ pub fn key_image(model: &Model, picture: &DynamicImage) -> Result<Vec<u8>, Proto
 fn fit(picture: &DynamicImage, size: u32) -> DynamicImage {
     // `resize` preserves the aspect ratio and fits within the bounds, unlike
     // `resize_exact`, which stretches to them.
-    let scaled = picture
-        .resize(size, size, image::imageops::FilterType::Triangle)
-        .to_rgb8();
+    let scaled =
+        flatten_onto_black(&picture.resize(size, size, image::imageops::FilterType::Triangle));
     if scaled.width() == size && scaled.height() == size {
         return DynamicImage::ImageRgb8(scaled);
     }
@@ -95,6 +94,34 @@ fn fit(picture: &DynamicImage, size: u32) -> DynamicImage {
     let y = (size - scaled.height()) / 2;
     image::imageops::replace(&mut canvas, &scaled, i64::from(x), i64::from(y));
     DynamicImage::ImageRgb8(canvas)
+}
+
+/// Composite a picture onto black, rather than discarding what it says about
+/// transparency.
+///
+/// `to_rgb8` drops the alpha channel and keeps the colour underneath it. For
+/// an icon that is the usual case rather than an unusual one — icon sets are
+/// overwhelmingly PNGs with a transparent surround — and what is stored under
+/// full transparency is whatever the tool that exported it happened to leave
+/// there. Often black, so it looks right by accident; often white, in which
+/// case the key comes out a solid white block with the artwork lost in it.
+///
+/// Black because that is what the key is: the surround of every other picture
+/// this module produces, and what a cleared key shows.
+fn flatten_onto_black(picture: &DynamicImage) -> RgbImage {
+    let source = picture.to_rgba8();
+    let mut flattened = RgbImage::new(source.width(), source.height());
+    for (x, y, pixel) in source.enumerate_pixels() {
+        let [red, green, blue, alpha] = pixel.0;
+        let over = |channel: u8| {
+            // Rounded rather than truncated: an eighth of a shade per channel
+            // is invisible, but truncation biases every blend towards black
+            // and takes the edge off antialiased artwork.
+            u8::try_from((u32::from(channel) * u32::from(alpha) + 127) / 255).unwrap_or(u8::MAX)
+        };
+        flattened.put_pixel(x, y, Rgb([over(red), over(green), over(blue)]));
+    }
+    flattened
 }
 
 /// Blank rows between lines of a label, in glyph-scale units.
@@ -288,9 +315,11 @@ pub fn solid(model: &Model, red: u8, green: u8, blue: u8) -> Result<DynamicImage
 #[cfg(test)]
 mod tests {
 
-    use image::{DynamicImage, GenericImageView as _, ImageEncoder as _, Rgb, RgbImage};
+    use image::{
+        DynamicImage, GenericImageView as _, ImageEncoder as _, Rgb, RgbImage, Rgba, RgbaImage,
+    };
 
-    use super::{key_image, solid};
+    use super::{flatten_onto_black, key_image, solid};
     use crate::ProtocolError;
     use crate::model::{ELGATO_VENDOR_ID, identify};
 
@@ -637,5 +666,103 @@ mod tests {
             1,
             "the final packet is flagged last"
         );
+    }
+
+    /// An icon is almost always a PNG with a transparent surround, and what is
+    /// stored *under* full transparency is whatever the exporting tool left
+    /// there. Dropping the alpha channel keeps that colour, so an icon whose
+    /// surround is transparent white came out as a solid white key with the
+    /// artwork lost in it.
+    #[test]
+    fn a_transparent_surround_becomes_the_key_colour_not_what_is_under_it() {
+        let transparent_white =
+            DynamicImage::ImageRgba8(RgbaImage::from_pixel(8, 8, Rgba([255, 255, 255, 0])));
+        let flattened = flatten_onto_black(&transparent_white);
+        for pixel in flattened.pixels() {
+            assert_eq!(
+                pixel.0,
+                [0, 0, 0],
+                "transparent white must composite to black"
+            );
+        }
+    }
+
+    /// And an opaque picture must come through untouched, or every icon that
+    /// was fine before is now darker than the person drew it.
+    #[test]
+    fn an_opaque_picture_is_unchanged() {
+        let opaque =
+            DynamicImage::ImageRgba8(RgbaImage::from_pixel(8, 8, Rgba([200, 100, 50, 255])));
+        let flattened = flatten_onto_black(&opaque);
+        for pixel in flattened.pixels() {
+            assert_eq!(pixel.0, [200, 100, 50]);
+        }
+    }
+
+    /// Half transparent is half the colour, rounded rather than truncated:
+    /// truncation biases every blend towards black and takes the edge off
+    /// antialiased artwork.
+    #[test]
+    fn a_half_transparent_pixel_is_half_the_colour() {
+        let half =
+            DynamicImage::ImageRgba8(RgbaImage::from_pixel(1, 1, Rgba([255, 255, 255, 128])));
+        assert_eq!(flatten_onto_black(&half).get_pixel(0, 0).0, [128, 128, 128]);
+    }
+
+    /// The whole path, through the encoder a device actually receives.
+    #[test]
+    fn a_fully_transparent_icon_reaches_the_key_as_black() {
+        let model = identify(ELGATO_VENDOR_ID, 0x0080).expect("the MK.2 is catalogued");
+        let transparent_white =
+            DynamicImage::ImageRgba8(RgbaImage::from_pixel(72, 72, Rgba([255, 255, 255, 0])));
+        let encoded = key_image(model, &transparent_white).expect("encodes");
+        let decoded = image::load_from_memory(&encoded)
+            .expect("decodes")
+            .to_rgb8();
+        let centre = decoded
+            .get_pixel(decoded.width() / 2, decoded.height() / 2)
+            .0;
+        assert!(
+            centre.iter().all(|channel| *channel < 32),
+            "a transparent icon reached the key as {centre:?}, not black"
+        );
+    }
+
+    /// A picture with a degenerate shape must come back as a key, not a panic.
+    ///
+    /// The centring arithmetic subtracts the scaled size from the key size, so
+    /// anything that scaled *larger* than the key would underflow and abort
+    /// the program. Aspect ratios this extreme also round one dimension to
+    /// zero, which is the other way an image pipeline falls over. Someone will
+    /// point this at a banner, a 1-pixel spacer, or a file that is not the
+    /// shape they think it is, and getting a black key beats getting a crash.
+    #[test]
+    fn a_picture_of_any_shape_produces_a_key_rather_than_a_panic() {
+        let mk2 = model(0x0080);
+        for (width, height) in [
+            (1_u32, 1_u32),
+            (10_000, 1),
+            (1, 10_000),
+            (3000, 2),
+            (2, 3000),
+            (1, 72),
+            (72, 1),
+        ] {
+            let picture = DynamicImage::ImageRgba8(RgbaImage::new(width, height));
+            let encoded = key_image(mk2, &picture)
+                .unwrap_or_else(|error| panic!("{width}x{height} failed: {error}"));
+            assert!(
+                !encoded.is_empty(),
+                "{width}x{height} encoded to nothing at all"
+            );
+            // Still a JPEG of the key's own size, not a picture of the shape
+            // that went in.
+            let decoded = image::load_from_memory(&encoded).expect("a JPEG comes back");
+            assert_eq!(
+                (decoded.width(), decoded.height()),
+                (72, 72),
+                "{width}x{height} did not come back as a key-sized image"
+            );
+        }
     }
 }

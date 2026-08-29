@@ -251,7 +251,7 @@ pub fn decode_key_states(model: &Model, report: &[u8]) -> Result<KeyStates, Prot
 mod tests {
     use super::{Brightness, KeyAction, KeyStates, decode_key_states, reset, set_brightness};
     use crate::ProtocolError;
-    use crate::model::{ELGATO_VENDOR_ID, identify};
+    use crate::model::{ELGATO_VENDOR_ID, MODELS, identify};
 
     /// The MK.2: gen 2, 15 keys, reported left-to-right.
     fn mk2() -> &'static crate::model::Model {
@@ -429,5 +429,71 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert_eq!((events[0].key, events[0].action), (1, KeyAction::Released));
         assert_eq!((events[1].key, events[1].action), (5, KeyAction::Pressed));
+    }
+
+    /// Arbitrary bytes from a device must never panic the decoder.
+    ///
+    /// This is the closest thing to hardware testing available here. A real
+    /// Stream Deck is the one thing this project cannot get its hands on, so
+    /// the next best assurance is to assume it sends anything at all — a
+    /// truncated report, a foreign report id, a burst of noise from a device
+    /// being unplugged mid-transfer — and require an error rather than a
+    /// crash. A panic here takes down the process that was watching for key
+    /// presses, which on this project's own terms is someone's macro pad
+    /// going dead mid-use.
+    ///
+    /// Deterministic rather than randomised: a fuzz test that finds a crash
+    /// only on some runs is a fuzz test nobody can act on. The generator is a
+    /// plain LCG so a failure names a seed that reproduces it.
+    #[test]
+    fn no_report_of_any_shape_panics_the_decoder() {
+        let mut state = 0x2545_F491_4F6C_DD1D_u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+
+        for model in MODELS {
+            for case in 0..20_000_u32 {
+                let len = (next() % 600) as usize;
+                let mut report = vec![0_u8; len];
+                for byte in &mut report {
+                    *byte = (next() & 0xff) as u8;
+                }
+                // Whatever comes back, it must be a value or an error, and the
+                // states it reports must be self-consistent: nothing may claim
+                // more keys than the model has.
+                if let Ok(states) = decode_key_states(model, &report) {
+                    assert_eq!(
+                        states.len(),
+                        model.key_count(),
+                        "{} case {case}: decoded {} key states for a {}-key model",
+                        model.name,
+                        states.len(),
+                        model.key_count()
+                    );
+                    // And reading every key must stay inside the buffer.
+                    for index in 0..states.len() {
+                        let _ = states.is_pressed(index);
+                    }
+                    // Diffing against a fresh state must not panic either:
+                    // that is the path a watcher runs on every report.
+                    let _ = states.changes_since(&KeyStates::released(model));
+                }
+            }
+        }
+    }
+
+    /// The same for a key index past the end, which a diff could produce if a
+    /// model's key count and a report ever disagreed.
+    #[test]
+    fn asking_about_a_key_that_does_not_exist_is_false_rather_than_a_panic() {
+        for model in MODELS {
+            let states = KeyStates::released(model);
+            assert!(!states.is_pressed(model.key_count()));
+            assert!(!states.is_pressed(u16::MAX));
+        }
     }
 }

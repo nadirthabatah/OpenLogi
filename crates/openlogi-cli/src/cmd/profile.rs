@@ -8,6 +8,7 @@ use clap::{Args, Subcommand};
 
 use crate::bundle;
 use crate::profile;
+use crate::spoken::counted;
 
 /// Exit status for "the profile was refused because it carries actions that
 /// would run something" — distinct from a read or parse failure, so a script
@@ -77,8 +78,8 @@ impl ProfileCmd {
                     println!("  no actions that would run a program or type text");
                 } else {
                     println!(
-                        "  {} action(s) that would run a program or type text:",
-                        findings.len()
+                        "  {} that would run a program or type text:",
+                        counted(findings.len(), "action", "actions")
                     );
                     for finding in &findings {
                         println!("    {finding}");
@@ -105,8 +106,8 @@ impl ProfileCmd {
                         match restore_layouts(&args.file) {
                             Ok(names) if !names.is_empty() => {
                                 println!(
-                                    "  {} layout(s) restored: {}",
-                                    names.len(),
+                                    "  {} restored: {}",
+                                    counted(names.len(), "layout", "layouts"),
                                     names.join(", ")
                                 );
                             }
@@ -123,9 +124,12 @@ impl ProfileCmd {
                             }
                         }
                         if !imported.accepted.is_empty() {
+                            // The verb leads, so nothing after the count has to
+                            // agree with it: "1 action ... were accepted" is what
+                            // a count wedged into the middle of a sentence gives.
                             println!(
-                                "  {} action(s) that run a program or type text were accepted:",
-                                imported.accepted.len()
+                                "  accepted {} that would run a program or type text:",
+                                counted(imported.accepted.len(), "action", "actions")
                             );
                             for finding in &imported.accepted {
                                 println!("    {finding}");
@@ -176,7 +180,7 @@ fn export(named: &Path) -> Result<ExitCode> {
         );
         println!(
             "Apply it on another machine with: openlogi profile import {}",
-            named.display()
+            crate::spoken::shell_argument(&named.to_string_lossy())
         );
         return Ok(ExitCode::SUCCESS);
     }
@@ -185,19 +189,55 @@ fn export(named: &Path) -> Result<ExitCode> {
         .with_context(|| format!("failed to create {}", named.display()))?;
     profile::export(&bundle::config_in(named))?;
     let library = crate::cmd::streamdeck::layout_library()?;
-    let layouts = bundle::gather_layouts(&library, named)?;
+    let gathered = bundle::gather_layouts(&library, named)?;
 
     println!("setup written to {}", named.display());
     println!("  configuration: config.toml");
-    if layouts.is_empty() {
+    if gathered.carried.is_empty() {
         println!("  no saved layouts to carry (openlogi streamdeck layouts lists them)");
     } else {
-        println!("  {} layout(s): {}", layouts.len(), layouts.join(", "));
+        println!(
+            "  {}: {}",
+            counted(gathered.carried.len(), "layout", "layouts"),
+            gathered.carried.join(", ")
+        );
+    }
+    // A linked folder is not followed, so its contents did not travel. Said,
+    // because the alternative is discovering it as blank keys on the machine
+    // the bundle was carried to — with the bundle itself looking complete.
+    if !gathered.skipped_links.is_empty() {
+        println!(
+            "  {} not followed:",
+            counted(
+                gathered.skipped_links.len(),
+                "linked folder inside your layouts folder was",
+                "linked folders inside your layouts folder were"
+            )
+        );
+        for link in &gathered.skipped_links {
+            println!("    {}", link.display());
+        }
+        println!(
+            "  Each points somewhere else on this machine, so nothing inside them \
+             travelled. Copy what should into the layouts folder itself."
+        );
+    }
+    // Exporting again over an earlier bundle copies in without deleting, so a
+    // layout removed since is still in that folder. Said out loud rather than
+    // removed: this is a path the person named, and quietly deleting inside it
+    // is not a risk worth taking for tidiness.
+    if !gathered.left_over.is_empty() {
+        println!(
+            "  also still in that folder from an earlier export, and no longer in your \
+             library: {}",
+            gathered.left_over.join(", ")
+        );
+        println!("  delete those files yourself if you do not want them carried.");
     }
     println!(
         "Copy the whole folder to another machine and apply it with: \
          openlogi profile import {}",
-        named.display()
+        crate::spoken::shell_argument(&named.to_string_lossy())
     );
     Ok(ExitCode::SUCCESS)
 }
@@ -209,4 +249,50 @@ fn restore_layouts(named: &Path) -> Result<Vec<String>> {
     }
     let library = crate::cmd::streamdeck::layout_library()?;
     bundle::restore_layouts(named, &library)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::profile_file;
+
+    /// Where the configuration lives decides what `import` reads and what
+    /// `inspect` reports. Getting it wrong reads the wrong file, or reports a
+    /// path that is not the one that was applied — and both look like the
+    /// command worked.
+    #[test]
+    fn a_toml_path_is_itself_the_configuration() {
+        assert_eq!(
+            profile_file(Path::new("setup.toml")),
+            PathBuf::from("setup.toml")
+        );
+        assert_eq!(
+            profile_file(Path::new("/backups/mine.TOML")),
+            PathBuf::from("/backups/mine.TOML"),
+            "the extension is matched whatever its case, as everywhere else"
+        );
+    }
+
+    #[test]
+    fn any_other_path_keeps_its_configuration_inside_the_bundle() {
+        assert_eq!(
+            profile_file(Path::new("my-setup")),
+            PathBuf::from("my-setup/config.toml")
+        );
+        assert_eq!(
+            profile_file(Path::new("/backups/desk")),
+            PathBuf::from("/backups/desk/config.toml")
+        );
+    }
+
+    /// A trailing separator is how a shell completes a directory name, so it
+    /// arrives this way often. It must not change what the path means.
+    #[test]
+    fn a_trailing_separator_still_names_a_bundle() {
+        assert_eq!(
+            profile_file(Path::new("my-setup/")),
+            PathBuf::from("my-setup/config.toml")
+        );
+    }
 }

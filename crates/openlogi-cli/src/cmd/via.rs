@@ -13,6 +13,8 @@ use clap::{Args, Subcommand};
 use openlogi_hid::via::{self, Attached, Session};
 use openlogi_via::keycode;
 
+use crate::spoken::counted;
+
 /// Exit status for "the scan succeeded, but no VIA device is attached".
 const NOTHING_FOUND: u8 = 2;
 
@@ -161,9 +163,9 @@ async fn list(attached: &[Attached]) -> Result<ExitCode> {
         // rather than fatal: one unresponsive board should not hide the rest.
         match Session::open(device).await {
             Ok(session) => println!(
-                "    speaks VIA protocol {}, with {} keymap layer(s)",
+                "    speaks VIA protocol {}, with {}",
                 session.protocol(),
-                session.layers()
+                counted(session.layers().into(), "keymap layer", "keymap layers")
             ),
             Err(error) => println!("    did not answer as a VIA device: {error}"),
         }
@@ -173,18 +175,29 @@ async fn list(attached: &[Attached]) -> Result<ExitCode> {
 
 /// `openlogi via keymap`.
 async fn keymap(attached: &[Attached], args: &KeymapArgs) -> Result<ExitCode> {
+    let (rows, rows_capped) = via::scan_edge(args.rows);
+    let (columns, columns_capped) = via::scan_edge(args.columns);
+    if rows_capped || columns_capped {
+        // Said before the read, not after: it takes a moment per position and
+        // someone who asked for more should know now why they are not getting
+        // it, rather than after waiting.
+        println!(
+            "Reading {rows} rows by {columns} columns; more than that was asked for and \
+             every real keyboard matrix is smaller."
+        );
+    }
     let mut session = open_first(attached).await?;
     println!(
         "Layer {} of {} (rows 0 to {}, columns 0 to {}):",
         args.layer,
         session.layers(),
-        args.rows.saturating_sub(1),
-        args.columns.saturating_sub(1)
+        rows.saturating_sub(1),
+        columns.saturating_sub(1)
     );
     let mut quiet = 0_u32;
     let mut shown = 0_u32;
-    for row in 0..args.rows {
-        for column in 0..args.columns {
+    for row in 0..rows {
+        for column in 0..columns {
             let code = session.keycode(args.layer, row, column).await?;
             // Unassigned and pass-through positions are the great majority of
             // a matrix read blind — on any layer above the first, nearly all
@@ -207,8 +220,8 @@ async fn keymap(attached: &[Attached], args: &KeymapArgs) -> Result<ExitCode> {
     if args.layer == 0 && shown == 0 {
         println!(
             "Layer 0 with nothing on it usually means the matrix is larger than the \
-             {} rows by {} columns read here; pass --rows and --columns to widen it.",
-            args.rows, args.columns
+             {rows} rows by {columns} columns read here; pass --rows and --columns to \
+             widen it."
         );
     }
     Ok(ExitCode::SUCCESS)

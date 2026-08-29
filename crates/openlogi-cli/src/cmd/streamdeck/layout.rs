@@ -12,13 +12,15 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+pub mod edit;
+
 use openlogi_core::binding::Action;
 use openlogi_streamdeck::model::Model;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// A deck layout as written in a file.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Layout {
     /// Key screen brightness, as a percentage. Left alone when absent.
@@ -75,6 +77,12 @@ pub enum LayoutError {
     DuplicateKey {
         /// The key claimed twice.
         index: u16,
+    },
+    /// The layout could not be written back out.
+    #[error("the layout could not be written back as TOML: {detail}")]
+    Unwritable {
+        /// What the serializer reported.
+        detail: String,
     },
     /// A key the attached model does not have.
     #[error("key {index} does not exist on the {model}, which has keys 0 to {last}")]

@@ -20,6 +20,9 @@ use clap::Args;
 use openlogi_catalog::{Identity, Peripheral, Support};
 use openlogi_device_registry::receiver::ReceiverBrand;
 
+use crate::spoken::counted;
+use serde_json::{Value, json};
+
 /// Exit status for "the scan succeeded and found nothing at all".
 const NOTHING_FOUND: u8 = 2;
 
@@ -32,6 +35,13 @@ pub struct DevicesArgs {
     /// "why is it not in the list".
     #[arg(long)]
     pub supported: bool,
+    /// Print machine-readable JSON instead of prose.
+    ///
+    /// The same rendering the MCP `list_peripherals` tool returns, so a script
+    /// and an assistant looking at the same desk cannot be told different
+    /// things.
+    #[arg(long)]
+    pub json: bool,
 }
 
 /// Survey every peripheral attached and say what can be done with each.
@@ -49,6 +59,18 @@ pub async fn run(args: DevicesArgs) -> Result<ExitCode> {
             .into_iter()
             .map(camera_peripheral),
     );
+
+    if args.json {
+        // Emptiness is data in JSON, not a message: a consumer branches on the
+        // arrays, and a "nothing found" sentence would only be something to
+        // strip. The exit status still distinguishes the two cases.
+        println!("{}", report_json(&found, args.supported));
+        return Ok(if found.is_empty() {
+            ExitCode::from(NOTHING_FOUND)
+        } else {
+            ExitCode::SUCCESS
+        });
+    }
 
     if found.is_empty() {
         print!("{}", nothing_found());
@@ -99,6 +121,101 @@ const fn receiver_name(brand: ReceiverBrand) -> &'static str {
     }
 }
 
+/// One peripheral as JSON, for `--json` and for the MCP tool.
+///
+/// Built as a map rather than a `json!` literal that is then reopened: the
+/// fields differ by support kind, and reaching back into a built value to add
+/// them means asserting it is still an object, which is a panic waiting for
+/// whoever edits the literal above it.
+#[must_use]
+pub fn as_json(found: &Peripheral) -> Value {
+    let mut entry = serde_json::Map::new();
+    entry.insert("name".to_owned(), json!(found.identity.describe()));
+    entry.insert(
+        "vendor_id".to_owned(),
+        json!(format!("{:04x}", found.identity.vendor_id)),
+    );
+    entry.insert(
+        "product_id".to_owned(),
+        json!(format!("{:04x}", found.identity.product_id)),
+    );
+    entry.insert(
+        "configurable".to_owned(),
+        json!(found.support.is_configurable()),
+    );
+    if let Some(serial) = &found.identity.serial_number {
+        entry.insert("serial".to_owned(), json!(serial));
+    }
+    match &found.support {
+        Support::Driver { driver, model } => {
+            entry.insert("driver".to_owned(), json!(driver.id()));
+            entry.insert("controls".to_owned(), json!(driver.what_it_configures()));
+            entry.insert("command".to_owned(), json!(driver.command()));
+            if let Some(model) = model {
+                entry.insert("model".to_owned(), json!(model));
+            }
+        }
+        Support::Candidate { driver, needs } => {
+            entry.insert("likely_driver".to_owned(), json!(driver.id()));
+            entry.insert(
+                "note".to_owned(),
+                json!(format!(
+                    "Attached, and it looks like something the {} driver handles, but \
+                     that is not confirmed without {needs}. Say it is probably \
+                     supported rather than that it is.",
+                    driver.id()
+                )),
+            );
+        }
+        Support::Receiver(_) => {
+            entry.insert("kind".to_owned(), json!("wireless receiver"));
+            entry.insert(
+                "note".to_owned(),
+                json!(
+                    "A receiver, not a peripheral. The devices paired to it appear \
+                     separately; use list_devices for those."
+                ),
+            );
+        }
+        Support::Unsupported => {
+            entry.insert(
+                "note".to_owned(),
+                json!(
+                    "Attached, but no driver in this build configures it. It is \
+                     present — say so — and the vendor and product ids above are \
+                     what a device-support request needs."
+                ),
+            );
+        }
+    }
+    Value::Object(entry)
+}
+
+/// The whole report as JSON.
+///
+/// `--supported` filters the list, and the totals are of everything found
+/// either way — a shorter list must not read as a smaller desk to a script
+/// any more than it should to a person.
+#[must_use]
+pub fn report_json(found: &[Peripheral], filtered: bool) -> String {
+    let shown: Vec<&Peripheral> = found
+        .iter()
+        .filter(|found| !filtered || found.support.is_configurable())
+        .collect();
+    let document = json!({
+        "peripherals": shown.iter().map(|found| as_json(found)).collect::<Vec<_>>(),
+        "total": found.len(),
+        "configurable": found
+            .iter()
+            .filter(|found| found.support.is_configurable())
+            .count(),
+        "filtered": filtered,
+    });
+    serde_json::to_string_pretty(&document).unwrap_or_else(|_| {
+        r#"{"error":"the device list could not be rendered as JSON"}"#.to_owned()
+    })
+}
+
 /// The whole report, as the text a person receives.
 ///
 /// `filtered` reflects `--supported`: the unconfigurable devices are left out,
@@ -124,13 +241,15 @@ pub fn report(found: &[Peripheral], filtered: bool) -> String {
     if filtered {
         let _ = writeln!(
             out,
-            "{count} of {total} attached device(s) can be configured by this build. \
-             Run without --supported to see the rest."
+            "{count} of {} can be configured by this build. Run without --supported to \
+             see the rest.",
+            counted(total, "attached device", "attached devices")
         );
     } else {
         let _ = writeln!(
             out,
-            "{count} of {total} attached device(s) can be configured by this build."
+            "{count} of {} can be configured by this build.",
+            counted(total, "attached device", "attached devices")
         );
     }
     out
@@ -204,7 +323,7 @@ fn write_receivers(out: &mut String, found: &[Peripheral]) {
         );
         let _ = writeln!(
             out,
-            "    the devices paired to it are listed in their own right"
+            "    the mice and keyboards paired to it: openlogi list"
         );
     }
     let _ = writeln!(out);
@@ -239,7 +358,7 @@ mod tests {
     use openlogi_catalog::{Driver, Identity, Peripheral, Support};
     use openlogi_device_registry::receiver::ReceiverBrand;
 
-    use super::{nothing_found, report};
+    use super::{nothing_found, report, report_json};
 
     fn named(name: &str, support: Support) -> Peripheral {
         Peripheral {
@@ -294,7 +413,7 @@ mod tests {
         let text = report(&[mouse(), interface()], true);
         assert!(!text.contains("Scarlett 2i2"), "{text}");
         assert!(
-            text.contains("1 of 2 attached device(s)"),
+            text.contains("1 of 2 attached devices"),
             "a filtered list must not read as a smaller desk: {text}"
         );
         assert!(text.contains("--supported"), "{text}");
@@ -308,7 +427,12 @@ mod tests {
         let text = report(&[receiver], false);
         assert!(text.contains("Unifying receiver"), "{text}");
         assert!(!text.contains("Detected, not configurable"), "{text}");
-        assert!(text.contains("paired to it"), "{text}");
+        // It has to name the command that actually lists them. Whether a
+        // paired device gets its own HID node is platform-dependent — on Linux
+        // `hid-logitech-dj` makes one, elsewhere it does not — so telling
+        // someone they appear "in their own right" here is true on one
+        // platform and a wild goose chase on the others.
+        assert!(text.contains("openlogi list"), "{text}");
     }
 
     /// Every branded receiver has to render as words. `Debug` would too, which
@@ -333,7 +457,7 @@ mod tests {
         let text = report(&[interface()], false);
         assert!(text.contains("Configurable now (0)"), "{text}");
         assert!(text.contains("(none)"), "{text}");
-        assert!(text.contains("0 of 1 attached device(s)"), "{text}");
+        assert!(text.contains("0 of 1 attached device"), "{text}");
     }
 
     /// "Nothing found" on Linux almost always means permissions. Saying only
@@ -397,6 +521,80 @@ mod tests {
             !text.contains("Detected, not configurable"),
             "a candidate is not a refusal: {text}"
         );
+    }
+
+    /// The sweep the end-to-end tests cannot do. On a machine with an empty
+    /// desk — every CI runner without USB, and this project's whole
+    /// development environment — the populated report is never printed, so
+    /// running the program and reading its output would check none of it.
+    #[test]
+    fn every_shape_of_report_is_worth_listening_to() {
+        let desk = [
+            mouse(),
+            interface(),
+            named("USB Receiver", Support::Receiver(ReceiverBrand::Bolt)),
+            named(
+                "Some Macro Pad",
+                Support::Candidate {
+                    driver: Driver::Via,
+                    needs: "a VIA protocol check",
+                },
+            ),
+        ];
+        for (text, what) in [
+            (report(&desk, false), "the full report"),
+            (report(&desk, true), "the filtered report"),
+            (report(&[], false), "a report of an empty desk"),
+            (report(&[desk[0].clone()], false), "a report of one device"),
+            (nothing_found(), "the nothing-found message"),
+        ] {
+            crate::spoken::assert_listenable(&text, what);
+            crate::spoken::assert_agrees(&text, what);
+        }
+    }
+
+    /// One device, not "1 device(s)". The singular is the case that gets
+    /// missed, because the plural reads fine to whoever wrote it.
+    #[test]
+    fn a_desk_of_one_is_counted_in_the_singular() {
+        let text = report(&[mouse()], false);
+        assert!(text.contains("1 of 1 attached device "), "{text}");
+        assert!(!text.contains("devices"), "{text}");
+    }
+
+    /// A `--json` consumer branches on structure, so the structure has to be
+    /// there even when the desk is empty — and a "nothing found" sentence in
+    /// the middle of a document would only be something to strip.
+    #[test]
+    fn the_json_report_is_valid_json_even_with_nothing_attached() {
+        let text = report_json(&[], false);
+        let parsed: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
+        assert_eq!(parsed["total"], 0);
+        assert_eq!(parsed["configurable"], 0);
+        assert!(parsed["peripherals"].as_array().is_some_and(Vec::is_empty));
+    }
+
+    /// The same rule as the prose form: filtering the list must not make the
+    /// desk look smaller. A script that reported "1 device" to someone with
+    /// four would be as wrong as a sentence saying it.
+    #[test]
+    fn filtering_the_json_leaves_the_totals_telling_the_truth() {
+        let text = report_json(&[mouse(), interface()], true);
+        let parsed: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
+        assert_eq!(parsed["total"], 2, "everything found");
+        assert_eq!(parsed["configurable"], 1);
+        assert_eq!(parsed["filtered"], true);
+        assert_eq!(parsed["peripherals"].as_array().map(Vec::len), Some(1));
+    }
+
+    /// An unsupported device is in the JSON for the same reason it is in the
+    /// prose: it is on the desk, and a consumer told nothing about it will
+    /// report it absent.
+    #[test]
+    fn an_unsupported_device_is_in_the_json_too() {
+        let text = report_json(&[interface()], false);
+        assert!(text.contains("Scarlett 2i2"), "{text}");
+        assert!(text.contains("\"configurable\": false"), "{text}");
     }
 
     /// Every section that appears is introduced by a heading. A run of

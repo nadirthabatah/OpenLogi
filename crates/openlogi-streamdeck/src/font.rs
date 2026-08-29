@@ -345,6 +345,25 @@ pub fn carries(character: char) -> bool {
     GLYPHS.iter().any(|(candidate, _)| *candidate == wanted)
 }
 
+/// The characters in `text` this font cannot draw, in the order they appear.
+///
+/// Each is drawn as a hollow box, which is visible on the key but says nothing
+/// about what went wrong — and says nothing at all to someone who cannot see
+/// the key. So the caller is given the list and can tell them.
+///
+/// Distinct, because a label of eight unsupported characters is one problem
+/// with the label rather than eight.
+#[must_use]
+pub fn missing_from(text: &str) -> Vec<char> {
+    let mut missing: Vec<char> = Vec::new();
+    for character in text.chars() {
+        if !carries(character) && !missing.contains(&character) {
+            missing.push(character);
+        }
+    }
+    missing
+}
+
 /// Width in pixels of `text` at scale 1, spacing included.
 #[must_use]
 pub fn text_width(text: &str) -> usize {
@@ -357,7 +376,9 @@ pub fn text_width(text: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{GLYPH_HEIGHT, GLYPH_WIDTH, GLYPHS, MISSING, carries, glyph, text_width};
+    use super::{
+        GLYPH_HEIGHT, GLYPH_WIDTH, GLYPHS, MISSING, carries, glyph, missing_from, text_width,
+    };
 
     /// Every glyph must be exactly the declared size. A row one character
     /// short would shift everything after it, and is easy to typo.
@@ -439,6 +460,32 @@ mod tests {
         assert!(
             drawn.iter().any(|row| row.contains('#')),
             "a missing character must be visible"
+        );
+    }
+
+    /// A label the font cannot draw renders as hollow boxes, which says
+    /// nothing about what went wrong — and nothing at all to someone who
+    /// cannot see the key. The caller needs the list so it can say.
+    #[test]
+    fn the_characters_a_font_cannot_draw_are_reported() {
+        assert!(missing_from("MUTE MIC").is_empty());
+        assert!(
+            missing_from("mute mic").is_empty(),
+            "lowercase is drawn as capitals"
+        );
+        assert_eq!(
+            missing_from("\u{30df}\u{30e5}\u{30fc}\u{30c8}"),
+            vec!['\u{30df}', '\u{30e5}', '\u{30fc}', '\u{30c8}']
+        );
+        assert_eq!(missing_from("MUTE \u{1f3a4}"), vec!['\u{1f3a4}']);
+    }
+
+    /// Eight unsupported characters are one problem with the label, not eight.
+    #[test]
+    fn a_character_repeated_is_reported_once() {
+        assert_eq!(
+            missing_from("\u{1f3a4}\u{1f3a4}\u{1f3a4}"),
+            vec!['\u{1f3a4}']
         );
     }
 

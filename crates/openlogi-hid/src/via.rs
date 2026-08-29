@@ -25,6 +25,8 @@
 //! it. So: the protocol revision is checked before any write, the write is
 //! read back and compared, and a mismatch is reported rather than swallowed.
 
+use std::time::Duration;
+
 use async_hid::{AsyncHidRead as _, AsyncHidWrite as _, Device, DeviceReader, DeviceWriter};
 use hidpp::async_trait;
 use openlogi_device::backend::BackendError;
@@ -40,6 +42,47 @@ use crate::transport::enumerate_devices;
 /// skipping them forever is not — a board that never answers would hang the
 /// caller with no explanation, which is worse than an error.
 const MAX_STRAY_REPORTS: usize = 8;
+
+/// How long to wait for any single answer.
+///
+/// The stray-report limit only helps when reports keep arriving. A board that
+/// goes silent — wrong collection, firmware without VIA, a device that is not
+/// a keyboard at all — would otherwise leave the caller waiting forever with
+/// nothing on screen, which for someone working by ear is indistinguishable
+/// from the program having crashed.
+///
+/// Generous rather than tight: QMK answers in milliseconds, and the cost of
+/// being wrong in the other direction is a spurious failure on a slow board.
+const ANSWER_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// The largest matrix edge worth scanning when reading a keymap blind.
+///
+/// VIA gives no way to ask a board how big its matrix is, so reading a keymap
+/// means reading positions until you decide to stop, one round trip each. The
+/// caller picks how far; this is where "as far as you like" stops.
+///
+/// 32 is roughly twice the largest edge any real QMK board has, so it costs
+/// nothing anyone would notice and bounds the worst case at about a thousand
+/// round trips instead of the sixty-five thousand a byte allows. The reason to
+/// bound it at all is the assistant: a person who types `--rows 255` waits and
+/// then presses ctrl-C, while a model that asks for it — invited to, by a
+/// description that says to raise the number if a key is missing — leaves its
+/// client waiting on a call with no way to cancel.
+pub const MAX_SCAN_EDGE: u8 = 32;
+
+/// How far to actually scan, given what was asked for.
+///
+/// Returns the edge to use and whether it was cut down, because a scan that
+/// quietly stopped short is indistinguishable from a keyboard with nothing
+/// there — and "nothing there" is the wrong conclusion to hand anyone.
+#[must_use]
+pub fn scan_edge(asked: u8) -> (u8, bool) {
+    if asked > MAX_SCAN_EDGE {
+        (MAX_SCAN_EDGE, true)
+    } else {
+        (asked, false)
+    }
+}
 
 /// A VIA-capable HID collection the OS is reporting.
 ///
@@ -282,19 +325,36 @@ impl Session {
             .write_output_report(&command.encode())
             .await?;
         let mut buffer = [0_u8; REPORT_LEN];
-        for _ in 0..=MAX_STRAY_REPORTS {
-            let filled = self.transport.read_input_report(&mut buffer).await?;
+        let mut strays = 0_usize;
+        while strays <= MAX_STRAY_REPORTS {
+            let filled = tokio::time::timeout(
+                ANSWER_TIMEOUT,
+                self.transport.read_input_report(&mut buffer),
+            )
+            .await
+            .map_err(|_| {
+                unexpected(&format!(
+                    "the device did not answer command {:#04x} within {} seconds. It may \
+                     not be a VIA device, or the HID collection this driver picked may be \
+                     the wrong one for it.",
+                    command.id() as u8,
+                    ANSWER_TIMEOUT.as_secs()
+                ))
+            })??;
             match Response::parse(command, &buffer[..filled]) {
                 Ok(response) => return Ok(response),
                 // Not this command's answer. A QMK board sends unrelated raw
                 // reports whenever it likes, so this is ordinary — read again.
-                Err(openlogi_via::ProtocolError::Mismatched { .. }) => {}
+                Err(openlogi_via::ProtocolError::Mismatched { .. }) => strays += 1,
                 Err(error) => return Err(unexpected(&error.to_string())),
             }
         }
+        // The count is the one actually reached, not the constant. A message
+        // naming a number the code did not do is what someone diagnosing a
+        // board counts against, and is then misled by.
         Err(unexpected(&format!(
-            "the keyboard sent {MAX_STRAY_REPORTS} unrelated reports and never answered \
-             command {:#04x}",
+            "the keyboard sent {strays} unrelated reports and never answered command \
+             {:#04x}",
             command.id() as u8
         )))
     }
@@ -314,7 +374,7 @@ mod tests {
     use openlogi_via::command::CommandId;
     use openlogi_via::identity::REPORT_LEN;
 
-    use super::{MAX_STRAY_REPORTS, Session, ViaTransport};
+    use super::{MAX_SCAN_EDGE, MAX_STRAY_REPORTS, Session, ViaTransport, scan_edge};
 
     /// A device that answers from a script.
     ///
@@ -326,6 +386,11 @@ mod tests {
     struct Scripted {
         written: Arc<Mutex<Vec<Vec<u8>>>>,
         replies: Vec<[u8; REPORT_LEN]>,
+        /// Never answer once the script is spent, rather than erroring.
+        ///
+        /// The difference matters: an error is something the code already
+        /// handles, and silence is the case the timeout exists for.
+        silent_when_spent: bool,
     }
 
     impl Scripted {
@@ -334,7 +399,19 @@ mod tests {
         }
 
         fn recording(replies: Vec<[u8; REPORT_LEN]>, written: Arc<Mutex<Vec<Vec<u8>>>>) -> Self {
-            Self { written, replies }
+            Self {
+                written,
+                replies,
+                silent_when_spent: false,
+            }
+        }
+
+        /// A device that answers the script and then goes quiet.
+        fn then_silent(replies: Vec<[u8; REPORT_LEN]>) -> Self {
+            Self {
+                silent_when_spent: true,
+                ..Self::new(replies)
+            }
         }
     }
 
@@ -350,6 +427,12 @@ mod tests {
 
         async fn read_input_report(&mut self, buffer: &mut [u8]) -> Result<usize, BackendError> {
             if self.replies.is_empty() {
+                if self.silent_when_spent {
+                    // Never resolves. Under `start_paused` tokio advances its
+                    // clock once every task is idle, so the timeout fires
+                    // without the test actually waiting.
+                    std::future::pending::<()>().await;
+                }
                 return Err(BackendError::Backend("the script ran out".to_owned()));
             }
             let reply = self.replies.remove(0);
@@ -374,9 +457,32 @@ mod tests {
         ]
     }
 
-    fn keycode_reply(keycode: u16) -> [u8; REPORT_LEN] {
+    /// A board's answer to a keycode read, echoing the position asked about.
+    ///
+    /// The echo is not decoration: it is what tells this position's answer
+    /// from the previous one's, since every keycode reply carries the same
+    /// command byte. A fixture that left it zero would be a board that no
+    /// real firmware resembles, and would let a bug through here.
+    fn keycode_reply_at(layer: u8, row: u8, column: u8, keycode: u16) -> [u8; REPORT_LEN] {
         let [high, low] = keycode.to_be_bytes();
-        reply(CommandId::GetKeycode, &[(4, high), (5, low)])
+        reply(
+            CommandId::GetKeycode,
+            &[(1, layer), (2, row), (3, column), (4, high), (5, low)],
+        )
+    }
+
+    /// The commonest case in these tests: the origin key.
+    fn keycode_reply(keycode: u16) -> [u8; REPORT_LEN] {
+        keycode_reply_at(0, 0, 0, keycode)
+    }
+
+    #[test]
+    fn a_scan_wider_than_any_real_board_is_cut_down_and_says_so() {
+        assert_eq!(scan_edge(6), (6, false));
+        assert_eq!(scan_edge(MAX_SCAN_EDGE), (MAX_SCAN_EDGE, false));
+        // A scan that quietly stopped short is indistinguishable from a
+        // keyboard with nothing there, so the caller has to be told.
+        assert_eq!(scan_edge(255), (MAX_SCAN_EDGE, true));
     }
 
     #[tokio::test]
@@ -430,14 +536,64 @@ mod tests {
             .await
             .expect("the handshake succeeds");
         let error = session.keycode(0, 0, 0).await.expect_err("it must give up");
-        assert!(format!("{error}").contains("never answered"), "{error}");
+        let text = format!("{error}");
+        assert!(text.contains("never answered"), "{text}");
+        // The number in the message has to be the number of reports actually
+        // skipped. Someone diagnosing a board counts them.
+        assert!(
+            text.contains(&format!("sent {} unrelated", MAX_STRAY_REPORTS + 1)),
+            "{text}"
+        );
+    }
+
+    /// A silent device must produce an error rather than a wait with nothing
+    /// on screen. The stray limit cannot catch this: it only counts reports
+    /// that arrive, and here none do.
+    #[tokio::test(start_paused = true)]
+    async fn a_device_that_says_nothing_at_all_times_out_rather_than_hanging() {
+        // The handshake, then silence.
+        let mut session = Session::with_transport(Box::new(Scripted::then_silent(handshake())))
+            .await
+            .expect("the handshake succeeds");
+        let error = session
+            .keycode(0, 0, 0)
+            .await
+            .expect_err("silence must surface");
+        let text = format!("{error}");
+        assert!(text.contains("did not answer"), "{text}");
+        assert!(
+            text.contains("wrong one for it"),
+            "the message has to name the likely cause, not just the timeout: {text}"
+        );
+    }
+
+    /// The boundary the limit sits on: a board that sends exactly as many
+    /// strays as are tolerated and then answers has answered, and giving up
+    /// one report early would call a working keyboard broken.
+    #[tokio::test]
+    async fn a_board_that_answers_on_the_last_tolerated_report_is_not_given_up_on() {
+        let mut replies = handshake();
+        for _ in 0..MAX_STRAY_REPORTS {
+            replies.push(reply(CommandId::GetLayerCount, &[(1, 4)]));
+        }
+        replies.push(keycode_reply(0x0068));
+        let mut session = Session::with_transport(Box::new(Scripted::new(replies)))
+            .await
+            .expect("the handshake succeeds");
+        assert_eq!(
+            session.keycode(0, 0, 0).await.expect("the late answer"),
+            0x0068
+        );
     }
 
     #[tokio::test]
     async fn a_write_that_lands_is_reported_as_success() {
         let mut replies = handshake();
-        replies.push(reply(CommandId::SetKeycode, &[(4, 0x00), (5, 0x68)]));
-        replies.push(keycode_reply(0x0068));
+        replies.push(reply(
+            CommandId::SetKeycode,
+            &[(1, 0), (2, 1), (3, 2), (4, 0x00), (5, 0x68)],
+        ));
+        replies.push(keycode_reply_at(0, 1, 2, 0x0068));
         let mut session = Session::with_transport(Box::new(Scripted::new(replies)))
             .await
             .expect("the handshake succeeds");
@@ -453,8 +609,11 @@ mod tests {
     #[tokio::test]
     async fn a_write_that_did_not_take_is_reported_rather_than_assumed() {
         let mut replies = handshake();
-        replies.push(reply(CommandId::SetKeycode, &[(4, 0x00), (5, 0x68)]));
-        replies.push(keycode_reply(0x0004));
+        replies.push(reply(
+            CommandId::SetKeycode,
+            &[(1, 0), (2, 1), (3, 2), (4, 0x00), (5, 0x68)],
+        ));
+        replies.push(keycode_reply_at(0, 1, 2, 0x0004));
         let mut session = Session::with_transport(Box::new(Scripted::new(replies)))
             .await
             .expect("the handshake succeeds");

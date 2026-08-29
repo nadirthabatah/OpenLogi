@@ -15,7 +15,7 @@
 //! would leave the model confidently telling someone their audio interface is
 //! not connected when it is plugged in and lit up.
 
-use openlogi_catalog::{Identity, Peripheral, Support};
+use openlogi_catalog::{Identity, Peripheral};
 use serde_json::{Value, json};
 
 use super::{no_arguments_schema, rendered};
@@ -53,85 +53,27 @@ pub async fn list_peripherals() -> Result<String, String> {
             }),
     );
 
+    // The same rendering `openlogi devices --json` prints, so a script and an
+    // assistant reading the same desk cannot be told different things.
+    rendered(&summary(&found))
+}
+
+/// The answer, as the model receives it.
+///
+/// Split from the enumeration above so the two counts can be checked. They are
+/// what an assistant repeats out loud — "three of seven can be configured" —
+/// and a count that quietly includes the unconfigurable ones is a sentence
+/// nobody can tell is wrong from the outside.
+fn summary(found: &[Peripheral]) -> Value {
     let configurable = found
         .iter()
         .filter(|found| found.support.is_configurable())
         .count();
-    let peripherals: Vec<Value> = found.iter().map(describe).collect();
-    rendered(&json!({
-        "peripherals": peripherals,
+    json!({
+        "peripherals": found.iter().map(crate::cmd::devices::as_json).collect::<Vec<_>>(),
         "total": found.len(),
         "configurable": configurable,
-    }))
-}
-
-/// One peripheral, as the model sees it.
-///
-/// Built as a map rather than a `json!` literal that is then reopened: the
-/// fields differ by support kind, and reaching back into a built value to add
-/// them means asserting it is still an object, which is a panic waiting for
-/// whoever edits the literal above it.
-fn describe(found: &Peripheral) -> Value {
-    let mut entry = serde_json::Map::new();
-    entry.insert("name".to_owned(), json!(found.identity.describe()));
-    entry.insert(
-        "vendor_id".to_owned(),
-        json!(format!("{:04x}", found.identity.vendor_id)),
-    );
-    entry.insert(
-        "product_id".to_owned(),
-        json!(format!("{:04x}", found.identity.product_id)),
-    );
-    entry.insert(
-        "configurable".to_owned(),
-        json!(found.support.is_configurable()),
-    );
-    if let Some(serial) = &found.identity.serial_number {
-        entry.insert("serial".to_owned(), json!(serial));
-    }
-    match &found.support {
-        Support::Driver { driver, model } => {
-            entry.insert("driver".to_owned(), json!(driver.id()));
-            entry.insert("controls".to_owned(), json!(driver.what_it_configures()));
-            entry.insert("command".to_owned(), json!(driver.command()));
-            if let Some(model) = model {
-                entry.insert("model".to_owned(), json!(model));
-            }
-        }
-        Support::Candidate { driver, needs } => {
-            entry.insert("likely_driver".to_owned(), json!(driver.id()));
-            entry.insert(
-                "note".to_owned(),
-                json!(format!(
-                    "Attached, and it looks like something the {} driver handles, but \
-                     that is not confirmed without {needs}. Say it is probably \
-                     supported rather than that it is.",
-                    driver.id()
-                )),
-            );
-        }
-        Support::Receiver(_) => {
-            entry.insert("kind".to_owned(), json!("wireless receiver"));
-            entry.insert(
-                "note".to_owned(),
-                json!(
-                    "A receiver, not a peripheral. The devices paired to it appear \
-                     separately; use list_devices for those."
-                ),
-            );
-        }
-        Support::Unsupported => {
-            entry.insert(
-                "note".to_owned(),
-                json!(
-                    "Attached, but no driver in this build configures it. It is \
-                     present — say so — and the vendor and product ids above are \
-                     what a device-support request needs."
-                ),
-            );
-        }
-    }
-    Value::Object(entry)
+    })
 }
 
 #[cfg(test)]
@@ -139,7 +81,9 @@ mod tests {
     use openlogi_catalog::{Driver, Identity, Peripheral, Support};
     use openlogi_device_registry::receiver::ReceiverBrand;
 
-    use super::{describe, tools};
+    use crate::cmd::devices::as_json as describe;
+
+    use super::{summary, tools};
 
     fn peripheral(support: Support) -> Peripheral {
         Peripheral {
@@ -151,6 +95,39 @@ mod tests {
             },
             support,
         }
+    }
+
+    /// The two numbers an assistant repeats out loud.
+    ///
+    /// "Three of seven can be configured" is a sentence nobody can tell is
+    /// wrong from the outside, so the count has to be right at the source. A
+    /// mutation sweep found it counting everything and no test noticed.
+    #[test]
+    fn the_counts_separate_what_can_be_configured_from_what_cannot() {
+        let desk = [
+            peripheral(Support::Driver {
+                driver: Driver::HidPlusPlus,
+                model: None,
+            }),
+            peripheral(Support::Unsupported),
+            peripheral(Support::Receiver(ReceiverBrand::Unifying)),
+            peripheral(Support::Candidate {
+                driver: Driver::Via,
+                needs: "a check",
+            }),
+        ];
+        let answer = summary(&desk);
+        assert_eq!(answer["total"], 4);
+        assert_eq!(
+            answer["configurable"], 1,
+            "only the driver-backed device is configurable: {answer}"
+        );
+        // Every device is still listed, whatever the count says.
+        assert_eq!(
+            answer["peripherals"].as_array().expect("a list").len(),
+            4,
+            "a device must never be dropped from the listing: {answer}"
+        );
     }
 
     #[test]

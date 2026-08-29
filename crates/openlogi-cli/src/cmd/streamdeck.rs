@@ -9,6 +9,8 @@
 //! paste into an issue, which is a far better way to close that gap than
 //! asking a user to describe what happened.
 
+use crate::spoken::counted;
+
 mod layout;
 mod library;
 
@@ -19,6 +21,7 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, anyhow};
 use clap::{Args, Subcommand};
 use openlogi_hid::streamdeck::{self, Attached, Session};
+use openlogi_streamdeck::font;
 use openlogi_streamdeck::render;
 use openlogi_streamdeck::report::{Brightness, KeyAction};
 
@@ -72,6 +75,41 @@ pub enum StreamDeckCmd {
     Example(PathArgs),
     /// List the layouts saved in the library.
     Layouts,
+    /// Set one key in a saved layout, without opening a text editor.
+    Set(SetArgs),
+    /// Remove one key from a saved layout.
+    Unset(UnsetArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct SetArgs {
+    /// A layout: a name in your library, or a path to a file.
+    pub layout: String,
+    /// Key index, counting from 0 at the top left.
+    pub key: u16,
+    /// Words to write on the key.
+    #[arg(long)]
+    pub label: Option<String>,
+    /// A picture to show on it instead of words.
+    #[arg(long)]
+    pub image: Option<PathBuf>,
+    /// Text colour, six hex digits, no leading '#'. Defaults to white.
+    #[arg(long)]
+    pub colour: Option<String>,
+    /// Background colour, six hex digits. Defaults to black.
+    #[arg(long)]
+    pub background: Option<String>,
+    /// What pressing the key does, as an action name such as `Copy`.
+    #[arg(long)]
+    pub action: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct UnsetArgs {
+    /// A layout: a name in your library, or a path to a file.
+    pub layout: String,
+    /// Key index, counting from 0 at the top left.
+    pub key: u16,
 }
 
 #[derive(Debug, Args)]
@@ -151,8 +189,25 @@ impl StreamDeckCmd {
         let target = match &self {
             Self::Apply(args) | Self::Example(args) => Some(library::resolve(&args.layout)?),
             Self::Run(args) => Some(library::resolve(&args.layout)?),
+            Self::Set(args) => Some(library::resolve(&args.layout)?),
+            Self::Unset(args) => Some(library::resolve(&args.layout)?),
             _ => None,
         };
+
+        // Editing a layout needs no device, and is most of what someone does
+        // with one — a deck that is not plugged in yet is still a deck whose
+        // layout can be written.
+        match &self {
+            Self::Set(args) => {
+                let path = target.ok_or_else(|| anyhow!("the layout path was not resolved"))?;
+                return set_key(&path, args);
+            }
+            Self::Unset(args) => {
+                let path = target.ok_or_else(|| anyhow!("the layout path was not resolved"))?;
+                return unset_key(&path, args.key);
+            }
+            _ => {}
+        }
 
         // Writing an example layout needs no device, and wanting one before
         // the hardware arrives — or on a machine that will never have it — is
@@ -262,7 +317,7 @@ impl StreamDeckCmd {
                 return run_layout(collections, path, &layout).await;
             }
             // Handled before the device scan above.
-            Self::Example(_) | Self::Layouts => {
+            Self::Example(_) | Self::Layouts | Self::Set(_) | Self::Unset(_) => {
                 unreachable!("handled before the device scan")
             }
             Self::Watch => {
@@ -271,9 +326,17 @@ impl StreamDeckCmd {
                     "watching {} — press its keys; interrupt to stop",
                     session.model().name
                 );
+                let name = session.model().name;
                 loop {
-                    for event in session.next_events().await? {
-                        println!("  {}", describe(session.model(), event));
+                    match session.next_events().await {
+                        Ok(events) => {
+                            for event in events {
+                                println!("  {}", describe(session.model(), event));
+                            }
+                        }
+                        Err(error) => {
+                            return Ok(report_loop_ended(name, &error, "watching"));
+                        }
                     }
                 }
             }
@@ -341,26 +404,312 @@ pub fn layout_library() -> Result<std::path::PathBuf> {
     library::directory()
 }
 
+/// Every saved layout's name.
+///
+/// Re-exported for the MCP server so an assistant offers names that exist
+/// rather than ones it inferred from the conversation.
+///
+/// # Errors
+///
+/// Fails when the configuration directory cannot be determined.
+pub fn saved_layouts() -> Result<Vec<String>> {
+    Ok(library::list()?.names)
+}
+
+/// Apply a saved layout by name, returning how many keys it set.
+///
+/// The MCP server's route in. Shares [`apply`] with the CLI rather than
+/// repeating it, so an assistant and a person applying the same layout get
+/// the same result — including the same refusals.
+///
+/// # Errors
+///
+/// Fails when the layout cannot be read or parsed, no deck is attached, or
+/// the device rejects a write.
+// The three functions below are the layout surface an assistant drives, and
+// each resolves its argument with `resolve_saved_name` rather than
+// `library::resolve`. The difference is the whole point: the command line
+// takes a name *or* a path, because a person who types a path means it, while
+// a name arriving over MCP came from a model that can be steered by whatever
+// it has been reading. Names only, inside the library, or nothing.
+pub async fn apply_saved(name: &str) -> Result<usize> {
+    let path = library::resolve_saved_name(name)?;
+    let parsed = read_layout(&path)?;
+    let collections = streamdeck::attached()
+        .await
+        .context("failed to enumerate HID devices")?;
+    if collections.is_empty() {
+        return Err(anyhow!(
+            "no Stream Deck is attached. `openlogi doctor` says whether that is a \
+             permissions problem rather than an absent device."
+        ));
+    }
+    let keys = parsed.keys.len();
+    apply(&collections, &path, &parsed).await?;
+    Ok(keys)
+}
+
+/// One key of a layout, re-exported so the MCP server can name the type.
+pub type LayoutKey = layout::Key;
+
+/// Build a layout key from its parts.
+///
+/// A constructor rather than a struct literal at each call site, so the MCP
+/// server does not need the layout module public and the two ways of setting a
+/// key cannot drift in what they consider a key to be.
+#[must_use]
+pub fn layout_key(
+    index: u16,
+    label: Option<String>,
+    image: Option<String>,
+    colour: Option<String>,
+    background: Option<String>,
+    action: Option<openlogi_core::binding::Action>,
+) -> LayoutKey {
+    layout::Key {
+        index,
+        label,
+        image: image.map(PathBuf::from),
+        colour,
+        background,
+        action,
+    }
+}
+
+/// Set one key in a saved layout, for the MCP server.
+///
+/// Returns the key as it was, or `None` if the key was not in the layout, so
+/// a caller can offer to put it back. A file write is permanent in a way a
+/// deck's own screens are not — they go when the cable does — so the previous
+/// value travelling with the answer is what keeps a mistaken change
+/// reversible.
+///
+/// # Errors
+///
+/// Fails when the layout cannot be read, the key description is not usable,
+/// or the file cannot be written.
+pub fn set_layout_key(name: &str, key: &layout::Key) -> Result<Option<layout::Key>> {
+    let path = library::resolve_saved_name(name)?;
+    let (source, was) = if path.exists() {
+        let source = std::fs::read_to_string(&path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        // Parsed only to report what the edit replaced, and to refuse a file
+        // that is not a layout before writing to it. The edit itself is
+        // applied to the text, so the person's comments survive it.
+        let parsed = layout::Layout::parse(&path, &source).map_err(|error| anyhow!("{error}"))?;
+        let was = parsed
+            .keys
+            .iter()
+            .find(|held| held.index == key.index)
+            .cloned();
+        (source, was)
+    } else {
+        (String::new(), None)
+    };
+    let edited = layout::edit::set_key(&source, key).map_err(|error| anyhow!("{error}"))?;
+    write_layout_text(&path, &edited)?;
+    Ok(was)
+}
+
+/// Remove one key from a saved layout, for the MCP server.
+///
+/// Returns the key that was removed, or `None` when it was not there.
+///
+/// # Errors
+///
+/// Fails when the layout does not exist, cannot be read, or cannot be written.
+pub fn unset_layout_key(name: &str, index: u16) -> Result<Option<layout::Key>> {
+    let path = library::resolve_saved_name(name)?;
+    if !path.exists() {
+        return Err(anyhow!("there is no layout at {}", path.display()));
+    }
+    let source = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    let parsed = layout::Layout::parse(&path, &source).map_err(|error| anyhow!("{error}"))?;
+    let was = parsed.keys.iter().find(|key| key.index == index).cloned();
+    let (edited, removed) =
+        layout::edit::remove_key(&source, index).map_err(|error| anyhow!("{error}"))?;
+    if removed {
+        write_layout_text(&path, &edited)?;
+    }
+    Ok(was)
+}
+
+/// `openlogi streamdeck set`.
+///
+/// The point of this command is that configuring a deck should never require
+/// opening a text editor and getting TOML right. That is friction for anyone
+/// and a wall for someone working by dictation, which is the case this project
+/// is built around.
+///
+/// Writes to a layout that does not exist yet rather than refusing: the first
+/// key someone sets is the layout, and making them run `example` first to get
+/// a file full of things they did not ask for is a step with no purpose.
+fn set_key(path: &Path, args: &SetArgs) -> Result<ExitCode> {
+    if args.label.is_some() && args.image.is_some() {
+        eprintln!("A key shows words or a picture, not both. Pass one of --label or --image.");
+        return Ok(ExitCode::from(EXISTS));
+    }
+    // Colours are checked here rather than at apply time, so a typo is caught
+    // while the person is still thinking about that key.
+    for (name, value) in [
+        ("--colour", &args.colour),
+        ("--background", &args.background),
+    ] {
+        if let Some(value) = value {
+            parse_colour(value).with_context(|| format!("{name} is not a colour"))?;
+        }
+    }
+    let action = args.action.as_deref().map(parse_action).transpose()?;
+
+    // Read as text and edited as text, so the comments and spacing in a file
+    // someone wrote survive an edit to one key of it. Parsed as well, but only
+    // to refuse a file that is not a layout and to say whether the key was
+    // already there.
+    let source = if path.exists() {
+        std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read {}", path.display()))?
+    } else {
+        String::new()
+    };
+    let existing = layout::Layout::parse(path, &source)
+        .map_err(|error| anyhow!("{error}"))?
+        .keys
+        .iter()
+        .any(|key| key.index == args.key);
+    let edited = layout::edit::set_key(
+        &source,
+        &layout::Key {
+            index: args.key,
+            label: args.label.clone(),
+            image: args.image.clone(),
+            colour: args.colour.clone(),
+            background: args.background.clone(),
+            action,
+        },
+    )
+    .map_err(|error| anyhow!("{error}"))?;
+
+    write_layout_text(path, &edited)?;
+    println!(
+        "key {} {} in {}",
+        args.key,
+        if existing { "replaced" } else { "added" },
+        path.display()
+    );
+    if let Some(label) = &args.label {
+        warn_about_undrawable(label);
+    }
+    // Said because a key set with only an action shows nothing, and someone
+    // who cannot see the deck has no other way to notice.
+    if args.label.is_none() && args.image.is_none() {
+        println!("That key will stay blank — it has an action but nothing to show.");
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// `openlogi streamdeck unset`.
+fn unset_key(path: &Path, key: u16) -> Result<ExitCode> {
+    if !path.exists() {
+        eprintln!("There is no layout at {}.", path.display());
+        return Ok(ExitCode::from(NOTHING_FOUND));
+    }
+    let source = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    // Parsed to refuse a file that is not a layout before writing to it.
+    layout::Layout::parse(path, &source).map_err(|error| anyhow!("{error}"))?;
+    let (edited, removed) =
+        layout::edit::remove_key(&source, key).map_err(|error| anyhow!("{error}"))?;
+    if !removed {
+        // Told "removed", someone believes something changed, and the next
+        // thing they do is wonder why the deck looks the same.
+        eprintln!(
+            "Key {key} was not in {}, so nothing changed.",
+            path.display()
+        );
+        return Ok(ExitCode::from(NOTHING_FOUND));
+    }
+    write_layout_text(path, &edited)?;
+    println!("key {key} removed from {}", path.display());
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Turn an action name into an action.
+///
+/// Goes through the same serde representation the layout file uses, so
+/// whatever a file accepts the command line accepts, and the two cannot come
+/// to disagree about what an action is called.
+pub fn parse_action(name: &str) -> Result<openlogi_core::binding::Action> {
+    serde_json::from_value(serde_json::Value::String(name.to_owned())).map_err(|_| {
+        anyhow!(
+            "{name} is not an action this build knows. Actions are named the way they \
+             are in a layout file — Copy, Paste, NextTab, VolumeUp and so on. An action \
+             that takes a value, such as RunShellCommand, has to be written in the file \
+             rather than passed here."
+        )
+    })
+}
+
+/// Write a layout back to its file, creating the library if it is new.
+fn write_layout_text(path: &Path, body: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    // Written to a temporary file and renamed into place, the same way
+    // `config.toml` already is. A plain write truncates first, so a crash, a
+    // power cut or a full disk between the truncate and the write leaves a
+    // layout that is empty or half a file — and the deck's own memory is not a
+    // copy of it, so there is nothing to restore from. That is the same
+    // reasoning `example` refuses to overwrite on, applied to the way the
+    // write itself can fail.
+    //
+    // The mode is left alone rather than forced, unlike the config: a layout
+    // holds no secrets and may deliberately sit somewhere shared.
+    let mut file = atomic_write_file::AtomicWriteFile::options()
+        .open(path)
+        .with_context(|| format!("failed to open {} for writing", path.display()))?;
+    std::io::Write::write_all(&mut file, body.as_bytes())
+        .with_context(|| format!("failed to write {}", path.display()))?;
+    file.commit()
+        .with_context(|| format!("failed to save {}", path.display()))
+}
+
 /// `openlogi streamdeck layouts`.
 ///
 /// An empty library is not a failure and does not read like one: on a fresh
 /// machine there is nothing saved yet, and the useful answer is how to make
 /// the first one rather than a bare "none".
 fn list_layouts() -> Result<ExitCode> {
-    let names = library::list()?;
+    let listing = library::list()?;
     let directory = library::directory()?;
-    if names.is_empty() {
+    if listing.names.is_empty() && listing.unnameable == 0 {
         println!("No layouts saved yet.");
         println!();
         println!("Layouts live in {}.", directory.display());
         println!("Start one with: openlogi streamdeck example streaming");
         return Ok(ExitCode::SUCCESS);
     }
-    println!("Layouts ({}), in {}:", names.len(), directory.display());
-    for name in &names {
+    println!(
+        "Layouts ({}), in {}:",
+        listing.names.len(),
+        directory.display()
+    );
+    for name in &listing.names {
         println!("  {name}");
     }
     println!();
+    // Never silent. A file skipped without a word is a layout the person owns
+    // and cannot find, and they would have no reason to go looking.
+    if listing.unnameable > 0 {
+        println!(
+            "{} in that folder cannot be listed: the filename contains a line break \
+             or other control character, so it cannot be printed or typed as a name. \
+             Rename the file to fix it.",
+            counted(listing.unnameable, "file", "files")
+        );
+        println!();
+    }
     println!("Apply one with: openlogi streamdeck apply <name>");
     Ok(ExitCode::SUCCESS)
 }
@@ -388,7 +737,10 @@ fn write_example(argument: &str, path: &Path) -> Result<ExitCode> {
     std::fs::write(path, EXAMPLE_LAYOUT)
         .with_context(|| format!("failed to write {}", path.display()))?;
     println!("example layout written to {}", path.display());
-    println!("Edit it, then: openlogi streamdeck apply {argument}");
+    println!(
+        "Edit it, then: openlogi streamdeck apply {}",
+        crate::spoken::shell_argument(argument)
+    );
     Ok(ExitCode::SUCCESS)
 }
 
@@ -441,11 +793,42 @@ async fn apply(collections: &[Attached], file: &Path, layout: &layout::Layout) -
         );
     }
     println!(
-        "applied {} key(s) from {}",
-        layout.keys.len(),
+        "applied {} from {}",
+        counted(layout.keys.len(), "key", "keys"),
         file.display()
     );
+    note_unbound_actions(layout);
     Ok(ExitCode::SUCCESS)
+}
+
+/// Say that a layout's actions are not bound by painting it.
+///
+/// `apply` writes the faces and returns; `run` is what stays and acts on
+/// presses. Someone who applies a layout with actions on it gets a deck that
+/// looks exactly right and does nothing, and pressing a key that does nothing
+/// is indistinguishable from a broken device — most of all to someone who
+/// cannot see that the face is there.
+fn note_unbound_actions(layout: &layout::Layout) {
+    if let Some(note) = unbound_action_note(layout) {
+        print!("{note}");
+    }
+}
+
+/// The note itself, so the wording is checked without needing a device.
+fn unbound_action_note(layout: &layout::Layout) -> Option<String> {
+    let bound = layout
+        .keys
+        .iter()
+        .filter(|key| key.action.is_some())
+        .count();
+    if bound == 0 {
+        return None;
+    }
+    Some(format!(
+        "  {} an action, which painting the layout does not bind.\n  To act on \
+         presses, leave `openlogi streamdeck run` running instead.\n",
+        counted(bound, "key of these has", "keys of these have")
+    ))
 }
 
 /// Report a layout's program-running actions, if it has any.
@@ -460,10 +843,10 @@ fn refuse_untrusted(layout: &layout::Layout) -> Result<bool> {
         return Ok(false);
     }
     eprintln!(
-        "this layout binds {} action(s) that would run a program or type text on your \
+        "this layout binds {} that would run a program or type text on your \
          machine. Nothing has been applied. Review them, then re-run with \
          --accept-actions if you trust the source:",
-        findings.len()
+        counted(findings.len(), "action", "actions")
     );
     for finding in &findings {
         eprintln!("  {finding}");
@@ -498,7 +881,10 @@ async fn run_layout(
     let mut session = open_preferred(collections).await?;
     let model = session.model();
     println!();
-    println!("Running {} bound key(s). Interrupt to stop.", bound.len());
+    println!(
+        "Running {}. Interrupt to stop.",
+        counted(bound.len(), "bound key", "bound keys")
+    );
     for (index, action) in &bound {
         println!(
             "  key {index} ({}) -> {action:?}",
@@ -507,8 +893,15 @@ async fn run_layout(
     }
     println!();
 
+    let actions = spawn_action_worker();
+
+    let model_name = model.name;
     loop {
-        for event in session.next_events().await? {
+        let events = match session.next_events().await {
+            Ok(events) => events,
+            Err(error) => return Ok(report_loop_ended(model_name, &error, "running this layout")),
+        };
+        for event in events {
             // Act on the press, not the release: a key that fires twice per
             // push would double every action bound to it.
             if event.action != KeyAction::Pressed {
@@ -527,9 +920,71 @@ async fn run_layout(
                 event.key,
                 describe_key_position(model, event.key)
             );
-            openlogi_inject::execute(action);
+            // Handed to the worker rather than run here. `execute` blocks
+            // until the action finishes, and a key bound to a build — or to
+            // anything that waits — would otherwise stop this loop reading
+            // key reports at all. The deck would go dead with no clue why,
+            // which is indistinguishable from the cable having come out.
+            if actions.send((*action).clone()).is_err() {
+                return Err(anyhow!(
+                    "the action worker stopped, so nothing further would run"
+                ));
+            }
         }
     }
+}
+
+/// Exit status for "the device went away while we were using it".
+///
+/// Its own status because it is not a failure of the command: it did what was
+/// asked until the deck stopped being there. A script restarting a macro pad
+/// wants to tell that apart from a layout it cannot parse.
+const DISCONNECTED: u8 = 5;
+
+/// Turn the end of a watch or run loop into something worth reading.
+///
+/// A cable coming loose is the ordinary way one of these loops ends, and it
+/// arrives as "the HID device is not connected" — true, and no use to anyone.
+/// Someone whose macro pad has quietly stopped working needs to be told which
+/// of the two things happened and what to type next, because the deck itself
+/// tells them nothing: its faces are still lit until it loses power, and the
+/// keys simply stop doing anything.
+fn report_loop_ended(
+    model_name: &str,
+    error: &openlogi_hid::backend::BackendError,
+    what: &str,
+) -> ExitCode {
+    if matches!(error, openlogi_hid::backend::BackendError::Disconnected) {
+        println!();
+        println!("The {model_name} was disconnected, so {what} has stopped.");
+        println!("Plug it back in and run the same command again.");
+        return ExitCode::from(DISCONNECTED);
+    }
+    eprintln!();
+    eprintln!("{what} stopped: {error}");
+    ExitCode::FAILURE
+}
+
+/// Start the thread that performs actions, and return the way to reach it.
+///
+/// One thread with a queue, rather than a task per press. Both keep the event
+/// loop free, and the queue is what keeps two presses in the order they
+/// happened — which matters the moment an action types text, because two
+/// concurrent actions would interleave their keystrokes into something nobody
+/// typed.
+///
+/// A slow action still delays the ones behind it. That is the honest
+/// behaviour: they were asked for in that order. What it no longer does is
+/// stop the deck reading key presses, so the device stays alive and every
+/// press is still reported as it happens.
+fn spawn_action_worker() -> std::sync::mpsc::Sender<openlogi_core::binding::Action> {
+    let (sender, receiver) = std::sync::mpsc::channel::<openlogi_core::binding::Action>();
+    std::thread::spawn(move || {
+        while let Ok(action) = receiver.recv() {
+            openlogi_inject::execute(&action);
+        }
+    });
+    sender
 }
 
 /// What to put on a key.
@@ -568,7 +1023,35 @@ async fn draw(collections: &[Attached], key: u16, drawing: &Drawing<'_>) -> Resu
         Drawing::Picture(_, path) => format!("now shows {}", path.display()),
     };
     println!("key {key} {what} ({})", describe_key_position(model, key));
+    if let Drawing::Label(text, ..) = drawing {
+        warn_about_undrawable(text);
+    }
     Ok(())
+}
+
+/// Say which characters of a label the key font cannot draw.
+///
+/// They render as hollow boxes, which is visible on the key and says nothing
+/// about what went wrong — and says nothing at all to whoever cannot see the
+/// key. The command reports success either way, so without this the only
+/// signal is the one signal this project cannot rely on.
+fn warn_about_undrawable(text: &str) {
+    let missing = font::missing_from(text);
+    if missing.is_empty() {
+        return;
+    }
+    let listed: Vec<String> = missing.iter().map(|c| format!("{c:?}")).collect();
+    // No count in front of the sentence, and "each" rather than "it" or
+    // "they", so the wording is right whether one character is missing or
+    // twenty.
+    println!(
+        "  The key font cannot draw: {}. Each becomes a hollow box on the key.",
+        listed.join(", ")
+    );
+    println!(
+        "  It carries capitals, digits and common punctuation; lowercase is drawn as \
+         capitals. Use a picture for anything else."
+    );
 }
 
 /// Explain an empty scan: nothing attached, or something attached that this
@@ -646,7 +1129,7 @@ async fn open_preferred(collections: &[Attached]) -> Result<Session> {
 }
 
 /// Parse a six-hex-digit colour.
-fn parse_colour(text: &str) -> Result<(u8, u8, u8)> {
+pub fn parse_colour(text: &str) -> Result<(u8, u8, u8)> {
     let packed = (text.len() == 6)
         .then(|| u32::from_str_radix(text, 16).ok())
         .flatten()
@@ -910,5 +1393,150 @@ action = { CustomShortcut = \"cmd+shift+4\" }
                 "the message must say what is wanted: {error}"
             );
         }
+    }
+
+    /// Painting a layout does not bind its actions, and a deck that looks
+    /// exactly right and does nothing is indistinguishable from a broken one
+    /// — most of all to someone who cannot see that the face is there.
+    #[test]
+    fn a_layout_with_actions_is_said_to_need_run() {
+        use openlogi_core::binding::Action;
+
+        let with_action = |index: u16, action: Option<Action>| layout::Key {
+            index,
+            label: Some("X".to_owned()),
+            image: None,
+            colour: None,
+            background: None,
+            action,
+        };
+        let none_bound = layout::Layout {
+            brightness: None,
+            keys: vec![with_action(0, None)],
+        };
+        assert_eq!(super::unbound_action_note(&none_bound), None);
+
+        let one_bound = layout::Layout {
+            brightness: None,
+            keys: vec![with_action(0, Some(Action::Copy)), with_action(1, None)],
+        };
+        let said = super::unbound_action_note(&one_bound).expect("a note");
+        assert!(said.contains("1 key of these has an action"), "{said}");
+        assert!(said.contains("streamdeck run"), "{said}");
+
+        let two_bound = layout::Layout {
+            brightness: None,
+            keys: vec![
+                with_action(0, Some(Action::Copy)),
+                with_action(1, Some(Action::Paste)),
+            ],
+        };
+        let said = super::unbound_action_note(&two_bound).expect("a note");
+        assert!(said.contains("2 keys of these have an action"), "{said}");
+        crate::spoken::assert_agrees(&said, "the unbound-action note");
+    }
+
+    /// The worker exists so a slow action cannot stop the deck reading key
+    /// presses, and the queue exists so two presses still happen in the order
+    /// they were made. This checks the second directly and the first by the
+    /// only means available without a device: that handing work over returns
+    /// immediately rather than waiting for it.
+    #[test]
+    fn the_action_worker_keeps_order_and_does_not_block_the_caller() {
+        use std::sync::mpsc;
+        use std::time::{Duration, Instant};
+
+        // The same shape as `spawn_action_worker`, with a stand-in for the
+        // action so nothing is injected into the machine running the tests.
+        let (sender, receiver) = mpsc::channel::<u32>();
+        let (done, finished) = mpsc::channel::<u32>();
+        let worker = std::thread::spawn(move || {
+            while let Ok(item) = receiver.recv() {
+                // The first one is slow, the way a build or a script is.
+                if item == 1 {
+                    std::thread::sleep(Duration::from_millis(120));
+                }
+                let _ = done.send(item);
+            }
+        });
+
+        let handed_over = Instant::now();
+        for item in 1..=3 {
+            sender.send(item).expect("the worker is listening");
+        }
+        let handing_over_took = handed_over.elapsed();
+
+        let order: Vec<u32> = (0..3)
+            .map(|_| finished.recv().expect("each action finishes"))
+            .collect();
+        drop(sender);
+        worker
+            .join()
+            .expect("the worker stops when the sender goes");
+
+        assert_eq!(
+            order,
+            vec![1, 2, 3],
+            "presses must happen in the order made"
+        );
+        assert!(
+            handing_over_took < Duration::from_millis(100),
+            "handing an action over waited for it to finish: {handing_over_took:?}"
+        );
+    }
+
+    /// The worker really does perform what it is given, and stops when the
+    /// sender goes — otherwise `run` would leak a thread per invocation.
+    #[test]
+    fn the_real_worker_stops_when_its_sender_is_dropped() {
+        let sender = super::spawn_action_worker();
+        // `Action::None` is the one action that synthesises nothing at all,
+        // so this stays safe to run anywhere.
+        sender
+            .send(openlogi_core::binding::Action::None)
+            .expect("the worker is listening");
+        drop(sender);
+    }
+
+    /// The ordinary way a `watch` or `run` loop ends is that someone knocks
+    /// the cable. That arrives as "the HID device is not connected", which is
+    /// true and no use: the deck's faces stay lit until it loses power and its
+    /// keys simply stop doing anything, so there is nothing to tell the person
+    /// what happened except this message.
+    ///
+    /// This path only runs when hardware vanishes, which is precisely why it
+    /// cannot be left to be discovered when hardware vanishes.
+    #[test]
+    fn a_disconnect_is_reported_as_one_and_gets_its_own_status() {
+        use openlogi_hid::backend::BackendError;
+
+        let ended = super::report_loop_ended(
+            "Stream Deck MK.2",
+            &BackendError::Disconnected,
+            "running this layout",
+        );
+        assert_eq!(
+            format!("{ended:?}"),
+            format!("{:?}", std::process::ExitCode::from(super::DISCONNECTED)),
+            "a device that went away is not the same outcome as a command that failed"
+        );
+    }
+
+    /// Anything else is a real failure and must not be dressed up as a
+    /// disconnect, or someone spends the evening reseating a cable.
+    #[test]
+    fn another_failure_is_not_reported_as_a_disconnect() {
+        use openlogi_hid::backend::BackendError;
+
+        let ended = super::report_loop_ended(
+            "Stream Deck MK.2",
+            &BackendError::Backend("the report was malformed".to_owned()),
+            "watching",
+        );
+        assert_eq!(
+            format!("{ended:?}"),
+            format!("{:?}", std::process::ExitCode::FAILURE),
+            "a malformed report is a failure, not an unplugged cable"
+        );
     }
 }

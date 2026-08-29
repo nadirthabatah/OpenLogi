@@ -37,7 +37,7 @@ impl Identity {
     #[must_use]
     pub fn describe(&self) -> String {
         match (self.manufacturer.as_deref(), self.product.as_deref()) {
-            (Some(maker), Some(product)) if !product.starts_with(maker) => {
+            (Some(maker), Some(product)) if !Self::already_names(product, maker) => {
                 format!("{maker} {product}")
             }
             (_, Some(product)) => product.to_owned(),
@@ -46,6 +46,32 @@ impl Identity {
                 "unnamed device {:04x}:{:04x}",
                 self.vendor_id, self.product_id
             ),
+        }
+    }
+
+    /// Whether a product string already carries its maker's name.
+    ///
+    /// USB string descriptors are written by whoever wired up the firmware, so
+    /// the two strings agree on the maker's name about as often as not:
+    /// `ELGATO` beside `Elgato Stream Deck`, `Logitech` beside `logitech
+    /// StreamCam`, `Logitech Inc.` beside `Logitech USB Receiver`. Comparing
+    /// them literally puts the name in twice, and "ELGATO Elgato Stream Deck"
+    /// read aloud sounds like the program is stuttering.
+    ///
+    /// Two rules, both from what descriptors actually look like: ignore case,
+    /// and compare first words, so a maker who writes `Inc.` after their name
+    /// in one string and not the other still matches.
+    fn already_names(product: &str, maker: &str) -> bool {
+        let maker = maker.trim();
+        if maker.is_empty() {
+            return true;
+        }
+        if product.len() >= maker.len() && product[..maker.len()].eq_ignore_ascii_case(maker) {
+            return true;
+        }
+        match (first_word(product), first_word(maker)) {
+            (Some(theirs), Some(ours)) => theirs.eq_ignore_ascii_case(ours),
+            _ => false,
         }
     }
 
@@ -79,6 +105,18 @@ impl Identity {
     }
 }
 
+/// The first word of a string, without the punctuation stuck to it.
+///
+/// "Logitech, Inc." and "Logitech Inc." are the same company writing its own
+/// name two ways, and a comma is not a reason to print that name twice.
+fn first_word(text: &str) -> Option<&str> {
+    let word = text
+        .split_whitespace()
+        .next()?
+        .trim_end_matches(|c: char| !c.is_alphanumeric());
+    (!word.is_empty()).then_some(word)
+}
+
 #[cfg(test)]
 mod tests {
     use super::Identity;
@@ -109,6 +147,64 @@ mod tests {
         assert_eq!(
             identity(Some("Logitech"), Some("Logitech StreamCam")).describe(),
             "Logitech StreamCam"
+        );
+    }
+
+    /// USB string descriptors are written by whoever wired up the firmware,
+    /// and the two strings agree on the maker's name about as often as not.
+    /// Comparing them literally puts the name in twice, and "ELGATO Elgato
+    /// Stream Deck" read aloud sounds like the program is stuttering.
+    ///
+    /// Every pair here is the shape a real descriptor takes.
+    #[test]
+    fn a_maker_named_twice_is_not_said_twice() {
+        for (maker, product, expected) in [
+            // Manufacturer in capitals, product in title case.
+            ("ELGATO", "Elgato Stream Deck", "Elgato Stream Deck"),
+            // Product in lower case.
+            ("Logitech", "logitech StreamCam", "logitech StreamCam"),
+            // A legal suffix on one string and not the other.
+            (
+                "Logitech Inc.",
+                "Logitech USB Receiver",
+                "Logitech USB Receiver",
+            ),
+            (
+                "Logitech, Inc.",
+                "Logitech USB Receiver",
+                "Logitech USB Receiver",
+            ),
+            // Already correct, and must stay correct.
+            ("Logitech", "Logitech StreamCam", "Logitech StreamCam"),
+        ] {
+            assert_eq!(
+                identity(Some(maker), Some(product)).describe(),
+                expected,
+                "{maker:?} + {product:?}"
+            );
+        }
+    }
+
+    /// And a product that genuinely does not name its maker still gets it.
+    #[test]
+    fn a_product_that_does_not_name_its_maker_is_given_one() {
+        assert_eq!(
+            identity(Some("Elgato"), Some("Stream Deck MK.2")).describe(),
+            "Elgato Stream Deck MK.2"
+        );
+        assert_eq!(
+            identity(Some("Focusrite"), Some("Scarlett 2i2")).describe(),
+            "Focusrite Scarlett 2i2"
+        );
+    }
+
+    /// A manufacturer string of only spaces is no manufacturer at all, and
+    /// must not produce a name with a hole at the front of it.
+    #[test]
+    fn a_blank_manufacturer_adds_nothing() {
+        assert_eq!(
+            identity(Some("   "), Some("Stream Deck")).describe(),
+            "Stream Deck"
         );
     }
 

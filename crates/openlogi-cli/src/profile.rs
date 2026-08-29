@@ -201,10 +201,10 @@ pub enum ProfileError {
     /// The profile carries actions that would run something, and the caller
     /// did not accept them.
     #[error(
-        "this profile contains {} action(s) that would run a program or type text on your \
+        "this profile contains {} that would run a program or type text on your \
          machine. Nothing has been imported. Review them, then re-run accepting them if you \
          trust the source:\n{}",
-        .findings.len(),
+        crate::spoken::counted(.findings.len(), "action", "actions"),
         .findings.iter().map(|f| format!("  {f}")).collect::<Vec<_>>().join("\n")
     )]
     UntrustedActions {
@@ -618,5 +618,170 @@ mod tests {
         let flagged = audit(&config).expect("serializes");
         assert_eq!(flagged.len(), 1);
         assert_eq!(flagged[0].action, "RunShellCommand");
+    }
+
+    /// Every variant name a type's deserializer will accept.
+    ///
+    /// Read out of serde's own "unknown variant, expected one of ..." error
+    /// rather than written down, because a list written down is the thing this
+    /// guards against. Serde builds that message from the type itself, so a
+    /// variant added upstream appears here the moment it is added — which is
+    /// the point.
+    fn every_variant_of<'de, T: serde::Deserialize<'de>>(what: &str) -> Vec<String> {
+        let error = serde_json::from_str::<T>("\"NoSuchVariantXYZ\"")
+            .err()
+            .unwrap_or_else(|| panic!("{what} must refuse an unknown variant"))
+            .to_string();
+        let listed = error
+            .split_once("expected one of ")
+            .unwrap_or_else(|| panic!("serde's message for {what} changed shape: {error}"))
+            .1;
+        let names: Vec<String> = listed
+            .split(", ")
+            .filter_map(|piece| piece.trim().strip_prefix('`'))
+            .filter_map(|piece| piece.split('`').next())
+            .map(str::to_owned)
+            .collect();
+        // Fail closed. A parse that quietly picked up half the names would
+        // leave this test passing while checking almost nothing, which is the
+        // failure mode a security guard can least afford. Every name in the
+        // message is wrapped in a pair of backticks, so the count of those is
+        // what says the parse consumed all of it — and unlike a minimum
+        // count, it holds for a five-variant enum as well as a fifty.
+        let quoted = listed.matches('`').count();
+        assert!(
+            quoted > 0 && quoted == names.len() * 2,
+            "parsed {} of {} names for {what}; serde's phrasing may have changed: \
+             {error}",
+            names.len(),
+            quoted / 2
+        );
+        names
+    }
+
+    /// Action variants judged not to run a program or type text.
+    ///
+    /// Adding a name here is a security judgement, and the test below is what
+    /// forces someone to make it deliberately rather than by leaving a new
+    /// variant out of [`RISKY_ACTIONS`] and not noticing.
+    ///
+    /// Key chords are here on purpose. They are the ordinary substance of a
+    /// profile, and flagging every one would train someone to wave the whole
+    /// audit through — which is the way an audit stops working.
+    const REVIEWED_SAFE: &[&str] = &[
+        "None",
+        "LeftClick",
+        "RightClick",
+        "MiddleClick",
+        "MouseBack",
+        "MouseForward",
+        "Copy",
+        "Paste",
+        "Cut",
+        "Undo",
+        "Redo",
+        "SelectAll",
+        "Find",
+        "Save",
+        "BrowserBack",
+        "BrowserForward",
+        "NewTab",
+        "CloseTab",
+        "ReopenTab",
+        "NextTab",
+        "PrevTab",
+        "ReloadPage",
+        "MissionControl",
+        "AppExpose",
+        "PreviousDesktop",
+        "NextDesktop",
+        "ShowDesktop",
+        "LaunchpadShow",
+        "LockScreen",
+        "Screenshot",
+        "CaptureRegion",
+        "PlayPause",
+        "NextTrack",
+        "PrevTrack",
+        "VolumeUp",
+        "VolumeDown",
+        "MuteVolume",
+        "CycleDpiPresets",
+        "SetDpiPreset",
+        "ToggleSmartShift",
+        "ScrollUp",
+        "ScrollDown",
+        "HorizontalScrollLeft",
+        "HorizontalScrollRight",
+        "CustomShortcut",
+        "Sleep",
+        "ShowActionsRing",
+        "HoldShortcut",
+        // Handled by its own branch: a macro is judged whole, by its steps.
+        "Workflow",
+        // WorkflowStep's own chord variant.
+        "PressKey",
+        // A pause between steps. It runs nothing; the steps around it are
+        // each judged on their own.
+        "Delay",
+    ];
+
+    /// The guard that keeps the audit from quietly becoming a hole.
+    ///
+    /// `RISKY_ACTIONS` is four hand-written strings. The walk that uses it
+    /// cannot miss a *location* — that is why it walks the serialized form —
+    /// but it can miss a *variant*, and nothing about adding one upstream
+    /// would say so. A new action that runs something would simply pass the
+    /// audit, on the one code path whose whole job is refusing that.
+    ///
+    /// So every variant must be classified, and a new one fails this test
+    /// until someone decides which it is.
+    #[test]
+    fn every_action_is_classified_as_risky_or_reviewed_safe() {
+        for (what, variants) in [
+            (
+                "Action",
+                every_variant_of::<openlogi_core::binding::Action>("Action"),
+            ),
+            (
+                "WorkflowStep",
+                every_variant_of::<openlogi_core::binding::WorkflowStep>("WorkflowStep"),
+            ),
+        ] {
+            for variant in variants {
+                let risky = super::RISKY_ACTIONS.contains(&variant.as_str());
+                let safe = REVIEWED_SAFE.contains(&variant.as_str());
+                assert!(
+                    risky || safe,
+                    "{what}::{variant} is in neither RISKY_ACTIONS nor REVIEWED_SAFE. \
+                     Decide which it is: does it run a program, launch something, or \
+                     type text on the person's machine? If so it belongs in \
+                     RISKY_ACTIONS, or an imported profile carrying it is applied \
+                     without anyone being asked."
+                );
+                assert!(
+                    !(risky && safe),
+                    "{what}::{variant} is in both lists, so which one wins is an \
+                     accident of lookup order"
+                );
+            }
+        }
+    }
+
+    /// The safe list must not accumulate names that no longer exist: a stale
+    /// entry is a variant someone reviewed once and that is now gone, and it
+    /// makes the list harder to trust when the next one is added.
+    #[test]
+    fn nothing_in_the_reviewed_list_has_been_removed_upstream() {
+        let mut known = every_variant_of::<openlogi_core::binding::Action>("Action");
+        known.extend(every_variant_of::<openlogi_core::binding::WorkflowStep>(
+            "WorkflowStep",
+        ));
+        for reviewed in REVIEWED_SAFE {
+            assert!(
+                known.iter().any(|variant| variant == reviewed),
+                "{reviewed} is in REVIEWED_SAFE but is no longer an action variant"
+            );
+        }
     }
 }

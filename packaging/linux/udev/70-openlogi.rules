@@ -1,8 +1,13 @@
 # OpenLogi udev rules
 #
-# Grants the active-seat user read/write access to Logitech HID devices, their
-# input event nodes, and the uinput kernel module — no group membership required
-# on systems running systemd-logind (uaccess tag).
+# Grants the active-seat user read/write access to the HID devices this program
+# drives, the input event nodes it reads, and the uinput kernel module — no
+# group membership required on systems running systemd-logind (uaccess tag).
+#
+# Device families are listed by vendor rather than caught by a wildcard. A rule
+# matching every hidraw node would hand the logged-in user every HID device on
+# the system, including ones nothing here has any business touching, and that
+# is a much worse trade than naming the vendors we actually drive.
 #
 # Install:
 #   sudo cp 70-openlogi.rules /etc/udev/rules.d/
@@ -20,6 +25,28 @@
 #     kernel name format "bus:VID:PID.iface" whose VID field is always uppercase.
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", TAG+="uaccess"
 SUBSYSTEM=="hidraw", KERNELS=="*:046D:*", TAG+="uaccess"
+
+# Elgato Stream Decks and the Stream Deck Pedal (hidraw interface).
+#
+# Separate from the Logitech block above because this program is no longer a
+# Logitech utility: it configures a Stream Deck through the same raw HID path,
+# and rules that covered only one vendor left someone whose only device is a
+# deck with a hub that could see nothing and no way to tell why.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0fd9", TAG+="uaccess"
+SUBSYSTEM=="hidraw", KERNELS=="*:0FD9:*", TAG+="uaccess"
+
+# QMK keyboards and macro pads with VIA enabled are deliberately NOT covered
+# here, and cannot be: VIA is identified by a HID usage page, which udev has no
+# way to match, and the boards that run it come from hundreds of vendors under
+# their own ids. Adding a wildcard rule to catch them would hand every HID
+# device on the system to the logged-in user, which is a far worse trade than
+# one extra line of setup.
+#
+# `openlogi doctor` closes that gap the honest way: it finds the devices this
+# program cannot open, reads their vendor ids, and prints the exact rule line
+# to add for them. Put those in a file of your own, e.g.
+# /etc/udev/rules.d/71-openlogi-local.rules, so an upgrade to this file does
+# not overwrite them.
 
 # uinput virtual device node — needed for the evdev/uinput input hook.
 # OPTIONS+="static_node=uinput" creates the node at boot even before any device

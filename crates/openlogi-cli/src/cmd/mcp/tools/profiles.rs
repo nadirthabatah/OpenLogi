@@ -129,7 +129,7 @@ pub fn import_profile(arguments: &Value) -> Result<String, String> {
             "{error}\n\nNothing was changed. Whether this profile's source is trustworthy \
              is a decision for the person at the keyboard, not for me — they can apply it \
              with: openlogi profile import {} --accept-actions",
-            path.display()
+            crate::spoken::shell_argument(&path.to_string_lossy())
         )),
         Err(other) => Err(other.to_string()),
     }

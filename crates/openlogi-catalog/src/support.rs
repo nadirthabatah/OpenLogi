@@ -169,12 +169,31 @@ impl Peripheral {
     /// verdict just because the unsupported collection came second: a Logitech
     /// mouse enumerates a plain mouse collection alongside its HID++ one, and
     /// which arrives first is not something we control.
+    ///
+    /// When the verdicts say the same amount, the *name* still has to be
+    /// chosen, and the collections of one device do not always agree on it —
+    /// "Stream Deck" and "Stream Deck (Consumer Control)" are the same device
+    /// introducing itself twice. Keeping whichever arrived first would make
+    /// the listed name depend on enumeration order, so a desk could read
+    /// differently between two runs on the same machine. The survey promises
+    /// the opposite, and a promise kept only while the OS happens to be
+    /// consistent is not one.
+    ///
+    /// So a tie is broken on the name itself: the one that sorts first. That
+    /// is arbitrary, and it is arbitrary the same way every time, which is
+    /// the property being bought.
     #[must_use]
     pub fn merge(self, other: Self) -> Self {
-        if rank(&other.support) > rank(&self.support) {
-            other
-        } else {
-            self
+        match rank(&other.support).cmp(&rank(&self.support)) {
+            std::cmp::Ordering::Greater => other,
+            std::cmp::Ordering::Less => self,
+            std::cmp::Ordering::Equal => {
+                if other.identity.describe() < self.identity.describe() {
+                    other
+                } else {
+                    self
+                }
+            }
         }
     }
 }
@@ -368,6 +387,96 @@ mod tests {
             !found.support.is_configurable(),
             "a candidate has not been confirmed"
         );
+    }
+
+    /// A device introduces itself differently on different collections, and
+    /// which one the OS hands over first is not ours to control. If the tie
+    /// went to whoever arrived first, the same desk would read differently
+    /// between two runs — which is the exact promise the survey makes.
+    #[test]
+    fn two_names_for_one_device_merge_to_the_same_name_either_way_round() {
+        let plain = Peripheral {
+            identity: Identity {
+                product: Some("Stream Deck".to_owned()),
+                ..identity(ELGATO_VENDOR_ID, 0x0080)
+            },
+            support: Support::Driver {
+                driver: Driver::StreamDeck,
+                model: Some("Stream Deck MK.2"),
+            },
+        };
+        let qualified = Peripheral {
+            identity: Identity {
+                product: Some("Stream Deck (Consumer Control)".to_owned()),
+                ..identity(ELGATO_VENDOR_ID, 0x0080)
+            },
+            support: Support::Driver {
+                driver: Driver::StreamDeck,
+                model: Some("Stream Deck MK.2"),
+            },
+        };
+
+        let forwards = plain.clone().merge(qualified.clone());
+        let backwards = qualified.merge(plain);
+        assert_eq!(
+            forwards.identity.describe(),
+            backwards.identity.describe(),
+            "the name a device is listed under must not depend on enumeration order"
+        );
+    }
+
+    /// The whole ordering, every pair, both ways round.
+    ///
+    /// `merge` exists so that which collection the OS enumerated first cannot
+    /// decide what a device is. That guarantee is the ordering being *total* —
+    /// any two verdicts having a definite winner — and the three cases a real
+    /// desk happens to produce do not pin that. A tie introduced later would
+    /// make merge order-dependent again for the pair that tied, silently, on
+    /// the one property this function exists to provide.
+    #[test]
+    fn the_ordering_of_verdicts_is_total_and_has_no_ties() {
+        // Weakest first. Each says strictly more than the one before it.
+        let ladder = [
+            Support::Unsupported,
+            Support::Candidate {
+                driver: Driver::Via,
+                needs: "a check",
+            },
+            Support::Receiver(ReceiverBrand::Unifying),
+            Support::Driver {
+                driver: Driver::HidPlusPlus,
+                model: None,
+            },
+        ];
+
+        for (weaker_at, weaker) in ladder.iter().enumerate() {
+            for (stronger_at, stronger) in ladder.iter().enumerate() {
+                let left = Peripheral {
+                    identity: identity(0x046d, 0x4082),
+                    support: weaker.clone(),
+                };
+                let right = Peripheral {
+                    identity: identity(0x046d, 0x4082),
+                    support: stronger.clone(),
+                };
+                let expected = if stronger_at > weaker_at {
+                    stronger
+                } else {
+                    weaker
+                };
+                // Both orders must reach the same verdict; that is the point.
+                assert_eq!(
+                    &left.clone().merge(right.clone()).support,
+                    expected,
+                    "merging {weaker:?} then {stronger:?} chose wrongly"
+                );
+                assert_eq!(
+                    &right.merge(left).support,
+                    expected,
+                    "merging {stronger:?} then {weaker:?} chose wrongly"
+                );
+            }
+        }
     }
 
     /// A candidate says more than nothing and less than a driver. Merging has

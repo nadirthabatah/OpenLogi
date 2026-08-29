@@ -245,4 +245,109 @@ mod tests {
             ProtocolError::ImageFramingUnsupported { .. }
         ));
     }
+
+    /// Every invariant the wire depends on, across the sizes where framing
+    /// goes wrong.
+    ///
+    /// These bytes are what a Stream Deck actually receives, and this project
+    /// cannot look at one to see whether the picture arrived. Exact multiples
+    /// of the payload and the sizes either side of them are where a framing
+    /// bug lives — an extra empty packet, a page counter off by one, a last
+    /// flag on the wrong packet — and every one of those shows up on hardware
+    /// as an image that never appears, with nothing on this side to say why.
+    #[test]
+    fn every_framing_invariant_holds_at_and_around_every_page_boundary() {
+        const PAYLOAD: usize = GEN2_PACKET_LEN - 8;
+        let mut sizes: Vec<usize> = vec![0, 1, 2, PAYLOAD - 1, PAYLOAD, PAYLOAD + 1];
+        for pages in 2..=5 {
+            sizes.push(PAYLOAD * pages - 1);
+            sizes.push(PAYLOAD * pages);
+            sizes.push(PAYLOAD * pages + 1);
+        }
+
+        for size in sizes {
+            let image: Vec<u8> = (0..size)
+                .map(|index| u8::try_from(index % 251).expect("below 251 fits a byte"))
+                .collect();
+            let packets = key_image_packets(mk2(), 1, &image)
+                .unwrap_or_else(|error| panic!("{size} bytes should frame: {error}"));
+
+            assert!(!packets.is_empty(), "{size}: no packets at all");
+
+            // Every packet is exactly one wire packet, padded. A short one is
+            // a packet the device would read past the end of.
+            for (at, packet) in packets.iter().enumerate() {
+                assert_eq!(
+                    packet.len(),
+                    GEN2_PACKET_LEN,
+                    "{size}: packet {at} is {} bytes",
+                    packet.len()
+                );
+            }
+
+            // Pages run 0, 1, 2, ... with no gaps and no repeats.
+            for (at, packet) in packets.iter().enumerate() {
+                assert_eq!(
+                    usize::from(page(packet)),
+                    at,
+                    "{size}: packet {at} claims page {}",
+                    page(packet)
+                );
+            }
+
+            // Exactly one packet is flagged last, and it is the final one.
+            let flagged: Vec<usize> = packets
+                .iter()
+                .enumerate()
+                .filter(|(_, packet)| packet[3] == 1)
+                .map(|(at, _)| at)
+                .collect();
+            assert_eq!(
+                flagged,
+                vec![packets.len() - 1],
+                "{size}: the last-packet flag is on {flagged:?} of {} packets",
+                packets.len()
+            );
+
+            // The declared lengths account for the image exactly — no byte
+            // dropped, none invented.
+            let declared: usize = packets.iter().map(|packet| declared_len(packet)).sum();
+            assert_eq!(declared, size, "{size}: declared lengths sum to {declared}");
+
+            // And the payload reassembles to the original, byte for byte.
+            let reassembled: Vec<u8> = packets
+                .iter()
+                .flat_map(|packet| packet[8..8 + declared_len(packet)].to_vec())
+                .collect();
+            assert_eq!(reassembled, image, "{size}: reassembly differs");
+
+            // No packet may claim more payload than one holds, and every
+            // packet but the last must be completely full.
+            //
+            // The fullness half is not pedantry. Underfilling still delivers
+            // the image — the device reads the declared length — so nothing
+            // would look wrong; it would simply take more USB transfers per
+            // key, on every key, for the life of the driver. That is the kind
+            // of regression that is invisible in a test suite whose
+            // invariants are only self-consistent, which is exactly what this
+            // one was until a mutation walked through it.
+            let last = packets.len() - 1;
+            for (at, packet) in packets.iter().enumerate() {
+                assert!(
+                    declared_len(packet) <= PAYLOAD,
+                    "{size}: packet {at} claims {} bytes of a {PAYLOAD}-byte payload",
+                    declared_len(packet)
+                );
+                if at < last {
+                    assert_eq!(
+                        declared_len(packet),
+                        PAYLOAD,
+                        "{size}: packet {at} of {} is not full, so the image takes \
+                         more transfers than it needs",
+                        packets.len()
+                    );
+                }
+            }
+        }
+    }
 }

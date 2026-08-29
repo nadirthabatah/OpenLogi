@@ -14,7 +14,10 @@
 
 mod camera;
 mod decks;
+mod health;
 mod inventory;
+mod keyboards;
+mod layouts;
 mod lighting;
 mod monitor;
 mod peripherals;
@@ -70,6 +73,9 @@ pub fn catalog() -> Value {
     tools.extend(monitor::tools());
     tools.extend(profiles::tools());
     tools.extend(decks::tools());
+    tools.extend(keyboards::tools());
+    tools.extend(health::tools());
+    tools.extend(layouts::tools());
     Value::Array(tools)
 }
 
@@ -108,6 +114,14 @@ pub async fn call(params: &Value) -> Result<Value, String> {
         "set_stream_deck_key_colour" => decks::set_stream_deck_key_colour(&arguments).await,
         "set_stream_deck_key_label" => decks::set_stream_deck_key_label(&arguments).await,
         "clear_stream_deck" => decks::clear_stream_deck(&arguments).await,
+        "list_keyboards" => keyboards::list_keyboards().await,
+        "read_keymap" => keyboards::read_keymap(&arguments).await,
+        "set_key" => keyboards::set_key(&arguments).await,
+        "diagnose" => health::diagnose().await,
+        "list_layouts" => layouts::list_layouts(),
+        "apply_layout" => layouts::apply_layout(&arguments).await,
+        "set_layout_key" => layouts::set_layout_key(&arguments),
+        "unset_layout_key" => layouts::unset_layout_key(&arguments),
         other => return Err(format!("unknown tool: {other}")),
     };
     Ok(match outcome {
@@ -182,7 +196,7 @@ mod tests {
     /// The dispatch arms in [`super::call`], as the catalog must advertise
     /// them. Kept here so a tool added to one and not the other fails a test
     /// rather than surfacing as "unknown tool" at run time.
-    const DISPATCHED: [&str; 22] = [
+    const DISPATCHED: [&str; 30] = [
         "list_devices",
         "list_peripherals",
         "reload_config",
@@ -205,6 +219,14 @@ mod tests {
         "set_stream_deck_key_colour",
         "set_stream_deck_key_label",
         "clear_stream_deck",
+        "list_keyboards",
+        "read_keymap",
+        "set_key",
+        "diagnose",
+        "list_layouts",
+        "apply_layout",
+        "set_layout_key",
+        "unset_layout_key",
     ];
 
     fn names() -> Vec<String> {

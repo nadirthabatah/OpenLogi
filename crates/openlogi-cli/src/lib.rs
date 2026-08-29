@@ -10,6 +10,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 pub mod bundle;
 mod cmd;
 pub mod profile;
+pub mod spoken;
 
 /// OpenLogi: a local-first companion for Logitech HID++ peripherals.
 #[derive(Debug, Parser)]
