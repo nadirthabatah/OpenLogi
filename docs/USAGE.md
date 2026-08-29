@@ -251,7 +251,8 @@ The tools exposed are:
 
 | Tool | What it does |
 |---|---|
-| `list_devices` | Everything attached, with agent health and a route per device |
+| `list_peripherals` | Every peripheral attached, whoever made it, and what each offers |
+| `list_devices` | Logitech HID++ devices, with agent health and a route per device |
 | `read_dpi` / `set_dpi` | Pointer resolution, and the values the sensor supports |
 | `read_smartshift` / `set_smartshift` | Scroll-wheel mode and the speed the ratchet releases at |
 | `set_lighting` | Backlight on/off, colour, brightness |
@@ -268,6 +269,14 @@ The tools exposed are:
 | `set_stream_deck_key_colour` | Fill one key with a colour |
 | `set_stream_deck_key_label` | Write a text label on one key, sized to fit |
 | `clear_stream_deck` | Turn every key black |
+
+`list_peripherals` is the one to reach for when the question is "what do I
+have plugged in". It spans vendors, where `list_devices` covers only Logitech
+HID++ devices — an assistant that reaches for the narrower tool will report an
+empty desk to someone whose desk is full. Devices this build cannot configure
+are included and marked, with a note telling the model to report them as
+present but unconfigurable: a model told nothing about a device will say it is
+not connected, which is the one answer guaranteed to be wrong.
 
 The camera tools reach the device directly rather than through the agent, the
 same way `openlogi camera` does — UVC controls are a host-exposed class
