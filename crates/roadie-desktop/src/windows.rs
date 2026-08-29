@@ -35,6 +35,7 @@ pub struct WindowRegistry {
     pub settings: Option<WindowHandle<Root>>,
     pub add_device: Option<WindowHandle<Root>>,
     pub update_consent: Option<WindowHandle<Root>>,
+    pub desk: Option<WindowHandle<Root>>,
 }
 
 impl Global for WindowRegistry {}
@@ -88,6 +89,7 @@ pub fn retitle_open(cx: &mut App) {
     let retitles = [
         (registry.settings, settings::window_title()),
         (registry.add_device, add_device::window_title()),
+        (registry.desk, crate::features::desk::view::window_title()),
     ];
     for (handle, title) in retitles {
         if let Some(handle) = handle {

@@ -19,6 +19,7 @@ path = "src/main.rs"
 [dependencies]
 appcatalog = "0.1.1"
 roadie-core = { path = "../roadie-core" }
+roadie-ddc = { path = "../roadie-ddc" }
 roadie-ui = { path = "../roadie-ui" }
 roadie-camera = { path = "../roadie-camera" }
 roadie-hook = { path = "../roadie-hook" }

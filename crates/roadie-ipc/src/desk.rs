@@ -51,7 +51,10 @@ pub struct DisplaySummary {
 /// monitor's own memory is absent for the same reason: that memory wears out.
 ///
 /// **Append-only.** serde encodes the declaration index.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Ordered so a caller can key a map by it. The derives change no encoding —
+/// serde writes the declaration index either way — so this is not a wire
+/// change, but the declaration order still is: see the append-only note above.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum DisplayControl {
     /// Backlight level, as a percentage.
     Brightness,

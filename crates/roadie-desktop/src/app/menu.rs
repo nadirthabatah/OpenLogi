@@ -40,6 +40,8 @@ actions!(
         OpenAbout,
         /// Open the Add Device (pairing) window.
         OpenAddDevice,
+        /// Open the monitors-and-lights window.
+        OpenDesk,
         /// Open the user's OpenRoadie configuration folder.
         OpenConfigFolder,
         /// Open the OpenRoadie help page.
@@ -81,6 +83,7 @@ pub fn install(cx: &mut App) {
         crate::windows::settings::open_at(crate::windows::settings::SettingsPage::About, cx);
     });
     cx.on_action(|_: &OpenAddDevice, cx| crate::windows::add_device::open(cx));
+    cx.on_action(|_: &OpenDesk, cx| crate::features::desk::view::open(cx));
     cx.on_action(|_: &BringAllToFront, cx| cx.activate(true));
     cx.on_action(|_: &CheckForUpdates, cx| check_for_updates(cx));
     cx.on_action(|_: &OpenConfigFolder, cx| {
@@ -220,6 +223,11 @@ fn menus(cx: &App) -> Vec<Menu> {
 fn device_menu_items(cx: &App) -> Vec<MenuItem> {
     let mut items = vec![
         MenuItem::action(tr!("Add Device…"), OpenAddDevice),
+        // Its own item rather than an entry in the device list below, because
+        // a monitor and a Key Light are not paired peripherals: they are found
+        // over a video cable and over the network, and neither appears in the
+        // inventory that list is built from.
+        MenuItem::action(tr!("Monitors and Lights…"), OpenDesk),
         MenuItem::separator(),
     ];
 
