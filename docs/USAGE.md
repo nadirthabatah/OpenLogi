@@ -327,6 +327,14 @@ bindings, per-app overlays, camera settings. Any other path writes a **bundle**
 — a folder holding that same configuration plus every saved Stream Deck layout,
 icons included. `import` takes either.
 
+Exporting again over an earlier bundle copies in without deleting anything, so
+a layout you have removed since is still in that folder. The export names those
+rather than removing them: that folder is a path you chose, and quietly
+deleting inside it is not a risk worth taking for tidiness. Importing works the
+same way in reverse — a layout this machine already had survives an import that
+does not mention it, because an import adds a setup rather than replacing the
+machine.
+
 A bundle is a folder rather than a zip on purpose. The promise this project
 makes is that your settings are plain text you can read and edit, and an
 archive would take that back for the sake of one fewer thing to copy. A folder

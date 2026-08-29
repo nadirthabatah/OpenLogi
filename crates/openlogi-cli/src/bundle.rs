@@ -82,26 +82,55 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
+/// What gathering the layout library into a bundle produced.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Gathered {
+    /// Layouts carried from the library.
+    pub carried: Vec<String>,
+    /// Layouts already in the bundle that the library no longer has.
+    ///
+    /// Exporting twice to the same folder copies over what is there without
+    /// removing anything, because that folder is a path the person named and
+    /// deleting inside it on their behalf is not a risk worth taking for
+    /// tidiness. But a layout they deleted months ago still riding along in
+    /// what they think is a current backup is a surprise, so it is named.
+    pub left_over: Vec<String>,
+}
+
 /// Copy the layout library into a bundle.
 ///
-/// Returns the layout names carried. A missing library is not a failure: a
-/// machine with no saved layouts has a setup that is entirely configuration,
-/// and that is a complete bundle rather than a broken one.
-pub fn gather_layouts(library: &Path, bundle: &Path) -> Result<Vec<String>> {
-    if !library.is_dir() {
-        return Ok(Vec::new());
-    }
+/// A missing library is not a failure: a machine with no saved layouts has a
+/// setup that is entirely configuration, and that is a complete bundle rather
+/// than a broken one.
+pub fn gather_layouts(library: &Path, bundle: &Path) -> Result<Gathered> {
     let destination = layouts_in(bundle);
+    let before = names_in(&destination);
+    if !library.is_dir() {
+        return Ok(Gathered {
+            carried: Vec::new(),
+            left_over: before,
+        });
+    }
     copy_tree(library, &destination)?;
-    Ok(names_in(&destination))
+    let carried = names_in(library);
+    let left_over = before
+        .into_iter()
+        .filter(|name| !carried.contains(name))
+        .collect();
+    Ok(Gathered { carried, left_over })
 }
 
 /// Copy a bundle's layouts back into the library.
 ///
 /// Existing layouts of the same name are overwritten, which is what importing
-/// a setup means. The configuration is backed up before an import for the same
-/// reason it always was; layouts are not, because a layout is a file the
-/// person chose to keep and can see, not hidden state.
+/// a setup means. Layouts the library has and the bundle does not are left
+/// alone: an import adds a setup rather than replacing the machine, and
+/// deleting work someone did on this machine because it was not in a bundle
+/// made elsewhere would be a far worse failure than an extra layout.
+///
+/// The configuration is backed up before an import for the reason it always
+/// was; layouts are not, because a layout is a file the person chose to keep
+/// and can see, not hidden state.
 pub fn restore_layouts(bundle: &Path, library: &Path) -> Result<Vec<String>> {
     let source = layouts_in(bundle);
     if !source.is_dir() {
@@ -189,9 +218,10 @@ mod tests {
     #[test]
     fn a_library_that_does_not_exist_yet_makes_an_empty_layout_set() {
         let scratch = Scratch::new("empty");
-        let carried = gather_layouts(&scratch.join("nothing-here"), &scratch.join("bundle"))
+        let gathered = gather_layouts(&scratch.join("nothing-here"), &scratch.join("bundle"))
             .expect("an absent library is not a failure");
-        assert!(carried.is_empty());
+        assert!(gathered.carried.is_empty());
+        assert!(gathered.left_over.is_empty());
     }
 
     #[test]
@@ -202,8 +232,11 @@ mod tests {
         write(&library.join("work.toml"), "brightness = 50\n");
         let bundle = scratch.join("bundle");
 
-        let carried = gather_layouts(&library, &bundle).expect("gathered");
-        assert_eq!(carried, vec!["streaming".to_owned(), "work".to_owned()]);
+        let gathered = gather_layouts(&library, &bundle).expect("gathered");
+        assert_eq!(
+            gathered.carried,
+            vec!["streaming".to_owned(), "work".to_owned()]
+        );
         assert!(layouts_in(&bundle).join("streaming.toml").is_file());
     }
 
@@ -237,8 +270,33 @@ mod tests {
         write(&library.join("streaming/camera.png"), "an icon");
         let bundle = scratch.join("bundle");
 
-        let carried = gather_layouts(&library, &bundle).expect("gathered");
-        assert_eq!(carried, vec!["streaming".to_owned()]);
+        let gathered = gather_layouts(&library, &bundle).expect("gathered");
+        assert_eq!(gathered.carried, vec!["streaming".to_owned()]);
+    }
+
+    /// Exporting twice to the same folder does not remove what is there —
+    /// that folder is a path the person named, and deleting inside it on
+    /// their behalf is not a risk worth taking for tidiness. But a layout
+    /// deleted months ago still riding along in what looks like a current
+    /// backup is a surprise, so it has to be named.
+    #[test]
+    fn a_layout_left_behind_by_an_earlier_export_is_reported() {
+        let scratch = Scratch::new("stale");
+        let library = scratch.join("library");
+        write(&library.join("streaming.toml"), "brightness = 80\n");
+        write(&library.join("work.toml"), "brightness = 50\n");
+        let bundle = scratch.join("bundle");
+        gather_layouts(&library, &bundle).expect("first export");
+
+        std::fs::remove_file(library.join("work.toml")).expect("delete a layout");
+        let gathered = gather_layouts(&library, &bundle).expect("second export");
+
+        assert_eq!(gathered.carried, vec!["streaming".to_owned()]);
+        assert_eq!(
+            gathered.left_over,
+            vec!["work".to_owned()],
+            "the deleted layout is still in the folder and must be named"
+        );
     }
 
     /// The whole point: a bundle made on one machine puts the layouts back on
@@ -257,6 +315,28 @@ mod tests {
         assert_eq!(restored, vec!["streaming".to_owned()]);
         assert!(fresh.join("streaming.toml").is_file());
         assert!(fresh.join("streaming/camera.png").is_file());
+    }
+
+    /// An import adds a setup; it does not replace the machine. Deleting work
+    /// someone did here because it was not in a bundle made elsewhere would be
+    /// a far worse failure than an extra layout.
+    #[test]
+    fn importing_does_not_delete_a_layout_this_machine_already_had() {
+        let scratch = Scratch::new("additive");
+        let bundle = scratch.join("bundle");
+        write(
+            &layouts_in(&bundle).join("streaming.toml"),
+            "brightness = 80\n",
+        );
+        let library = scratch.join("library");
+        write(&library.join("mine.toml"), "brightness = 10\n");
+
+        restore_layouts(&bundle, &library).expect("restored");
+        assert!(
+            library.join("mine.toml").is_file(),
+            "a layout made on this machine must survive an import"
+        );
+        assert!(library.join("streaming.toml").is_file());
     }
 
     /// A profile file exported the old way carries no layouts. Restoring from

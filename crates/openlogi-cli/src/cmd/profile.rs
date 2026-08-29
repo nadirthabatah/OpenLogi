@@ -185,14 +185,30 @@ fn export(named: &Path) -> Result<ExitCode> {
         .with_context(|| format!("failed to create {}", named.display()))?;
     profile::export(&bundle::config_in(named))?;
     let library = crate::cmd::streamdeck::layout_library()?;
-    let layouts = bundle::gather_layouts(&library, named)?;
+    let gathered = bundle::gather_layouts(&library, named)?;
 
     println!("setup written to {}", named.display());
     println!("  configuration: config.toml");
-    if layouts.is_empty() {
+    if gathered.carried.is_empty() {
         println!("  no saved layouts to carry (openlogi streamdeck layouts lists them)");
     } else {
-        println!("  {} layout(s): {}", layouts.len(), layouts.join(", "));
+        println!(
+            "  {} layout(s): {}",
+            gathered.carried.len(),
+            gathered.carried.join(", ")
+        );
+    }
+    // Exporting again over an earlier bundle copies in without deleting, so a
+    // layout removed since is still in that folder. Said out loud rather than
+    // removed: this is a path the person named, and quietly deleting inside it
+    // is not a risk worth taking for tidiness.
+    if !gathered.left_over.is_empty() {
+        println!(
+            "  also still in that folder from an earlier export, and no longer in your \
+             library: {}",
+            gathered.left_over.join(", ")
+        );
+        println!("  delete those files yourself if you do not want them carried.");
     }
     println!(
         "Copy the whole folder to another machine and apply it with: \

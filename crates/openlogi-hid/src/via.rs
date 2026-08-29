@@ -282,19 +282,23 @@ impl Session {
             .write_output_report(&command.encode())
             .await?;
         let mut buffer = [0_u8; REPORT_LEN];
-        for _ in 0..=MAX_STRAY_REPORTS {
+        let mut strays = 0_usize;
+        while strays <= MAX_STRAY_REPORTS {
             let filled = self.transport.read_input_report(&mut buffer).await?;
             match Response::parse(command, &buffer[..filled]) {
                 Ok(response) => return Ok(response),
                 // Not this command's answer. A QMK board sends unrelated raw
                 // reports whenever it likes, so this is ordinary — read again.
-                Err(openlogi_via::ProtocolError::Mismatched { .. }) => {}
+                Err(openlogi_via::ProtocolError::Mismatched { .. }) => strays += 1,
                 Err(error) => return Err(unexpected(&error.to_string())),
             }
         }
+        // The count is the one actually reached, not the constant. A message
+        // naming a number the code did not do is what someone diagnosing a
+        // board counts against, and is then misled by.
         Err(unexpected(&format!(
-            "the keyboard sent {MAX_STRAY_REPORTS} unrelated reports and never answered \
-             command {:#04x}",
+            "the keyboard sent {strays} unrelated reports and never answered command \
+             {:#04x}",
             command.id() as u8
         )))
     }
@@ -430,7 +434,33 @@ mod tests {
             .await
             .expect("the handshake succeeds");
         let error = session.keycode(0, 0, 0).await.expect_err("it must give up");
-        assert!(format!("{error}").contains("never answered"), "{error}");
+        let text = format!("{error}");
+        assert!(text.contains("never answered"), "{text}");
+        // The number in the message has to be the number of reports actually
+        // skipped. Someone diagnosing a board counts them.
+        assert!(
+            text.contains(&format!("sent {} unrelated", MAX_STRAY_REPORTS + 1)),
+            "{text}"
+        );
+    }
+
+    /// The boundary the limit sits on: a board that sends exactly as many
+    /// strays as are tolerated and then answers has answered, and giving up
+    /// one report early would call a working keyboard broken.
+    #[tokio::test]
+    async fn a_board_that_answers_on_the_last_tolerated_report_is_not_given_up_on() {
+        let mut replies = handshake();
+        for _ in 0..MAX_STRAY_REPORTS {
+            replies.push(reply(CommandId::GetLayerCount, &[(1, 4)]));
+        }
+        replies.push(keycode_reply(0x0068));
+        let mut session = Session::with_transport(Box::new(Scripted::new(replies)))
+            .await
+            .expect("the handshake succeeds");
+        assert_eq!(
+            session.keycode(0, 0, 0).await.expect("the late answer"),
+            0x0068
+        );
     }
 
     #[tokio::test]
