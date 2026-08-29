@@ -1,0 +1,488 @@
+//! End-to-end tests against the built `openlogi` binary.
+//!
+//! Everything else in this workspace tests a function. This runs the program a
+//! person actually runs, reads what it prints, and checks the exit status a
+//! script would branch on — the layer where a command wired to the wrong
+//! function, or a `main` that swallows an exit code, would still pass every
+//! unit test in the repository.
+//!
+//! # What can and cannot be asserted here
+//!
+//! These run on developer machines and on three CI platforms, and a CI runner
+//! is not an empty desk: a macOS runner has a built-in keyboard and trackpad.
+//! So anything that depends on what hardware is present is checked
+//! *structurally* — the command ran, said something coherent, and exited with
+//! one of the statuses it documents — while everything that does not depend on
+//! hardware is checked exactly.
+//!
+//! That division is deliberate rather than a shortcut. The hardware-free half
+//! is most of what someone actually uses this for: saving a setup, carrying it
+//! to another computer, and putting it back. That path is fully exercised
+//! here, end to end, through the real binary.
+//!
+//! Every test runs against its own configuration directory, so none of them
+//! can see or damage the configuration of whoever is running them.
+
+#![expect(
+    clippy::tests_outside_test_module,
+    reason = "an integration test file is already its own test-only crate"
+)]
+#![expect(
+    clippy::expect_used,
+    reason = "the sandbox helpers sit outside any `#[test]` fn, where `allow-expect-in-tests` cannot see them"
+)]
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+
+/// A configuration directory of this test's own.
+///
+/// `XDG_CONFIG_HOME` is honoured on every platform by this project — a
+/// deliberate upstream decision — so one environment variable isolates a test
+/// run completely, on Linux, macOS and Windows alike.
+struct Sandbox {
+    root: PathBuf,
+}
+
+impl Sandbox {
+    fn new(tag: &str) -> Self {
+        let root = std::env::temp_dir().join(format!(
+            "openlogi-cli-test-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_nanos())
+        ));
+        std::fs::create_dir_all(&root).expect("a sandbox directory");
+        Self { root }
+    }
+
+    /// Run `openlogi` with these arguments inside the sandbox.
+    fn run(&self, arguments: &[&str]) -> Run {
+        let output = Command::new(env!("CARGO_BIN_EXE_openlogi"))
+            .args(arguments)
+            .env("XDG_CONFIG_HOME", self.root.join("config"))
+            .env("XDG_DATA_HOME", self.root.join("data"))
+            .env("XDG_STATE_HOME", self.root.join("state"))
+            // The agent is a separate process and none of these commands need
+            // one; pointing its socket into the sandbox keeps a developer's
+            // running agent out of the results.
+            .env("XDG_RUNTIME_DIR", self.root.join("run"))
+            .output()
+            .expect("the openlogi binary runs");
+        Run {
+            arguments: arguments.iter().map(|a| (*a).to_owned()).collect(),
+            output,
+        }
+    }
+
+    fn path(&self, tail: &str) -> PathBuf {
+        self.root.join(tail)
+    }
+}
+
+impl Drop for Sandbox {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+/// One run of the program, with everything a test might assert on.
+struct Run {
+    arguments: Vec<String>,
+    output: Output,
+}
+
+impl Run {
+    fn status(&self) -> i32 {
+        self.output.status.code().unwrap_or(-1)
+    }
+
+    fn stdout(&self) -> String {
+        String::from_utf8_lossy(&self.output.stdout).into_owned()
+    }
+
+    fn stderr(&self) -> String {
+        String::from_utf8_lossy(&self.output.stderr).into_owned()
+    }
+
+    /// Everything the program said, for asserting without caring which stream.
+    fn said(&self) -> String {
+        format!("{}{}", self.stdout(), self.stderr())
+    }
+
+    fn expect_status(&self, wanted: i32) -> &Self {
+        assert_eq!(
+            self.status(),
+            wanted,
+            "`openlogi {}` exited {} rather than {wanted}\n--- stdout ---\n{}\n--- stderr ---\n{}",
+            self.arguments.join(" "),
+            self.status(),
+            self.stdout(),
+            self.stderr()
+        );
+        self
+    }
+
+    /// Exit with one of the statuses this command documents.
+    ///
+    /// For commands whose result depends on what is plugged into the machine
+    /// running the test.
+    fn expect_status_in(&self, allowed: &[i32]) -> &Self {
+        assert!(
+            allowed.contains(&self.status()),
+            "`openlogi {}` exited {}, which is not one of {allowed:?}\n{}",
+            self.arguments.join(" "),
+            self.status(),
+            self.said()
+        );
+        self
+    }
+
+    fn expect_says(&self, wanted: &str) -> &Self {
+        assert!(
+            self.said().contains(wanted),
+            "`openlogi {}` did not say {wanted:?}\n{}",
+            self.arguments.join(" "),
+            self.said()
+        );
+        self
+    }
+
+    fn expect_never_says(&self, unwanted: &str) -> &Self {
+        assert!(
+            !self.said().contains(unwanted),
+            "`openlogi {}` said {unwanted:?} and should not have\n{}",
+            self.arguments.join(" "),
+            self.said()
+        );
+        self
+    }
+}
+
+fn write(path: &Path, body: &str) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("a parent directory");
+    }
+    std::fs::write(path, body).expect("a file");
+}
+
+#[test]
+fn the_binary_runs_and_describes_itself() {
+    let sandbox = Sandbox::new("help");
+    let run = sandbox.run(&["--help"]);
+    run.expect_status(0);
+    for command in ["devices", "doctor", "streamdeck", "via", "profile", "mcp"] {
+        run.expect_says(command);
+    }
+}
+
+/// `doctor` is the command someone reaches for when nothing works, so it has
+/// to work on a machine where nothing else does. It must never fail outright:
+/// 0 means nothing to fix, 2 means it found something.
+#[test]
+fn doctor_reports_on_any_machine() {
+    let sandbox = Sandbox::new("doctor");
+    let run = sandbox.run(&["doctor"]);
+    run.expect_status_in(&[0, 2]);
+    run.expect_says("Permission to open devices");
+    run.expect_says("Configuration");
+    // A screen reader says "thing open paren s close paren".
+    run.expect_never_says("(s)");
+}
+
+#[test]
+fn devices_lists_or_explains_itself() {
+    let sandbox = Sandbox::new("devices");
+    let run = sandbox.run(&["devices"]);
+    run.expect_status_in(&[0, 2]);
+    if run.status() == 2 {
+        // "Nothing found" has to lead somewhere.
+        run.expect_says("openlogi doctor");
+    } else {
+        run.expect_says("Configurable now");
+        run.expect_says("attached device");
+    }
+}
+
+#[test]
+fn via_lists_or_explains_itself() {
+    let sandbox = Sandbox::new("via");
+    let run = sandbox.run(&["via"]);
+    run.expect_status_in(&[0, 2]);
+    if run.status() == 2 {
+        run.expect_says("VIA");
+        run.expect_says("openlogi doctor");
+    }
+}
+
+/// The whole layout library flow, which needs no hardware at all: create,
+/// list, and refuse to overwrite.
+#[test]
+fn a_layout_can_be_created_listed_and_not_clobbered() {
+    let sandbox = Sandbox::new("layouts");
+
+    sandbox
+        .run(&["streamdeck", "layouts"])
+        .expect_status(0)
+        .expect_says("No layouts saved yet");
+
+    sandbox
+        .run(&["streamdeck", "example", "streaming"])
+        .expect_status(0)
+        .expect_says("streaming.toml");
+
+    sandbox
+        .run(&["streamdeck", "layouts"])
+        .expect_status(0)
+        .expect_says("streaming");
+
+    // The deck's own memory is not a copy of the file, so an overwrite would
+    // leave nothing to restore from.
+    sandbox
+        .run(&["streamdeck", "example", "streaming"])
+        .expect_status(4)
+        .expect_says("already exists");
+}
+
+/// A malformed layout must be reported as malformed, whether or not a deck is
+/// attached. Reporting "no Stream Deck found" would send someone hunting a
+/// hardware problem they do not have.
+#[test]
+fn a_broken_layout_is_named_as_broken_rather_than_blamed_on_the_hardware() {
+    let sandbox = Sandbox::new("badlayout");
+    let path = sandbox.path("broken.toml");
+    write(&path, "brightness = \"not a number\"\n");
+
+    let run = sandbox.run(&["streamdeck", "apply", path.to_str().expect("utf-8")]);
+    assert_ne!(
+        run.status(),
+        0,
+        "a broken layout cannot succeed:\n{}",
+        run.said()
+    );
+    run.expect_says("broken.toml");
+    run.expect_never_says("No Stream Deck found");
+}
+
+/// The headline promise, end to end through the real binary: save a whole
+/// setup, lose it, and put it back.
+#[test]
+fn a_whole_setup_survives_being_exported_and_imported() {
+    let sandbox = Sandbox::new("bundle");
+    let bundle = sandbox.path("my-setup");
+
+    sandbox
+        .run(&["streamdeck", "example", "streaming"])
+        .expect_status(0);
+    // An icon beside the layout, to prove pictures travel with it.
+    let icons = sandbox.path("config/openlogi/layouts/streaming");
+    write(&icons.join("camera.png"), "pretend this is a picture");
+
+    sandbox
+        .run(&["profile", "export", bundle.to_str().expect("utf-8")])
+        .expect_status(0)
+        .expect_says("configuration: config.toml")
+        .expect_says("streaming");
+
+    assert!(
+        bundle.join("config.toml").is_file(),
+        "a bundle holds the configuration"
+    );
+    assert!(bundle.join("layouts/streaming.toml").is_file());
+    assert!(
+        bundle.join("layouts/streaming/camera.png").is_file(),
+        "an icon that does not travel makes a bundle that applies to blank keys"
+    );
+
+    // Lose the layout, the way moving to a new computer loses everything.
+    std::fs::remove_dir_all(sandbox.path("config/openlogi/layouts")).expect("lose the layouts");
+    sandbox
+        .run(&["streamdeck", "layouts"])
+        .expect_status(0)
+        .expect_says("No layouts saved yet");
+
+    sandbox
+        .run(&["profile", "import", bundle.to_str().expect("utf-8")])
+        .expect_status(0)
+        .expect_says("1 layout(s) restored: streaming");
+
+    sandbox
+        .run(&["streamdeck", "layouts"])
+        .expect_status(0)
+        .expect_says("streaming");
+    assert!(
+        sandbox
+            .path("config/openlogi/layouts/streaming/camera.png")
+            .is_file(),
+        "the icon has to come back too"
+    );
+}
+
+/// Exporting to a `.toml` path is the older, narrower thing, and the command
+/// has to say so — someone who wanted their layouts should find out now
+/// rather than on the machine they moved to.
+#[test]
+fn exporting_to_a_file_says_it_is_only_the_configuration() {
+    let sandbox = Sandbox::new("file-export");
+    let file = sandbox.path("just-config.toml");
+
+    sandbox
+        .run(&["profile", "export", file.to_str().expect("utf-8")])
+        .expect_status(0)
+        .expect_says("configuration written to")
+        .expect_says("export to a folder instead");
+
+    assert!(file.is_file());
+    assert!(
+        !sandbox.path("just-config").exists(),
+        "a file, not a folder"
+    );
+}
+
+/// The safety guard, through the real binary: a profile that would run a
+/// program is refused, nothing is written, and the status says which kind of
+/// failure it was.
+#[test]
+fn a_profile_that_would_run_a_program_is_refused_with_its_own_status() {
+    let sandbox = Sandbox::new("untrusted");
+    let file = sandbox.path("theirs.toml");
+    sandbox
+        .run(&["profile", "export", file.to_str().expect("utf-8")])
+        .expect_status(0);
+
+    let mut body = std::fs::read_to_string(&file).expect("the exported profile");
+    body.push_str("\n[keyboard.bindings]\nF13 = { RunShellCommand = \"echo pwned\" }\n");
+    write(&file, &body);
+
+    let refused = sandbox.run(&["profile", "import", file.to_str().expect("utf-8")]);
+    refused.expect_status(3);
+    refused.expect_says("Nothing has been imported");
+    refused.expect_says("echo pwned");
+
+    // And accepting it is the human's explicit decision, which must work.
+    sandbox
+        .run(&[
+            "profile",
+            "import",
+            file.to_str().expect("utf-8"),
+            "--accept-actions",
+        ])
+        .expect_status(0)
+        .expect_says("accepted");
+}
+
+/// `inspect` reports without applying. A tool that changed something while
+/// claiming to only look would be the worst kind of surprise here.
+#[test]
+fn inspecting_a_profile_changes_nothing() {
+    let sandbox = Sandbox::new("inspect");
+    let file = sandbox.path("setup.toml");
+    sandbox
+        .run(&["profile", "export", file.to_str().expect("utf-8")])
+        .expect_status(0);
+
+    let live = sandbox.path("config/openlogi/config.toml");
+    let before = std::fs::read(&live).ok();
+
+    sandbox
+        .run(&["profile", "inspect", file.to_str().expect("utf-8")])
+        .expect_status(0)
+        .expect_says("schema version");
+
+    assert_eq!(
+        std::fs::read(&live).ok(),
+        before,
+        "inspect must not touch the live configuration"
+    );
+}
+
+/// The MCP server, driven the way a client drives it. This proves the stdio
+/// framing, the JSON-RPC dispatch and the tool catalog against the real
+/// binary rather than against a function call.
+#[test]
+fn the_mcp_server_answers_over_stdio() {
+    use std::io::Write as _;
+    use std::process::Stdio;
+
+    let sandbox = Sandbox::new("mcp");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_openlogi"))
+        .arg("mcp")
+        .env("XDG_CONFIG_HOME", sandbox.path("config"))
+        .env("XDG_DATA_HOME", sandbox.path("data"))
+        .env("XDG_STATE_HOME", sandbox.path("state"))
+        .env("XDG_RUNTIME_DIR", sandbox.path("run"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("the mcp server starts");
+
+    {
+        let stdin = child.stdin.as_mut().expect("a pipe");
+        for line in [
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}"#,
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+        ] {
+            writeln!(stdin, "{line}").expect("the server accepts a request");
+        }
+    }
+
+    let output = child.wait_with_output().expect("the server exits on EOF");
+    let answered = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = answered.lines().filter(|line| !line.is_empty()).collect();
+    assert_eq!(lines.len(), 2, "one answer per request:\n{answered}");
+
+    // Every tool the survey and the drivers expose has to reach a client.
+    for tool in [
+        "list_peripherals",
+        "diagnose",
+        "list_layouts",
+        "apply_layout",
+        "list_keyboards",
+        "set_key",
+        "list_stream_decks",
+        "export_profile",
+    ] {
+        assert!(
+            lines[1].contains(tool),
+            "the catalog does not offer {tool}:\n{}",
+            lines[1]
+        );
+    }
+}
+
+/// A malformed request must not take the server down: a client that sends one
+/// bad frame should get an error and keep its session.
+#[test]
+fn the_mcp_server_survives_a_malformed_request() {
+    use std::io::Write as _;
+    use std::process::Stdio;
+
+    let sandbox = Sandbox::new("mcp-bad");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_openlogi"))
+        .arg("mcp")
+        .env("XDG_CONFIG_HOME", sandbox.path("config"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("the mcp server starts");
+
+    {
+        let stdin = child.stdin.as_mut().expect("a pipe");
+        writeln!(stdin, "this is not json at all").expect("write");
+        writeln!(stdin, r#"{{"jsonrpc":"2.0","id":2,"method":"tools/list"}}"#).expect("write");
+    }
+
+    let output = child.wait_with_output().expect("the server exits on EOF");
+    let answered = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = answered.lines().filter(|line| !line.is_empty()).collect();
+    assert_eq!(lines.len(), 2, "both frames answered:\n{answered}");
+    assert!(lines[0].contains("-32700"), "a parse error:\n{}", lines[0]);
+    assert!(
+        lines[1].contains("list_peripherals"),
+        "the session survived:\n{}",
+        lines[1]
+    );
+}
