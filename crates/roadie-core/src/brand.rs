@@ -8,11 +8,11 @@
 //! touches one file instead of three.
 
 /// The OpenRoadie GitHub repository.
-pub const REPO_URL: &str = "https://github.com/nadirthabatah/OpenLogi";
+pub const REPO_URL: &str = "https://github.com/nadirthabatah/OpenRoadie";
 /// The README, used as the in-app "Help" link.
-pub const HELP_URL: &str = "https://github.com/nadirthabatah/OpenLogi#readme";
+pub const HELP_URL: &str = "https://github.com/nadirthabatah/OpenRoadie#readme";
 /// The "latest release" page.
-pub const RELEASES_URL: &str = "https://github.com/nadirthabatah/OpenLogi/releases/latest";
+pub const RELEASES_URL: &str = "https://github.com/nadirthabatah/OpenRoadie/releases/latest";
 
 /// The application identifier: the Wayland xdg-toplevel `app_id` (and X11
 /// `WM_CLASS`) the GUI advertises, the root of the macOS bundle-id family

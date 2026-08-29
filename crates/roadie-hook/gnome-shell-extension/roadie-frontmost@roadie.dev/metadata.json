@@ -3,6 +3,6 @@
   "name": "OpenRoadie Frontmost Window",
   "description": "Exposes the focused window's WM_CLASS over D-Bus so OpenRoadie can switch per-app mouse profiles on GNOME Wayland. Read-only; no UI, no window contents.",
   "shell-version": ["45", "46", "47", "48", "49", "50"],
-  "url": "https://github.com/nadirthabatah/OpenLogi",
+  "url": "https://github.com/nadirthabatah/OpenRoadie",
   "version": 1
 }

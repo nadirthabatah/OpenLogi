@@ -30,7 +30,7 @@ use crate::index::{FileEntry, Index};
 const USER_AGENT: &str = concat!(
     "roadie-assets/",
     env!("CARGO_PKG_VERSION"),
-    " (+https://github.com/nadirthabatah/OpenLogi)"
+    " (+https://github.com/nadirthabatah/OpenRoadie)"
 );
 
 /// Bound on DNS + TCP + TLS connect. Deliberately does *not* cap body-read

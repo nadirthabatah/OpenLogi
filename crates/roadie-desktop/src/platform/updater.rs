@@ -28,7 +28,7 @@ use crate::state::AppState;
 // signatures — but the check itself belongs on this project's releases.)
 const MANIFEST_URL: &str = match option_env!("ROADIE_UPDATE_MANIFEST_URL") {
     Some(url) => url,
-    None => "https://github.com/nadirthabatah/OpenLogi/releases/latest/download/latest.json",
+    None => "https://github.com/nadirthabatah/OpenRoadie/releases/latest/download/latest.json",
 };
 
 /// Base64 minisign public key, embedded at build time by the release workflow.
