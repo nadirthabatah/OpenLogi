@@ -19,6 +19,8 @@ pub const SUPPORTED_VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-
 
 /// JSON-RPC: the frame was not valid JSON.
 pub const PARSE_ERROR: i64 = -32700;
+/// JSON-RPC: the frame is not a well-formed request.
+pub const INVALID_REQUEST: i64 = -32600;
 /// JSON-RPC: the method is not implemented.
 pub const METHOD_NOT_FOUND: i64 = -32601;
 /// JSON-RPC: the params are invalid for the method (an unknown tool name

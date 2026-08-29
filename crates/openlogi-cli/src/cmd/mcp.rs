@@ -57,7 +57,7 @@ pub async fn run(_args: McpArgs) -> Result<()> {
 }
 
 /// Handle one inbound line; `None` means nothing is sent back (blank line,
-/// notification, or a stray response frame).
+/// an all-notification batch, or a stray response frame).
 async fn handle_line(line: &str) -> Option<Value> {
     if line.trim().is_empty() {
         return None;
@@ -69,6 +69,45 @@ async fn handle_line(line: &str) -> Option<Value> {
             "the line is not valid JSON",
         ));
     };
+    match message {
+        Value::Array(batch) => handle_batch(&batch).await,
+        single => handle_message(&single).await,
+    }
+}
+
+/// Handle a JSON-RPC batch, answering with the array of replies its
+/// non-notification members produced.
+///
+/// Batching is permitted by the older revisions this server accepts (it was
+/// removed in `2025-06-18`), and dropping a batch silently is the worst
+/// available failure: the client waits for a response that will never come.
+async fn handle_batch(batch: &[Value]) -> Option<Value> {
+    if batch.is_empty() {
+        return Some(protocol::error(
+            &Value::Null,
+            protocol::INVALID_REQUEST,
+            "a batch must carry at least one request",
+        ));
+    }
+    let mut replies = Vec::new();
+    for message in batch {
+        if let Some(reply) = handle_message(message).await {
+            replies.push(reply);
+        }
+    }
+    // An all-notification batch is answered with nothing at all, per JSON-RPC.
+    (!replies.is_empty()).then_some(Value::Array(replies))
+}
+
+/// Handle one JSON-RPC message, batched or standalone.
+async fn handle_message(message: &Value) -> Option<Value> {
+    if !message.is_object() {
+        return Some(protocol::error(
+            &Value::Null,
+            protocol::INVALID_REQUEST,
+            "a JSON-RPC message must be an object",
+        ));
+    }
     let id = message.get("id").cloned();
     let Some(method) = message.get("method").and_then(Value::as_str) else {
         // No method + an id is a response frame; this server never issues
@@ -178,6 +217,48 @@ mod tests {
         let reply = reply_to("this is not json").await;
         assert_eq!(reply["error"]["code"], json!(protocol::PARSE_ERROR));
         assert!(reply["id"].is_null());
+    }
+
+    #[tokio::test]
+    async fn a_batch_is_answered_with_one_reply_per_request() {
+        let reply = reply_to(
+            r#"[{"jsonrpc":"2.0","id":1,"method":"ping"},{"jsonrpc":"2.0","id":2,"method":"ping"}]"#,
+        )
+        .await;
+        let replies = reply.as_array().expect("a batch answers with an array");
+        assert_eq!(replies.len(), 2);
+        assert_eq!(replies[0]["id"], json!(1));
+        assert_eq!(replies[1]["id"], json!(2));
+    }
+
+    #[tokio::test]
+    async fn a_batch_omits_its_notifications_but_still_answers_its_requests() {
+        let reply = reply_to(
+            r#"[{"jsonrpc":"2.0","method":"notifications/initialized"},{"jsonrpc":"2.0","id":7,"method":"ping"}]"#,
+        )
+        .await;
+        let replies = reply.as_array().expect("a batch answers with an array");
+        assert_eq!(replies.len(), 1, "the notification contributes no reply");
+        assert_eq!(replies[0]["id"], json!(7));
+    }
+
+    #[tokio::test]
+    async fn an_all_notification_batch_is_answered_with_nothing() {
+        let reply =
+            handle_line(r#"[{"jsonrpc":"2.0","method":"notifications/initialized"}]"#).await;
+        assert!(reply.is_none());
+    }
+
+    #[tokio::test]
+    async fn an_empty_batch_is_an_invalid_request_rather_than_silence() {
+        let reply = reply_to("[]").await;
+        assert_eq!(reply["error"]["code"], json!(protocol::INVALID_REQUEST));
+    }
+
+    #[tokio::test]
+    async fn a_frame_that_is_not_an_object_is_refused_not_ignored() {
+        let reply = reply_to("5").await;
+        assert_eq!(reply["error"]["code"], json!(protocol::INVALID_REQUEST));
     }
 
     #[tokio::test]
