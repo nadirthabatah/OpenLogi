@@ -326,6 +326,13 @@ mod tests {
     fn a_number_resolves_too() {
         assert_eq!(resolve("0x0068"), Ok(0x0068));
         assert_eq!(resolve("200"), Ok(200));
+        // Upper-case hex too. A model relaying a keycode out of QMK's own
+        // documentation may write it either way, and refusing one spelling of
+        // a number is a puzzle with no clue attached. The CLI accepts both;
+        // this tool has to agree with it, or the same request succeeds in a
+        // terminal and fails through an assistant.
+        assert_eq!(resolve("0X0068"), Ok(0x0068));
+        assert_eq!(resolve("0XABCD"), Ok(0xabcd));
     }
 
     /// `set_key` hands back a `to_undo` instruction built from

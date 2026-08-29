@@ -309,7 +309,9 @@ pub async fn apply_layout(arguments: &Value) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::tools;
+    use serde_json::json;
+
+    use super::{set_layout_key, tools};
 
     /// Without this steer a model will set thirty-two keys one at a time when
     /// the person said one word.
@@ -368,6 +370,63 @@ mod tests {
 
     /// The distinction a model most needs and is least likely to infer: one
     /// tool changes the deck until it loses power, the other changes the file.
+    /// A key showing both words and a picture is refused here, not later.
+    ///
+    /// Nothing writes a layout and validates it in the same breath: validation
+    /// happens when the layout is *applied*, so a key accepted here sits in
+    /// the file until the deck is next set up and then fails. The model that
+    /// wrote it is long gone by then, and the person is holding a layout that
+    /// will not apply and a tool that said it worked.
+    ///
+    /// A mutation sweep found this guard load-bearing and unwitnessed.
+    #[test]
+    fn a_key_cannot_be_given_both_words_and_a_picture() {
+        let error = set_layout_key(&json!({
+            "layout": "streaming",
+            "key": 0,
+            "label": "MUTE",
+            "image": "icons/mic.png",
+        }))
+        .expect_err("both is not a key anyone chose");
+        assert!(error.contains("not both"), "{error}");
+        // And the message has to say what to send instead, or the model has
+        // nothing to correct itself with.
+        assert!(error.contains("label"), "{error}");
+        assert!(error.contains("image"), "{error}");
+    }
+
+    /// A key with nothing on it at all is an entry that says nothing.
+    ///
+    /// Refused here for the same reason: it would be written, and only refused
+    /// when the layout is applied.
+    #[test]
+    fn a_key_with_nothing_on_it_is_refused_before_it_reaches_the_file() {
+        let error = set_layout_key(&json!({ "layout": "streaming", "key": 0 }))
+            .expect_err("a key needs something");
+        assert!(error.contains("label"), "{error}");
+        assert!(error.contains("action"), "{error}");
+    }
+
+    /// The one that must still be allowed: an action with no face. A key that
+    /// does something without showing anything is a deliberate choice, and
+    /// refusing it would make the guard above too broad.
+    #[test]
+    fn a_key_with_an_action_and_no_face_is_allowed_through_the_guard() {
+        let outcome = set_layout_key(&json!({
+            "layout": "openlogi-test-layout-that-does-not-exist",
+            "key": 0,
+            "action": "Copy",
+        }));
+        // It may still fail on the filesystem — there is no such layout here —
+        // but it must not fail the "nothing to show" check.
+        if let Err(error) = outcome {
+            assert!(
+                !error.contains("would be an entry that says nothing"),
+                "an action-only key was refused as empty: {error}"
+            );
+        }
+    }
+
     #[test]
     fn set_layout_key_distinguishes_itself_from_painting_the_live_deck() {
         let catalog = tools();

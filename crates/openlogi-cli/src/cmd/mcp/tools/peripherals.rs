@@ -53,18 +53,27 @@ pub async fn list_peripherals() -> Result<String, String> {
             }),
     );
 
+    // The same rendering `openlogi devices --json` prints, so a script and an
+    // assistant reading the same desk cannot be told different things.
+    rendered(&summary(&found))
+}
+
+/// The answer, as the model receives it.
+///
+/// Split from the enumeration above so the two counts can be checked. They are
+/// what an assistant repeats out loud — "three of seven can be configured" —
+/// and a count that quietly includes the unconfigurable ones is a sentence
+/// nobody can tell is wrong from the outside.
+fn summary(found: &[Peripheral]) -> Value {
     let configurable = found
         .iter()
         .filter(|found| found.support.is_configurable())
         .count();
-    // The same rendering `openlogi devices --json` prints, so a script and an
-    // assistant reading the same desk cannot be told different things.
-    let peripherals: Vec<Value> = found.iter().map(crate::cmd::devices::as_json).collect();
-    rendered(&json!({
-        "peripherals": peripherals,
+    json!({
+        "peripherals": found.iter().map(crate::cmd::devices::as_json).collect::<Vec<_>>(),
         "total": found.len(),
         "configurable": configurable,
-    }))
+    })
 }
 
 #[cfg(test)]
@@ -74,7 +83,7 @@ mod tests {
 
     use crate::cmd::devices::as_json as describe;
 
-    use super::tools;
+    use super::{summary, tools};
 
     fn peripheral(support: Support) -> Peripheral {
         Peripheral {
@@ -86,6 +95,39 @@ mod tests {
             },
             support,
         }
+    }
+
+    /// The two numbers an assistant repeats out loud.
+    ///
+    /// "Three of seven can be configured" is a sentence nobody can tell is
+    /// wrong from the outside, so the count has to be right at the source. A
+    /// mutation sweep found it counting everything and no test noticed.
+    #[test]
+    fn the_counts_separate_what_can_be_configured_from_what_cannot() {
+        let desk = [
+            peripheral(Support::Driver {
+                driver: Driver::HidPlusPlus,
+                model: None,
+            }),
+            peripheral(Support::Unsupported),
+            peripheral(Support::Receiver(ReceiverBrand::Unifying)),
+            peripheral(Support::Candidate {
+                driver: Driver::Via,
+                needs: "a check",
+            }),
+        ];
+        let answer = summary(&desk);
+        assert_eq!(answer["total"], 4);
+        assert_eq!(
+            answer["configurable"], 1,
+            "only the driver-backed device is configurable: {answer}"
+        );
+        // Every device is still listed, whatever the count says.
+        assert_eq!(
+            answer["peripherals"].as_array().expect("a list").len(),
+            4,
+            "a device must never be dropped from the listing: {answer}"
+        );
     }
 
     #[test]
