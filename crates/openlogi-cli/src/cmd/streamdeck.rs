@@ -48,6 +48,8 @@ pub enum StreamDeckCmd {
     Fill(FillArgs),
     /// Show a picture on one key. Any common image format is accepted.
     Image(ImageArgs),
+    /// Write a text label on one key, sized to fit.
+    Label(LabelArgs),
     /// Clear every key back to black.
     Clear,
 }
@@ -58,6 +60,20 @@ pub struct FillArgs {
     pub key: u16,
     /// Six hex digits, "RRGGBB", with no leading '#'.
     pub colour: String,
+}
+
+#[derive(Debug, Args)]
+pub struct LabelArgs {
+    /// Key index, counting from 0 at the top left.
+    pub key: u16,
+    /// The words to write. They wrap, and are sized to fill the key.
+    pub text: String,
+    /// Text colour, six hex digits.
+    #[arg(long, default_value = "ffffff")]
+    pub colour: String,
+    /// Background colour, six hex digits.
+    #[arg(long, default_value = "000000")]
+    pub background: String,
 }
 
 #[derive(Debug, Args)]
@@ -86,32 +102,7 @@ impl StreamDeckCmd {
             .await
             .context("failed to enumerate HID devices")?;
         if collections.is_empty() {
-            println!("No Stream Deck found.");
-            println!();
-
-            // Distinguish "nothing is plugged in" from "something Elgato is
-            // plugged in that this build does not know". They look identical
-            // to a user and have completely different answers.
-            let strangers = streamdeck::unrecognized()
-                .await
-                .context("failed to enumerate HID devices")?;
-            if strangers.is_empty() {
-                println!("No Elgato device is visible to this program at all. If one is");
-                println!("plugged in, the usual causes are:");
-                println!("  - on Linux, no permission on its hidraw node (see the udev rules)");
-                println!("  - on macOS, this program has not been granted Input Monitoring");
-            } else {
-                println!("An Elgato device IS attached, but this build does not recognize it:");
-                for stranger in &strangers {
-                    println!(
-                        "  product {:#06x} — {:?}, usage {:#06x}:{:#06x}",
-                        stranger.product_id, stranger.name, stranger.usage_page, stranger.usage_id
-                    );
-                }
-                println!();
-                println!("Adding a model to the catalogue needs only the product id above.");
-                println!("Please open an issue with these lines.");
-            }
+            report_nothing_found().await?;
             return Ok(ExitCode::from(NOTHING_FOUND));
         }
 
@@ -131,32 +122,28 @@ impl StreamDeckCmd {
                 println!("device reset to its standby screen");
             }
             Self::Fill(args) => {
-                let (red, green, blue) = parse_colour(&args.colour)?;
-                let mut session = open_preferred(&collections).await?;
-                let model = session.model();
-                let picture = render::solid(model, red, green, blue).map_err(|e| anyhow!("{e}"))?;
-                let encoded = render::key_image(model, &picture).map_err(|e| anyhow!("{e}"))?;
-                session.set_key_image(args.key, &encoded).await?;
-                println!(
-                    "key {} filled with {} ({})",
+                let colour = parse_colour(&args.colour)?;
+                draw(&collections, args.key, &Drawing::Fill(colour)).await?;
+            }
+            Self::Label(args) => {
+                let ink = parse_colour(&args.colour)?;
+                let paper = parse_colour(&args.background)?;
+                draw(
+                    &collections,
                     args.key,
-                    args.colour,
-                    describe_key_position(model, args.key)
-                );
+                    &Drawing::Label(&args.text, ink, paper),
+                )
+                .await?;
             }
             Self::Image(args) => {
                 let picture = image::open(&args.file)
                     .with_context(|| format!("failed to read {}", args.file.display()))?;
-                let mut session = open_preferred(&collections).await?;
-                let model = session.model();
-                let encoded = render::key_image(model, &picture).map_err(|e| anyhow!("{e}"))?;
-                session.set_key_image(args.key, &encoded).await?;
-                println!(
-                    "key {} now shows {} ({})",
+                draw(
+                    &collections,
                     args.key,
-                    args.file.display(),
-                    describe_key_position(model, args.key)
-                );
+                    &Drawing::Picture(&picture, &args.file),
+                )
+                .await?;
             }
             Self::Clear => {
                 let mut session = open_preferred(&collections).await?;
@@ -183,6 +170,74 @@ impl StreamDeckCmd {
         }
         Ok(ExitCode::SUCCESS)
     }
+}
+
+/// What to put on a key.
+///
+/// The three drawing commands differ only in what they produce and what they
+/// say afterwards; naming that difference keeps one open-encode-write path
+/// instead of three near-copies that could drift apart.
+enum Drawing<'a> {
+    /// A solid colour.
+    Fill((u8, u8, u8)),
+    /// Text, with its ink and paper colours.
+    Label(&'a str, (u8, u8, u8), (u8, u8, u8)),
+    /// A picture read from `path`.
+    Picture(&'a image::DynamicImage, &'a std::path::Path),
+}
+
+/// Open the preferred deck, encode `drawing` for it, and write it to `key`.
+async fn draw(collections: &[Attached], key: u16, drawing: &Drawing<'_>) -> Result<()> {
+    let mut session = open_preferred(collections).await?;
+    let model = session.model();
+    let picture = match drawing {
+        Drawing::Fill((red, green, blue)) => {
+            render::solid(model, *red, *green, *blue).map_err(|e| anyhow!("{e}"))?
+        }
+        Drawing::Label(text, ink, paper) => {
+            render::label(model, text, *ink, *paper).map_err(|e| anyhow!("{e}"))?
+        }
+        Drawing::Picture(picture, _) => (*picture).clone(),
+    };
+    let encoded = render::key_image(model, &picture).map_err(|e| anyhow!("{e}"))?;
+    session.set_key_image(key, &encoded).await?;
+
+    let what = match drawing {
+        Drawing::Fill((red, green, blue)) => format!("filled with {red:02x}{green:02x}{blue:02x}"),
+        Drawing::Label(text, ..) => format!("now reads {text:?}"),
+        Drawing::Picture(_, path) => format!("now shows {}", path.display()),
+    };
+    println!("key {key} {what} ({})", describe_key_position(model, key));
+    Ok(())
+}
+
+/// Explain an empty scan: nothing attached, or something attached that this
+/// build does not know. They look identical to a user and have opposite
+/// answers.
+async fn report_nothing_found() -> Result<()> {
+    println!("No Stream Deck found.");
+    println!();
+    let strangers = streamdeck::unrecognized()
+        .await
+        .context("failed to enumerate HID devices")?;
+    if strangers.is_empty() {
+        println!("No Elgato device is visible to this program at all. If one is");
+        println!("plugged in, the usual causes are:");
+        println!("  - on Linux, no permission on its hidraw node (see the udev rules)");
+        println!("  - on macOS, this program has not been granted Input Monitoring");
+        return Ok(());
+    }
+    println!("An Elgato device IS attached, but this build does not recognize it:");
+    for stranger in &strangers {
+        println!(
+            "  product {:#06x} — {:?}, usage {:#06x}:{:#06x}",
+            stranger.product_id, stranger.name, stranger.usage_page, stranger.usage_id
+        );
+    }
+    println!();
+    println!("Adding a model to the catalogue needs only the product id above.");
+    println!("Please open an issue with these lines.");
+    Ok(())
 }
 
 /// Print every collection, marking the one the driver would open.

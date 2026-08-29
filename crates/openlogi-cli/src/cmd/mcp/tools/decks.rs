@@ -80,6 +80,41 @@ pub fn tools() -> Vec<Value> {
             }),
         }),
         json!({
+            "name": "set_stream_deck_key_label",
+            "description": "Write a text label on one Stream Deck key. The words wrap \
+                and are sized to fill the key, so short labels are large. Prefer this \
+                over a colour when the key means something — a key that says what it \
+                does can be read back, and the label is what a screen reader announces.",
+            "inputSchema": json!({
+                "type": "object",
+                "properties": {
+                    "deck": deck_argument(),
+                    "key": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Key index, 0 at the top left.",
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "The words to write. Capitals, digits and common \
+                            punctuation; lowercase is drawn as capitals.",
+                    },
+                    "colour": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{6}$",
+                        "description": "Text colour, six hex digits. Defaults to white.",
+                    },
+                    "background": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{6}$",
+                        "description": "Background colour, six hex digits. Defaults to black.",
+                    },
+                },
+                "required": ["key", "text"],
+                "additionalProperties": false,
+            }),
+        }),
+        json!({
             "name": "clear_stream_deck",
             "description": "Turn every key on a Stream Deck black.",
             "inputSchema": json!({
@@ -213,6 +248,35 @@ pub async fn set_stream_deck_key_colour(arguments: &Value) -> Result<String, Str
     ))
 }
 
+/// Write a label on one key.
+pub async fn set_stream_deck_key_label(arguments: &Value) -> Result<String, String> {
+    let key = arguments
+        .get("key")
+        .and_then(Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+        .ok_or_else(|| "`key` must be a whole number, 0 at the top left".to_string())?;
+    let text = arguments
+        .get("text")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "`text` must be the words to write".to_string())?;
+    let ink = optional_colour(arguments, "colour")?.unwrap_or((255, 255, 255));
+    let paper = optional_colour(arguments, "background")?.unwrap_or((0, 0, 0));
+
+    let mut session = open(arguments).await?;
+    let model = session.model();
+    let picture = render::label(model, text, ink, paper).map_err(|error| error.to_string())?;
+    let encoded = render::key_image(model, &picture).map_err(|error| error.to_string())?;
+    session
+        .set_key_image(key, &encoded)
+        .await
+        .map_err(|error| format!("setting the key label failed: {error}"))?;
+    Ok(format!(
+        "key {key} on the {} now reads {text:?} ({})",
+        model.name,
+        position(model, key)
+    ))
+}
+
 /// Turn every key black.
 pub async fn clear_stream_deck(arguments: &Value) -> Result<String, String> {
     let mut session = open(arguments).await?;
@@ -239,6 +303,19 @@ fn position(model: &Model, key: u16) -> String {
         |_| "out of range".to_string(),
         |at| format!("row {}, column {}", at.row, at.column),
     )
+}
+
+/// Read an optional six-hex-digit colour argument.
+fn optional_colour(arguments: &Value, field: &str) -> Result<Option<(u8, u8, u8)>, String> {
+    match arguments.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(_) => {
+            // Reuse the required reader by presenting the field under the name
+            // it expects, so both paths accept exactly the same syntax.
+            let renamed = json!({ "colour": arguments.get(field) });
+            colour(&renamed).map(Some)
+        }
+    }
 }
 
 /// Read the six-hex-digit `colour` argument.

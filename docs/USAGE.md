@@ -16,6 +16,7 @@ openlogi streamdeck           # list attached Elgato Stream Decks
 openlogi streamdeck verify    # check the Stream Deck driver against your hardware
 openlogi streamdeck fill 0 ff8800   # fill the top-left key with a colour
 openlogi streamdeck image 0 icon.png # show a picture on the top-left key
+openlogi streamdeck label 0 "MUTE MIC"  # write a label, sized to fit
 openlogi mcp                  # serve the agent to an AI assistant over MCP (see below)
 openlogi profile export FILE  # write this machine's whole configuration to a file
 openlogi profile inspect FILE # show what a profile holds, without applying it
@@ -31,6 +32,13 @@ device.
 Keys are numbered from 0 at the top left, running left to right then down, and
 every command that takes a key also prints its row and column — so "key 7" and
 "row 2, column 3" always appear together and you never have to count squares.
+
+`label` writes words on a key, wrapped and sized to fill it — a key that says
+what it does. That matters beyond convenience: the label is text the system
+holds, so it can be read back, searched and spoken, and the picture on the key
+is a rendering of it rather than its identity. Capitals, digits and common
+punctuation are drawn; lowercase is drawn as capitals, which are more legible
+at this size.
 
 `fill` takes six hex digits; `image` takes any common picture file and scales
 and rotates it to fit the key, so you do not have to know the model's screen
@@ -150,6 +158,7 @@ The tools exposed are:
 | `list_stream_decks` | Attached Stream Decks, with each one's key count and grid shape |
 | `set_stream_deck_brightness` | A deck's key screen brightness |
 | `set_stream_deck_key_colour` | Fill one key with a colour |
+| `set_stream_deck_key_label` | Write a text label on one key, sized to fit |
 | `clear_stream_deck` | Turn every key black |
 
 The camera tools reach the device directly rather than through the agent, the

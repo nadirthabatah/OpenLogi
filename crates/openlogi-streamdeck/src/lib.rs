@@ -32,6 +32,7 @@
 #![deny(rustdoc::bare_urls)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+pub mod font;
 pub mod image;
 pub mod model;
 #[cfg(feature = "render")]

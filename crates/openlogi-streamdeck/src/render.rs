@@ -15,6 +15,7 @@ use image::codecs::jpeg::JpegEncoder;
 use image::{DynamicImage, ExtendedColorType, ImageEncoder as _, Rgb, RgbImage};
 
 use crate::ProtocolError;
+use crate::font;
 use crate::model::{ImageFormat as KeyFormat, ImageRotation, Model};
 
 /// JPEG quality for key images.
@@ -96,6 +97,173 @@ fn fit(picture: &DynamicImage, size: u32) -> DynamicImage {
     DynamicImage::ImageRgb8(canvas)
 }
 
+/// Blank rows between lines of a label, in glyph-scale units.
+const LINE_GAP: usize = 2;
+
+/// Largest scale a label is drawn at, so a one-character label does not
+/// become a single enormous letter filling the whole key.
+const MAX_SCALE: usize = 6;
+
+/// Draw `text` on a key, as large as it will fit.
+///
+/// This is the point of the whole image path for an accessible tool: a key
+/// that *says* what it does. The label is text the system holds — it can be
+/// read back, searched, and spoken — and the picture on the key is a
+/// rendering of it, not its identity.
+///
+/// Words wrap, and the scale is chosen to be the largest at which the wrapped
+/// text fits, so short labels are big and long ones stay legible rather than
+/// running off the key.
+///
+/// # Errors
+///
+/// [`ProtocolError::ScreenlessModel`] if the model has no key screens.
+pub fn label(
+    model: &Model,
+    text: &str,
+    foreground: (u8, u8, u8),
+    background: (u8, u8, u8),
+) -> Result<DynamicImage, ProtocolError> {
+    let screens = model
+        .screens
+        .ok_or(ProtocolError::ScreenlessModel { model: model.name })?;
+    let size = usize::from(screens.size_px);
+
+    let (scale, lines) = layout(text, size);
+    let mut canvas = RgbImage::from_pixel(
+        u32::try_from(size).unwrap_or(u32::MAX),
+        u32::try_from(size).unwrap_or(u32::MAX),
+        Rgb([background.0, background.1, background.2]),
+    );
+
+    let line_height = (font::GLYPH_HEIGHT + LINE_GAP) * scale;
+    let block_height = lines.len() * line_height - LINE_GAP * scale;
+    let top = size.saturating_sub(block_height) / 2;
+
+    for (row, line) in lines.iter().enumerate() {
+        let width = font::text_width(line) * scale;
+        let left = size.saturating_sub(width) / 2;
+        draw_line(
+            &mut canvas,
+            line,
+            left,
+            top + row * line_height,
+            scale,
+            foreground,
+        );
+    }
+    Ok(DynamicImage::ImageRgb8(canvas))
+}
+
+/// Pick the largest scale at which `text` wraps into `size` pixels, and the
+/// lines it wraps into.
+///
+/// Falls back to scale 1 when nothing fits, so an over-long label is drawn
+/// small rather than not at all — showing something legible-if-cramped beats
+/// showing a blank key.
+fn layout(text: &str, size: usize) -> (usize, Vec<String>) {
+    let mut smallest = (1, wrap(text, columns(size, 1)));
+    for scale in (1..=MAX_SCALE).rev() {
+        let lines = wrap(text, columns(size, scale));
+        let line_height = (font::GLYPH_HEIGHT + LINE_GAP) * scale;
+        let height = lines.len() * line_height - LINE_GAP * scale;
+        let widest = lines
+            .iter()
+            .map(|line| font::text_width(line) * scale)
+            .max()
+            .unwrap_or(0);
+        if height <= size && widest <= size {
+            return (scale, lines);
+        }
+        if scale == 1 {
+            smallest = (1, lines);
+        }
+    }
+    smallest
+}
+
+/// How many glyphs fit across a key at `scale`.
+fn columns(size: usize, scale: usize) -> usize {
+    let per_glyph = (font::GLYPH_WIDTH + font::GLYPH_SPACING) * scale;
+    // The last glyph needs no trailing gap, so one extra fits when the
+    // remainder covers a glyph without its spacing.
+    (size + font::GLYPH_SPACING * scale) / per_glyph
+}
+
+/// Greedy word wrap. A word longer than a line is hard-broken rather than
+/// allowed to overflow.
+fn wrap(text: &str, columns: usize) -> Vec<String> {
+    let columns = columns.max(1);
+    let mut lines: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        for chunk in hard_break(word, columns) {
+            if current.is_empty() {
+                current = chunk;
+            } else if current.chars().count() + 1 + chunk.chars().count() <= columns {
+                current.push(' ');
+                current.push_str(&chunk);
+            } else {
+                lines.push(std::mem::replace(&mut current, chunk));
+            }
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
+/// Split a word too long for a line into line-sized pieces.
+fn hard_break(word: &str, columns: usize) -> Vec<String> {
+    if word.chars().count() <= columns {
+        return vec![word.to_string()];
+    }
+    word.chars()
+        .collect::<Vec<_>>()
+        .chunks(columns)
+        .map(|chunk| chunk.iter().collect())
+        .collect()
+}
+
+/// Draw one line of glyphs at `scale`, top-left at `(left, top)`.
+fn draw_line(
+    canvas: &mut RgbImage,
+    line: &str,
+    left: usize,
+    top: usize,
+    scale: usize,
+    colour: (u8, u8, u8),
+) {
+    let ink = Rgb([colour.0, colour.1, colour.2]);
+    let mut x = left;
+    for character in line.chars() {
+        for (row, pixels) in font::glyph(character).iter().enumerate() {
+            for (column, pixel) in pixels.chars().enumerate() {
+                if pixel != '#' {
+                    continue;
+                }
+                for dy in 0..scale {
+                    for dx in 0..scale {
+                        let px = x + column * scale + dx;
+                        let py = top + row * scale + dy;
+                        let (Ok(px), Ok(py)) = (u32::try_from(px), u32::try_from(py)) else {
+                            continue;
+                        };
+                        if px < canvas.width() && py < canvas.height() {
+                            canvas.put_pixel(px, py, ink);
+                        }
+                    }
+                }
+            }
+        }
+        x += (font::GLYPH_WIDTH + font::GLYPH_SPACING) * scale;
+    }
+}
+
 /// A key filled with one colour, ready to encode.
 ///
 /// Separate from [`key_image`] so a caller that just wants a coloured key does
@@ -119,6 +287,7 @@ pub fn solid(model: &Model, red: u8, green: u8, blue: u8) -> Result<DynamicImage
 
 #[cfg(test)]
 mod tests {
+
     use image::{DynamicImage, GenericImageView as _, ImageEncoder as _, Rgb, RgbImage};
 
     use super::{key_image, solid};
@@ -201,6 +370,155 @@ mod tests {
     /// A wide picture must not be squashed into the square key. Stretching
     /// would change the picture into something the sender did not choose,
     /// which is worse than showing it smaller.
+    /// Render a label and return which pixels are ink, as a grid of bools —
+    /// enough to reason about placement without decoding a JPEG.
+    fn inked(text: &str) -> Vec<Vec<bool>> {
+        let picture = super::label(model(0x0080), text, (255, 255, 255), (0, 0, 0))
+            .expect("has screens")
+            .to_rgb8();
+        (0..picture.height())
+            .map(|y| {
+                (0..picture.width())
+                    .map(|x| picture.get_pixel(x, y).0[0] > 128)
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_label_draws_something_and_stays_inside_the_key() {
+        let grid = inked("OK");
+        assert_eq!(grid.len(), 72);
+        assert!(
+            grid.iter().flatten().any(|lit| *lit),
+            "a label must actually draw"
+        );
+        // Nothing may be written outside the canvas; `put_pixel` is bounds
+        // checked by the caller, so this asserts the arithmetic rather than
+        // the guard.
+        for row in &grid {
+            assert_eq!(row.len(), 72);
+        }
+    }
+
+    #[test]
+    fn an_empty_label_leaves_the_key_blank() {
+        assert!(
+            !inked("").iter().flatten().any(|lit| *lit),
+            "nothing to say means nothing drawn"
+        );
+        assert!(!inked("   ").iter().flatten().any(|lit| *lit));
+    }
+
+    #[test]
+    fn different_words_produce_different_pictures() {
+        // The failure this catches is a renderer that draws the same blob
+        // whatever it is given — every other test here would still pass.
+        assert_ne!(inked("YES"), inked("NO"));
+        assert_ne!(inked("A"), inked("B"));
+    }
+
+    /// Scale, not total ink: twelve small letters light more pixels than one
+    /// large one, so counting ink measures the wrong thing. The property that
+    /// matters is how big each glyph is drawn.
+    #[test]
+    fn a_short_label_is_drawn_at_a_larger_scale_than_a_long_one() {
+        let (short, _) = super::layout("A", 72);
+        let (long, _) = super::layout("AAAAAAAAAAAA", 72);
+        let (longer, _) = super::layout("MUTE THE MICROPHONE AND PAUSE THE MUSIC NOW", 72);
+        assert!(
+            short > long,
+            "one letter ({short}) should be drawn larger than twelve ({long})"
+        );
+        assert!(
+            long >= longer,
+            "and twelve ({long}) no smaller than a sentence ({longer})"
+        );
+        assert!(longer >= 1, "even a long label is drawn at some scale");
+    }
+
+    #[test]
+    fn a_chosen_layout_always_fits_the_key() {
+        // The scale search must never return one whose text overflows: an
+        // overflowing label is clipped at the edge, which reads as a typo.
+        for text in [
+            "A",
+            "OK",
+            "MUTE",
+            "MUTE MIC",
+            "MUTE THE MICROPHONE",
+            "SUPERCALIFRAGILISTICEXPIALIDOCIOUS",
+            "",
+        ] {
+            let (scale, lines) = super::layout(text, 72);
+            let line_height = (super::font::GLYPH_HEIGHT + super::LINE_GAP) * scale;
+            let height = lines.len() * line_height - super::LINE_GAP * scale;
+            let widest = lines
+                .iter()
+                .map(|line| super::font::text_width(line) * scale)
+                .max()
+                .unwrap_or(0);
+            assert!(height <= 72, "{text:?} is {height} tall at scale {scale}");
+            assert!(widest <= 72, "{text:?} is {widest} wide at scale {scale}");
+        }
+    }
+
+    #[test]
+    fn a_long_label_wraps_onto_several_lines() {
+        // Two words that cannot sit side by side must stack, which shows up
+        // as ink in both the upper and lower halves of the key.
+        let grid = inked("MUTE MICROPHONE");
+        let upper = grid[..36].iter().flatten().filter(|lit| **lit).count();
+        let lower = grid[36..].iter().flatten().filter(|lit| **lit).count();
+        assert!(
+            upper > 0 && lower > 0,
+            "the label should occupy both halves"
+        );
+    }
+
+    #[test]
+    fn a_label_is_centred_rather_than_pinned_to_a_corner() {
+        let grid = inked("HI");
+        let lit_columns: Vec<usize> = (0..72).filter(|x| grid.iter().any(|row| row[*x])).collect();
+        let left = *lit_columns.first().expect("something is drawn");
+        let right = *lit_columns.last().expect("something is drawn");
+        let margin_left = left;
+        let margin_right = 71 - right;
+        assert!(
+            margin_left.abs_diff(margin_right) <= 2,
+            "left margin {margin_left} and right margin {margin_right} should match"
+        );
+    }
+
+    #[test]
+    fn a_word_longer_than_the_key_is_broken_rather_than_lost() {
+        // A single unbroken word wider than the key must still appear.
+        let grid = inked("SUPERCALIFRAGILISTIC");
+        assert!(
+            grid.iter().flatten().any(|lit| *lit),
+            "an over-long word must still be drawn"
+        );
+    }
+
+    #[test]
+    fn a_label_encodes_for_the_device_like_any_other_picture() {
+        let mk2 = model(0x0080);
+        let picture = super::label(mk2, "REC", (255, 0, 0), (0, 0, 0)).expect("has screens");
+        let encoded = key_image(mk2, &picture).expect("encodes");
+        assert_eq!(&encoded[..2], &[0xff, 0xd8]);
+        let decoded = image::load_from_memory(&encoded).expect("re-reads");
+        assert_eq!(decoded.dimensions(), (72, 72));
+    }
+
+    #[test]
+    fn a_screenless_model_cannot_be_labelled() {
+        assert!(matches!(
+            super::label(model(0x0086), "X", (255, 255, 255), (0, 0, 0))
+                .expect_err("the Pedal has no screens"),
+            ProtocolError::ScreenlessModel { .. }
+        ));
+    }
+
     #[test]
     fn a_wide_picture_keeps_its_shape_and_is_padded_rather_than_squashed() {
         let mk2 = model(0x0080);

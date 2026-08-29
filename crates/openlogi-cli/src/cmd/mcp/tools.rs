@@ -103,6 +103,7 @@ pub async fn call(params: &Value) -> Result<Value, String> {
         "list_stream_decks" => decks::list_stream_decks().await,
         "set_stream_deck_brightness" => decks::set_stream_deck_brightness(&arguments).await,
         "set_stream_deck_key_colour" => decks::set_stream_deck_key_colour(&arguments).await,
+        "set_stream_deck_key_label" => decks::set_stream_deck_key_label(&arguments).await,
         "clear_stream_deck" => decks::clear_stream_deck(&arguments).await,
         other => return Err(format!("unknown tool: {other}")),
     };
@@ -178,7 +179,7 @@ mod tests {
     /// The dispatch arms in [`super::call`], as the catalog must advertise
     /// them. Kept here so a tool added to one and not the other fails a test
     /// rather than surfacing as "unknown tool" at run time.
-    const DISPATCHED: [&str; 20] = [
+    const DISPATCHED: [&str; 21] = [
         "list_devices",
         "reload_config",
         "read_dpi",
@@ -198,6 +199,7 @@ mod tests {
         "list_stream_decks",
         "set_stream_deck_brightness",
         "set_stream_deck_key_colour",
+        "set_stream_deck_key_label",
         "clear_stream_deck",
     ];
 
