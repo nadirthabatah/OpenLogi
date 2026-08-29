@@ -102,6 +102,9 @@ fn identity_of(
     serial_number: Option<&str>,
 ) -> Identity {
     Identity {
+        // Everything this file enumerates comes off a HID node, so the two ids
+        // are always USB's.
+        ids: roadie_catalog::IdSource::Usb,
         vendor_id,
         product_id,
         product: non_empty(name),

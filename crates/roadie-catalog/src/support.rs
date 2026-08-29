@@ -28,6 +28,8 @@ pub enum Driver {
     Uvc,
     /// Any QMK keyboard or macro pad with VIA enabled.
     Via,
+    /// Any monitor that speaks DDC/CI over its video cable.
+    Ddc,
 }
 
 impl Driver {
@@ -40,6 +42,7 @@ impl Driver {
             Self::StreamDeck => "streamdeck",
             Self::Uvc => "uvc",
             Self::Via => "via",
+            Self::Ddc => "ddc",
         }
     }
 
@@ -56,6 +59,7 @@ impl Driver {
             Self::StreamDeck => "key images, labels, brightness, and key actions",
             Self::Uvc => "brightness, contrast, exposure, focus, and zoom",
             Self::Via => "what each key sends, across every keymap layer",
+            Self::Ddc => "brightness, contrast, input source, and volume",
         }
     }
 
@@ -68,6 +72,7 @@ impl Driver {
             Self::StreamDeck => "roadie streamdeck",
             Self::Uvc => "roadie camera",
             Self::Via => "roadie via",
+            Self::Ddc => "roadie display",
         }
     }
 }
@@ -158,6 +163,28 @@ impl Peripheral {
             identity,
             support: Support::Driver {
                 driver: Driver::Uvc,
+                model: None,
+            },
+        }
+    }
+
+    /// Classify a display.
+    ///
+    /// Like a camera, and for the same reason: DDC/CI is a standard rather
+    /// than a per-vendor protocol, so the same brightness and input registers
+    /// answer on a Dell, an LG and a Gigabyte alike. A monitor is supported
+    /// because of what it is, not because of who made it.
+    ///
+    /// Being reachable is a separate question from being supported, and this
+    /// does not answer it. A monitor with DDC/CI switched off in its own menu
+    /// is still a monitor this build knows how to drive; `roadie display list`
+    /// is what says whether it is answering today.
+    #[must_use]
+    pub fn from_display(identity: Identity) -> Self {
+        Self {
+            identity,
+            support: Support::Driver {
+                driver: Driver::Ddc,
                 model: None,
             },
         }

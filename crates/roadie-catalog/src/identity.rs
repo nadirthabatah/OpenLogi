@@ -1,5 +1,23 @@
 //! What the operating system says a plugged-in thing is.
 
+/// Which numbering scheme a device's two ids come from.
+///
+/// They are not one namespace, and this crate's own rule is that vocabularies
+/// are converted at the boundary rather than crossed by raw value. A USB
+/// vendor id is administered by the USB Implementers Forum. A display's
+/// manufacturer code is a PNP id, administered by the UEFI Forum and packed
+/// into two bytes of its EDID, and the same number names a different company
+/// in each scheme. So the source travels with the numbers instead of being
+/// inferred from whatever else happens to be filled in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum IdSource {
+    /// USB's vendor and product ids, as the host reports them.
+    #[default]
+    Usb,
+    /// A display's PNP manufacturer code and product code, from its EDID.
+    Edid,
+}
+
 /// A peripheral's identity, exactly as the OS reports it.
 ///
 /// Every field beyond the two ids is optional because every one of them is
@@ -10,9 +28,11 @@
 /// a gap in our reading of it.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Identity {
-    /// USB vendor id.
+    /// Which scheme [`Self::vendor_id`] and [`Self::product_id`] belong to.
+    pub ids: IdSource,
+    /// Vendor id, in the scheme [`Self::ids`] names.
     pub vendor_id: u16,
-    /// USB product id, unique within the vendor.
+    /// Product id, unique within the vendor, in that same scheme.
     pub product_id: u16,
     /// The product name the OS reports, when it reports one.
     pub product: Option<String>,
@@ -78,8 +98,15 @@ impl Identity {
     /// How this device is written down when reporting it, ids included.
     #[must_use]
     pub fn full_description(&self) -> String {
+        // The scheme is said aloud for a display, because a bare pair of hex
+        // numbers after a name reads as a USB id, and a PNP code that looked
+        // like one would send someone searching a database it is not in.
+        let scheme = match self.ids {
+            IdSource::Usb => "",
+            IdSource::Edid => "display ",
+        };
         format!(
-            "{} ({:04x}:{:04x})",
+            "{} ({scheme}{:04x}:{:04x})",
             self.describe(),
             self.vendor_id,
             self.product_id
@@ -96,8 +123,13 @@ impl Identity {
     /// not, two identical devices merge into one entry, which understates the
     /// count rather than inventing devices that are not there.
     #[must_use]
-    pub fn merge_key(&self) -> (u16, u16, Option<&str>) {
+    pub fn merge_key(&self) -> (IdSource, u16, u16, Option<&str>) {
         (
+            // The scheme is part of the key for the same reason it is part of
+            // the identity: without it a display whose PNP code happened to
+            // equal some USB vendor id would merge into that device and
+            // disappear from the survey.
+            self.ids,
             self.vendor_id,
             self.product_id,
             self.serial_number.as_deref(),
@@ -119,10 +151,11 @@ fn first_word(text: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use super::Identity;
+    use super::{IdSource, Identity};
 
     fn identity(manufacturer: Option<&str>, product: Option<&str>) -> Identity {
         Identity {
+            ids: IdSource::Usb,
             vendor_id: 0x046d,
             product_id: 0xc52b,
             product: product.map(str::to_owned),
@@ -251,5 +284,83 @@ mod tests {
         let mut second = identity(Some("Elgato"), Some("Stream Deck"));
         second.serial_number = Some("AL2".to_owned());
         assert_ne!(first.merge_key(), second.merge_key());
+    }
+}
+
+#[cfg(test)]
+mod id_source_tests {
+    use super::{IdSource, Identity};
+
+    /// A display's identity, as `roadie devices` builds one from an EDID.
+    fn display() -> Identity {
+        Identity {
+            ids: IdSource::Edid,
+            vendor_id: 0x1E6D,
+            product_id: 0x5B11,
+            product: Some("ULTRAFINE".to_owned()),
+            manufacturer: Some("LG".to_owned()),
+            serial_number: None,
+        }
+    }
+
+    #[test]
+    fn a_displays_ids_are_not_read_as_usb_ids() {
+        // A bare hex pair after a name reads as a USB id, and a PNP code that
+        // looked like one would send someone searching a database it is not in.
+        assert_eq!(
+            display().full_description(),
+            "LG ULTRAFINE (display 1e6d:5b11)"
+        );
+    }
+
+    #[test]
+    fn a_usb_device_says_its_ids_plainly() {
+        let camera = Identity {
+            ids: IdSource::Usb,
+            vendor_id: 0x046D,
+            product_id: 0x0893,
+            product: Some("StreamCam".to_owned()),
+            manufacturer: Some("Logitech".to_owned()),
+            serial_number: None,
+        };
+        assert_eq!(camera.full_description(), "Logitech StreamCam (046d:0893)");
+    }
+
+    #[test]
+    fn a_display_never_merges_into_a_usb_device_that_shares_its_numbers() {
+        // The two schemes are administered by different bodies, so the same
+        // pair of numbers can legitimately appear in both. Without the scheme
+        // in the key, one of the two devices would vanish from the survey.
+        let collision = Identity {
+            ids: IdSource::Usb,
+            ..display()
+        };
+        assert_ne!(display().merge_key(), collision.merge_key());
+    }
+
+    #[test]
+    fn two_of_the_same_monitor_stay_two_when_they_carry_serial_numbers() {
+        let first = Identity {
+            serial_number: Some("12345".to_owned()),
+            ..display()
+        };
+        let second = Identity {
+            serial_number: Some("67890".to_owned()),
+            ..display()
+        };
+        assert_ne!(first.merge_key(), second.merge_key());
+    }
+
+    #[test]
+    fn a_display_with_no_edid_still_has_something_to_call_it() {
+        // A connected connector whose EDID is empty is a real state: the
+        // kernel reports the link before it has read the block, and some KVM
+        // switches never let it.
+        let nameless = Identity {
+            ids: IdSource::Edid,
+            product: Some("card0-DP-1".to_owned()),
+            ..Identity::default()
+        };
+        assert_eq!(nameless.describe(), "card0-DP-1");
     }
 }
