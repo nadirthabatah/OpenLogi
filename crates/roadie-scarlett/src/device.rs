@@ -513,6 +513,69 @@ mod tests {
     }
 
     #[test]
+    fn the_newest_applicable_layout_wins_whatever_order_the_tables_are_in() {
+        // The tables below happen to be listed oldest first, which makes
+        // "take the last match" and "take the newest match" agree — so the
+        // real tables cannot tell the two apart, and a mutation swapping one
+        // for the other survives against them. This model is deliberately out
+        // of order so that they disagree.
+        let jumbled = Model {
+            product_id: 0xFFFF,
+            name: "not a real interface",
+            series: "test",
+            phantom_pairs: 0,
+            phantom_first: 0,
+            level_inputs: 0,
+            level_first: 0,
+            pad_inputs: 0,
+            air_inputs: 0,
+            gain_inputs: 0,
+            tables: &[
+                FirmwareTable {
+                    from_firmware: 2417,
+                    table: tables::GEN4_4I4_2417,
+                },
+                FirmwareTable {
+                    from_firmware: 0,
+                    table: tables::GEN4_4I4,
+                },
+            ],
+        };
+        assert_eq!(
+            jumbled.table_for(2500),
+            Some(tables::GEN4_4I4_2417),
+            "the newest applicable layout wins, not the last one listed"
+        );
+        assert_eq!(
+            jumbled.table_for(100),
+            Some(tables::GEN4_4I4),
+            "and a version below the newer threshold still gets the older layout"
+        );
+    }
+
+    #[test]
+    fn every_model_lists_its_layouts_oldest_first() {
+        // Not relied on by `table_for` — the test above proves that — but
+        // worth holding anyway: a table added out of order is a mistake, and
+        // one that changed no behaviour would otherwise go unnoticed until
+        // somebody read the list and drew the wrong conclusion from it.
+        for model in MODELS {
+            let thresholds: Vec<u16> = model
+                .tables
+                .iter()
+                .map(|entry| entry.from_firmware)
+                .collect();
+            let mut sorted = thresholds.clone();
+            sorted.sort_unstable();
+            assert_eq!(
+                thresholds, sorted,
+                "{} lists its layouts out of order",
+                model.name
+            );
+        }
+    }
+
+    #[test]
     fn no_two_models_share_a_product_id() {
         // `find` takes the first match, so a duplicate would shadow whichever
         // came second and there would be nothing in the answer to see it by.
