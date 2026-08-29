@@ -36,23 +36,77 @@ pub struct McpArgs {}
 /// load-bearing here: stdout carries only protocol frames, one JSON-RPC
 /// message per line.
 ///
+/// Requests are handled concurrently rather than one at a time. That is not
+/// throughput for its own sake: `watch_input` deliberately runs for seconds,
+/// and a serial loop would stop reading stdin for its whole duration — a
+/// client's `ping` would sit unanswered and the server would look hung.
+/// JSON-RPC correlates by id and permits replies in any order, so answering
+/// out of order is within the protocol.
+///
+/// Replies funnel through one writer task. Frames must not interleave on
+/// stdout, and a single consumer is what guarantees each is written whole.
+///
 /// # Errors
 ///
-/// Fails only on an stdio transport error (a broken pipe while replying,
-/// or unreadable stdin). Protocol-level problems are answered in-band as
+/// Fails only on an stdio transport error (a broken pipe while replying, or
+/// unreadable stdin). Protocol-level problems are answered in-band as
 /// JSON-RPC errors and do not end the process.
 pub async fn run(_args: McpArgs) -> Result<()> {
-    let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    let mut stdout = tokio::io::stdout();
+    serve(tokio::io::stdin(), tokio::io::stdout()).await
+}
+
+/// [`run`], over any byte streams.
+///
+/// Split from `run` so the loop itself — framing, dispatch, concurrency and
+/// shutdown — is exercised by tests against in-memory streams rather than
+/// only by driving the built binary.
+///
+/// # Errors
+///
+/// As [`run`].
+async fn serve<R, W>(input: R, output: W) -> Result<()>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    let (replies, mut pending) = tokio::sync::mpsc::unbounded_channel::<Value>();
+    let writer = tokio::spawn(async move {
+        let mut output = output;
+        while let Some(reply) = pending.recv().await {
+            let Ok(mut frame) = serde_json::to_vec(&reply) else {
+                // A reply this server built is always serializable; if that
+                // ever stops being true, dropping the frame is better than
+                // writing a partial one onto the protocol stream.
+                continue;
+            };
+            frame.push(b'\n');
+            if output.write_all(&frame).await.is_err() || output.flush().await.is_err() {
+                // The client closed its end. Nothing further can be
+                // delivered, so stop rather than spinning on a dead pipe.
+                return;
+            }
+        }
+    });
+
+    let mut lines = BufReader::new(input).lines();
+    let mut handlers = tokio::task::JoinSet::new();
     while let Some(line) = lines.next_line().await? {
-        let Some(reply) = handle_line(&line).await else {
-            continue;
-        };
-        let mut frame = serde_json::to_vec(&reply)?;
-        frame.push(b'\n');
-        stdout.write_all(&frame).await?;
-        stdout.flush().await?;
+        let replies = replies.clone();
+        handlers.spawn(async move {
+            if let Some(reply) = handle_line(&line).await {
+                // A send failure means the writer is gone, which means the
+                // client is gone; the loop above will end on its own.
+                drop(replies.send(reply));
+            }
+        });
     }
+
+    // stdin closed: let in-flight requests finish and their replies drain
+    // before the process exits, so a client that closes immediately after a
+    // request still receives its answer.
+    drop(replies);
+    handlers.join_all().await;
+    drop(writer.await);
     Ok(())
 }
 
@@ -217,6 +271,103 @@ mod tests {
         let reply = reply_to("this is not json").await;
         assert_eq!(reply["error"]["code"], json!(protocol::PARSE_ERROR));
         assert!(reply["id"].is_null());
+    }
+
+    /// A writer that records whatever the serve loop emits.
+    struct Recorder(std::sync::Arc<tokio::sync::Mutex<Vec<u8>>>);
+
+    impl tokio::io::AsyncWrite for Recorder {
+        fn poll_write(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            buf: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            if let Ok(mut held) = self.0.try_lock() {
+                held.extend_from_slice(buf);
+            }
+            std::task::Poll::Ready(Ok(buf.len()))
+        }
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+        fn poll_shutdown(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    /// Drive the real serve loop over in-memory streams and return the
+    /// decoded reply frames, in the order they were written.
+    async fn served(input: &str) -> Vec<Value> {
+        let collected = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
+        super::serve(
+            input.as_bytes(),
+            Recorder(std::sync::Arc::clone(&collected)),
+        )
+        .await
+        .expect("the loop completes when its input ends");
+
+        let written = collected.lock().await.clone();
+        String::from_utf8(written)
+            .expect("frames are utf-8")
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str(line).expect("each frame is one JSON value"))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn the_loop_answers_every_request_and_ends_when_input_does() {
+        let frames = served(concat!(
+            r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#,
+            "
+",
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+            "
+",
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+            "
+",
+        ))
+        .await;
+        assert_eq!(frames.len(), 2, "the notification contributes no frame");
+        let mut ids: Vec<i64> = frames
+            .iter()
+            .map(|frame| frame["id"].as_i64().expect("an integer id"))
+            .collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec![1, 2]);
+    }
+
+    #[tokio::test]
+    async fn every_frame_the_loop_writes_is_one_whole_json_line() {
+        // The concurrency makes this worth asserting: several handlers can
+        // finish at once, and interleaved bytes would corrupt the stream.
+        use std::fmt::Write as _;
+        let mut input = String::new();
+        for id in 0..20 {
+            writeln!(input, r#"{{"jsonrpc":"2.0","id":{id},"method":"ping"}}"#)
+                .expect("writing to a String cannot fail");
+        }
+        let frames = served(&input).await;
+        assert_eq!(frames.len(), 20);
+        for frame in &frames {
+            assert_eq!(frame["jsonrpc"], "2.0");
+            assert!(frame["result"].is_object());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_reply_still_arrives_when_input_closes_immediately_after_it() {
+        // No trailing newline: the client sent one request and closed.
+        let frames = served(r#"{"jsonrpc":"2.0","id":9,"method":"ping"}"#).await;
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0]["id"], json!(9));
     }
 
     #[tokio::test]
