@@ -180,7 +180,7 @@ fn export(named: &Path) -> Result<ExitCode> {
         );
         println!(
             "Apply it on another machine with: openlogi profile import {}",
-            named.display()
+            crate::spoken::shell_argument(&named.to_string_lossy())
         );
         return Ok(ExitCode::SUCCESS);
     }
@@ -237,7 +237,7 @@ fn export(named: &Path) -> Result<ExitCode> {
     println!(
         "Copy the whole folder to another machine and apply it with: \
          openlogi profile import {}",
-        named.display()
+        crate::spoken::shell_argument(&named.to_string_lossy())
     );
     Ok(ExitCode::SUCCESS)
 }

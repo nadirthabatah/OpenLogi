@@ -722,7 +722,10 @@ fn write_example(argument: &str, path: &Path) -> Result<ExitCode> {
     std::fs::write(path, EXAMPLE_LAYOUT)
         .with_context(|| format!("failed to write {}", path.display()))?;
     println!("example layout written to {}", path.display());
-    println!("Edit it, then: openlogi streamdeck apply {argument}");
+    println!(
+        "Edit it, then: openlogi streamdeck apply {}",
+        crate::spoken::shell_argument(argument)
+    );
     Ok(ExitCode::SUCCESS)
 }
 

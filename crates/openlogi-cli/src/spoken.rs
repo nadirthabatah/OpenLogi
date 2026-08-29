@@ -29,6 +29,28 @@ pub fn counted(how_many: usize, one: &str, many: &str) -> String {
     }
 }
 
+/// An argument as it must be typed to survive a shell.
+///
+/// A command this program prints is a command someone copies. A layout called
+/// "my deck" echoed bare produces `openlogi streamdeck apply my deck`, which
+/// the shell splits into two arguments and the program then rejects — and the
+/// person is left arguing with an instruction the program itself gave them.
+///
+/// Single quotes because they are literal in every POSIX shell; an argument
+/// containing one has that one spliced, which is the standard way and survives
+/// being pasted.
+#[must_use]
+pub fn shell_argument(argument: &str) -> String {
+    let plain = !argument.is_empty()
+        && argument.chars().all(|c| {
+            c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | ',' | ':' | '=' | '@')
+        });
+    if plain {
+        return argument.to_owned();
+    }
+    format!("'{}'", argument.replace('\'', r"'\''"))
+}
+
 /// Patterns that make terminal output worse to hear than to read.
 pub const UNLISTENABLE: &[(&str, &str)] = &[
     (
@@ -194,7 +216,7 @@ pub fn assert_listenable(text: &str, what: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{assert_agrees, assert_listenable, counted, leading_count};
+    use super::{assert_agrees, assert_listenable, counted, leading_count, shell_argument};
 
     #[test]
     fn one_takes_the_singular_and_everything_else_the_plural() {
@@ -279,5 +301,34 @@ mod tests {
         assert_eq!(leading_count("11 devices"), Some((11, " devices")));
         // "046d:4082" is an id; the digits glued to it must not read as one.
         assert_eq!(leading_count("MX Master 3S (046d:4082)"), None);
+    }
+
+    /// A command this program prints is a command someone copies. One that
+    /// the shell then splits is worse than no instruction at all, because the
+    /// person argues with it before doubting it.
+    #[test]
+    fn a_name_needing_quotes_gets_them() {
+        assert_eq!(shell_argument("streaming"), "streaming");
+        assert_eq!(shell_argument("my-deck.2"), "my-deck.2");
+        assert_eq!(shell_argument("/home/me/deck.toml"), "/home/me/deck.toml");
+        assert_eq!(shell_argument("my deck"), "'my deck'");
+        assert_eq!(shell_argument(""), "''");
+        assert_eq!(shell_argument("\u{65e5}\u{672c}"), "'\u{65e5}\u{672c}'");
+    }
+
+    /// The characters a shell would act on must not reach it unquoted.
+    #[test]
+    fn a_name_carrying_shell_syntax_is_made_inert() {
+        for hostile in ["a;rm -rf ~", "a$(id)", "a`id`", "a|b", "a&b", "a>b", "a*b"] {
+            let quoted = shell_argument(hostile);
+            assert!(quoted.starts_with('\''), "{hostile:?} -> {quoted}");
+            assert!(quoted.ends_with('\''), "{hostile:?} -> {quoted}");
+        }
+    }
+
+    /// A quote inside the name is the one case simple quoting gets wrong.
+    #[test]
+    fn a_name_containing_a_quote_is_spliced_not_broken() {
+        assert_eq!(shell_argument("it's"), r"'it'\''s'");
     }
 }

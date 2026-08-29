@@ -449,6 +449,68 @@ fn a_refused_bundle_import_writes_neither_configuration_nor_layouts() {
     );
 }
 
+/// A command this program prints is a command someone copies and runs.
+///
+/// A layout called "my deck" echoed bare gives `openlogi streamdeck apply my
+/// deck`, which the shell splits in two and the program then rejects — leaving
+/// the person arguing with an instruction the program itself gave them. Worse
+/// than no instruction, because they doubt themselves before they doubt it.
+#[test]
+fn a_printed_command_is_one_that_actually_runs() {
+    let sandbox = Sandbox::new("printed-commands");
+
+    let written = sandbox.run(&["streamdeck", "example", "my deck"]);
+    written.expect_status(0);
+    let said = written.said();
+    let instruction = said
+        .lines()
+        .find(|line| line.contains("streamdeck apply"))
+        .expect("the command to run next is printed");
+
+    // Take the instruction apart the way a shell would, and run exactly that.
+    let arguments = shell_split(instruction.split_once(": ").expect("a command").1);
+    assert_eq!(arguments.first().map(String::as_str), Some("openlogi"));
+    let rest: Vec<&str> = arguments[1..].iter().map(String::as_str).collect();
+
+    // Status 2 is "no Stream Deck attached", which is the honest answer here.
+    // What must not happen is the argument parser rejecting it.
+    let run = sandbox.run(&rest);
+    run.expect_status_in(&[0, 2]);
+    assert!(
+        !run.said().contains("unexpected argument"),
+        "the printed command does not parse:\n{instruction}\n{}",
+        run.said()
+    );
+}
+
+/// Split a command line the way a POSIX shell does, for single quotes only —
+/// which is all [`openlogi_cli::spoken::shell_argument`] emits.
+fn shell_split(line: &str) -> Vec<String> {
+    let mut arguments = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
+    let mut any = false;
+    for character in line.trim().chars() {
+        match character {
+            '\'' => {
+                quoted = !quoted;
+                any = true;
+            }
+            c if c.is_whitespace() && !quoted => {
+                if any || !current.is_empty() {
+                    arguments.push(std::mem::take(&mut current));
+                    any = false;
+                }
+            }
+            c => current.push(c),
+        }
+    }
+    if any || !current.is_empty() {
+        arguments.push(current);
+    }
+    arguments
+}
+
 /// A label the key font cannot draw has to be said out loud, not left to the
 /// key to reveal.
 ///
