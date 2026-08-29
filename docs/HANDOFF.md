@@ -418,11 +418,42 @@ confirmation in front of the safe direction is an obstacle in the wrong place.
 The acknowledgement names the pair it was given for, so agreeing once cannot be
 spent on every input.
 
-### 6.8 After Scarlett — this is the part still to do
+### 6.8 The Scarlett host layer forks by platform, and Linux is the odd one
 
-The Scarlett host layer: a USB control-transfer backend, then the CLI and MCP
-surfaces. Then headsets, MIDI pads, RGB on other brands, and other vendors'
-mice and keyboards.
+Found while planning that layer, before writing any of it, and it changes what
+it is. **On Linux the protocol crate is not the way in and should not be used.**
+
+The kernel's `snd-usb-audio` claims the interface, and `mixer_scarlett2.c` is
+part of it, so the vendor control endpoint already has an owner. Reaching it
+from userspace over raw USB would mean detaching that driver — which stops the
+audio, on an audio interface. Worse, the kernel is already doing the work: it
+publishes every one of these settings as an ordinary ALSA mixer control, with
+names built per model, such as `Line In 1 Phantom Power Switch` and
+`Line In 1-2 Phantom Power Switch` where one phantom switch covers a pair.
+
+So the honest shape is:
+
+- **Linux** — read and write ALSA mixer controls. No USB, no protocol crate,
+  nothing to reverse. The work is the name mapping per model, which is pure and
+  testable, plus an ALSA binding.
+- **macOS and Windows** — no kernel driver claims the control interface, so raw
+  USB control transfers, which is exactly what `roadie-scarlett` is for.
+
+That is not a loss for the protocol crate: it earns its keep on two of the three
+platforms, and it is the only option there. But it does mean "write a USB
+backend" is the wrong description of the next step, and that the Linux path is
+much smaller and much safer than it looked.
+
+This was **not verified against hardware or against a running kernel** — it is
+read from the driver source and from how USB interface claiming works. Worth
+confirming with `amixer -c` on a machine with a Scarlett attached before
+building on it, which is a one-command check.
+
+### 6.9 After that — this is the part still to do
+
+The Scarlett host layer, per the fork above, then its CLI and MCP surfaces.
+Then headsets, MIDI pads, RGB on other brands, and other vendors' mice and
+keyboards.
 
 ## 7. What a session can do with nobody at the desk
 
