@@ -138,7 +138,20 @@ fn has_toml_extension(argument: &str) -> bool {
 ///
 /// Fails only when the configuration directory cannot be determined.
 pub fn list() -> Result<Listing> {
-    let Ok(entries) = std::fs::read_dir(directory()?) else {
+    let directory = directory()?;
+    let Ok(entries) = std::fs::read_dir(&directory) else {
+        // Absent is the ordinary state of a machine that has saved nothing.
+        // Present but unreadable — a file where the folder should be, or a
+        // folder this user cannot open — is a fault, and saying "no layouts
+        // saved yet" about it would send someone to save one and watch that
+        // fail for a reason nothing mentioned.
+        if directory.exists() {
+            return Err(anyhow::anyhow!(
+                "{} exists but cannot be read as a folder. If it is a file, move or \
+                 delete it; otherwise check its permissions.",
+                directory.display()
+            ));
+        }
         return Ok(Listing::default());
     };
     let mut listing = Listing::default();

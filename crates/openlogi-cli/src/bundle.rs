@@ -117,6 +117,18 @@ pub fn gather_layouts(library: &Path, bundle: &Path) -> Result<Gathered> {
     let destination = layouts_in(bundle);
     let before = names_in(&destination);
     if !library.is_dir() {
+        // "It is not there" and "it is there and is not a folder" produce the
+        // same empty result and mean opposite things. A machine that has saved
+        // no layouts has a complete setup; a library that is a file is broken,
+        // and reporting a successful export over it hands someone a bundle
+        // they will discover is short on the machine they carried it to.
+        if library.exists() {
+            return Err(anyhow::anyhow!(
+                "{} exists but is not a folder, so no layout could be saved there \
+                 and none can be carried. Move or delete that file.",
+                library.display()
+            ));
+        }
         return Ok(Gathered {
             carried: Vec::new(),
             left_over: before,
@@ -243,6 +255,27 @@ mod tests {
             .expect("an absent library is not a failure");
         assert!(gathered.carried.is_empty());
         assert!(gathered.left_over.is_empty());
+    }
+
+    /// "It is not there" and "it is there and is not a folder" produce the
+    /// same empty result and mean opposite things. Reporting a successful
+    /// export over the second hands someone a bundle they discover is short
+    /// on the machine they carried it to — which is the one place they cannot
+    /// go back and fix it from.
+    #[test]
+    fn a_library_that_is_a_file_is_an_error_rather_than_an_empty_export() {
+        let scratch = Scratch::new("library-is-a-file");
+        let library = scratch.join("library");
+        write(&library, "this is a file, not a folder");
+
+        let error = gather_layouts(&library, &scratch.join("bundle"))
+            .expect_err("a broken library must not read as an empty one")
+            .to_string();
+        assert!(error.contains("not a folder"), "{error}");
+        assert!(
+            error.contains(&library.display().to_string()),
+            "the message must name the path to fix: {error}"
+        );
     }
 
     #[test]

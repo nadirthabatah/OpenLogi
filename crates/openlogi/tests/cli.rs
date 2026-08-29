@@ -398,6 +398,39 @@ fn a_linked_folder_in_the_library_is_reported_rather_than_followed() {
     }
 }
 
+/// A layouts folder that is really a file must be said out loud, not read as
+/// an empty library.
+///
+/// The two look identical from the outside — both find no layouts — and mean
+/// opposite things: one is a machine that has saved nothing, the other is
+/// broken. Saying "no layouts saved yet" about the second sends someone to
+/// save one and watch that fail for a reason nothing mentioned.
+#[test]
+fn a_layouts_path_that_is_not_a_folder_is_reported_rather_than_read_as_empty() {
+    let sandbox = Sandbox::new("layouts-not-a-folder");
+    let layouts = sandbox.path("config/openlogi/layouts");
+    std::fs::create_dir_all(layouts.parent().expect("a parent")).expect("the config directory");
+    std::fs::write(&layouts, "not a folder").expect("a file where the folder belongs");
+
+    let listed = sandbox.run(&["streamdeck", "layouts"]);
+    assert_ne!(listed.status(), 0, "it must not report success");
+    assert!(
+        !listed.said().contains("No layouts saved yet"),
+        "a broken library must not read as an empty one: {}",
+        listed.said()
+    );
+
+    // And an export must not claim to have carried a setup it could not read.
+    let out = sandbox.path("out");
+    let exported = sandbox.run(&["profile", "export", &out.to_string_lossy()]);
+    assert_ne!(exported.status(), 0, "{}", exported.said());
+    assert!(
+        !exported.said().contains("no saved layouts to carry"),
+        "that message is for a machine with none, not a broken folder: {}",
+        exported.said()
+    );
+}
+
 /// A bundle carrying an action that would run a program is refused, and the
 /// refusal has to leave the layouts alone too.
 ///
