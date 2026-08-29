@@ -4,7 +4,10 @@
 <h4 align="right"><a href="../README.md">English</a> | <a href="README.zh-CN.md">简体中文</a> | <strong>日本語</strong> | <a href="README.de.md">Deutsch</a> | <a href="README.fr.md">Français</a> | <a href="README.ko.md">한국어</a></h4>
 
 
-<h1 align="center">OpenRoadie</h1>
+<p align="center">
+    <img src="../design/logo/openroadie-lockup-720.png" width="440" alt="OpenRoadie"/>
+</p>
+
 <p align="center">OpenRoadie is a fork of <a href="https://github.com/AprilNEA/OpenLogi">OpenLogi</a> by @AprilNEA.</p>
 <p align="center"><strong>⚡️ Rust 製のネイティブでローカルファーストな Logitech Options+ 代替 🦀<br/>HID++ と UVC で Logitech のマウス・キーボード・ウェブカメラの能力を最大限に引き出す</strong></p>
 

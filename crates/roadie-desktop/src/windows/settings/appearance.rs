@@ -298,7 +298,7 @@ fn icon_card(icon: AppIcon, selected: bool, accent: Hsla, pal: Palette) -> impl 
 fn icon_label(icon: AppIcon) -> SharedString {
     match icon {
         AppIcon::OpenRoadie => "OpenRoadie".into(),
-        AppIcon::Prism => "Prism".into(),
+        AppIcon::Letter => "Letter".into(),
     }
 }
 

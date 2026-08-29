@@ -3,7 +3,10 @@
 
 <h4 align="right"><strong>English</strong> | <a href="docs/README.zh-CN.md">简体中文</a> | <a href="docs/README.ja.md">日本語</a> | <a href="docs/README.de.md">Deutsch</a> | <a href="docs/README.fr.md">Français</a> | <a href="docs/README.ko.md">한국어</a></h4>
 
-<h1 align="center">OpenRoadie</h1>
+<p align="center">
+    <img src="design/logo/openroadie-lockup-720.png" width="440" alt="OpenRoadie"/>
+</p>
+
 <p align="center"><strong>⚡️ One local-first app for everything on your desk, written in Rust 🦀<br/>Logitech mice and keyboards over HID++, Elgato Stream Decks, QMK/VIA macro pads, and any UVC webcam — no account, no telemetry</strong></p>
 
 <p align="center">OpenRoadie is a fork of <a href="https://github.com/AprilNEA/OpenLogi">OpenLogi</a> by <a href="https://github.com/AprilNEA">@AprilNEA</a>, which provides the Logitech HID++ core, the GUI, the agent, and the packaging this project builds on.</p>
@@ -180,13 +183,16 @@ by [@lus](https://github.com/lus), licensed 0BSD.
 
 ### Logo & brand assets
 
-The artwork under [`design/`](design/) is the **OpenLogi** logo and icon set,
-© 2026 AprilNEA, all rights reserved — it is not covered by the MIT/Apache
-licenses above, and [`design/LICENSE`](design/LICENSE) explicitly withholds it
-from forks. It remains in this repository as inherited history only.
-**OpenRoadie does not yet have its own logo**, and release artifacts must not
-ship the OpenLogi artwork under the OpenRoadie name; replacing the icon set is
-an open task tracked before any binary release.
+The OpenRoadie logo and app icon (the artwork under [`design/`](design/)) are
+© 2026 Nadir Thabatah, all rights reserved, and are not covered by the
+MIT/Apache licenses above; see [`design/LICENSE`](design/LICENSE). Forking the
+code grants no right to the OpenRoadie name, logo, or icon; please don't use
+them to represent your own projects, forks, or distributions without prior
+written permission.
+
+None of this artwork derives from OpenLogi. OpenLogi's logo and icon set are
+© AprilNEA, all rights reserved, and were removed from this repository rather
+than renamed.
 
 ---
 
