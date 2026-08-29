@@ -144,11 +144,7 @@ pub async fn set_smartshift(arguments: &Value) -> Result<String, String> {
         .map_err(|error| {
             format!("could not read the current wheel configuration to build on: {error}")
         })?;
-    let status = SmartShiftStatus {
-        mode: mode.unwrap_or(current.mode),
-        auto_disengage: auto_disengage.unwrap_or(current.auto_disengage),
-        tunable_torque: current.tunable_torque,
-    };
+    let status = merged(current, mode, auto_disengage);
     rpc(client.set_smartshift(context::current(), route.clone(), status))
         .await?
         .map_err(|error| format!("setting the wheel configuration failed: {error}"))?;
@@ -156,6 +152,25 @@ pub async fn set_smartshift(arguments: &Value) -> Result<String, String> {
         "wheel configuration for {route} is now {}",
         summarize_smartshift(status)
     ))
+}
+
+/// Fold the requested changes onto the wheel's current configuration.
+///
+/// A separate function because the property that matters here is easy to
+/// break and invisible at the call site: `tunable_torque` is carried over
+/// untouched. It is the wheel's physical resistance, the caller never asks
+/// about it, and constructing a fresh status would silently change it as a
+/// side effect of adjusting the mode.
+fn merged(
+    current: SmartShiftStatus,
+    mode: Option<SmartShiftMode>,
+    auto_disengage: Option<SmartShiftAutoDisengage>,
+) -> SmartShiftStatus {
+    SmartShiftStatus {
+        mode: mode.unwrap_or(current.mode),
+        auto_disengage: auto_disengage.unwrap_or(current.auto_disengage),
+        tunable_torque: current.tunable_torque,
+    }
 }
 
 /// Read the optional `mode` argument.
@@ -236,10 +251,80 @@ fn mode_name(mode: SmartShiftMode) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use openlogi_core::hid::{SmartShiftAutoDisengage, SmartShiftMode};
+    use openlogi_core::hid::{
+        SmartShiftAutoDisengage, SmartShiftMode, SmartShiftStatus, SmartShiftThreshold,
+        TunableTorque,
+    };
     use serde_json::json;
 
     use super::{parse_auto_disengage, parse_mode};
+
+    /// A wheel configuration standing in for whatever the device reported.
+    fn current() -> SmartShiftStatus {
+        SmartShiftStatus {
+            mode: SmartShiftMode::Ratchet,
+            auto_disengage: SmartShiftAutoDisengage::Threshold(
+                SmartShiftThreshold::try_new(16).expect("16 is in range"),
+            ),
+            tunable_torque: None,
+        }
+    }
+
+    #[test]
+    fn merging_changes_only_what_was_asked_for() {
+        let only_mode = super::merged(current(), Some(SmartShiftMode::Free), None);
+        assert_eq!(only_mode.mode, SmartShiftMode::Free);
+        assert_eq!(
+            only_mode.auto_disengage,
+            current().auto_disengage,
+            "an unspecified threshold is kept"
+        );
+
+        let only_threshold =
+            super::merged(current(), None, Some(SmartShiftAutoDisengage::Permanent));
+        assert_eq!(
+            only_threshold.mode,
+            current().mode,
+            "an unspecified mode is kept"
+        );
+        assert_eq!(
+            only_threshold.auto_disengage,
+            SmartShiftAutoDisengage::Permanent
+        );
+
+        let neither = super::merged(current(), None, None);
+        assert_eq!(neither, current(), "asking for nothing changes nothing");
+    }
+
+    /// The reason `set_smartshift` reads before it writes. The wheel's
+    /// physical resistance is carried on the same wire type, the caller never
+    /// mentions it, and losing it here would change how the wheel *feels* as a
+    /// side effect of changing its mode.
+    #[test]
+    fn merging_never_disturbs_the_wheels_tunable_torque() {
+        let mut with_torque = current();
+        with_torque.tunable_torque = TunableTorque::try_new(45).ok();
+        assert!(
+            with_torque.tunable_torque.is_some(),
+            "the fixture must actually carry a torque for this test to mean anything"
+        );
+
+        for (mode, auto) in [
+            (Some(SmartShiftMode::Free), None),
+            (None, Some(SmartShiftAutoDisengage::Permanent)),
+            (
+                Some(SmartShiftMode::Ratchet),
+                Some(SmartShiftAutoDisengage::Permanent),
+            ),
+            (None, None),
+        ] {
+            let merged = super::merged(with_torque, mode, auto);
+            assert_eq!(
+                merged.tunable_torque, with_torque.tunable_torque,
+                "torque must survive every combination of requested changes"
+            );
+        }
+    }
 
     #[test]
     fn an_absent_mode_leaves_the_current_one_alone() {

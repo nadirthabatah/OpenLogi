@@ -186,29 +186,22 @@ pub fn set_camera_control(arguments: &Value) -> Result<String, String> {
         .and_then(|value| i32::try_from(value).ok())
         .ok_or_else(|| "the `value` argument must be a whole number".to_string())?;
 
-    if let Some(toggle) = AutoToggle::ALL.iter().find(|t| t.name() == name) {
-        openlogi_camera::set_auto(&id, *toggle, value != 0)
-            .map_err(|error| format!("setting {name} failed: {error}"))?;
-        return Ok(format!(
-            "{name} is now {} on camera {id}",
-            if value == 0 { "off" } else { "on" }
-        ));
-    }
-
-    let control = CameraControl::ALL
-        .iter()
-        .find(|c| c.name() == name)
-        .ok_or_else(|| {
-            format!(
-                "unknown control {name:?}; this camera's controls are listed by \
-                 read_camera_controls"
-            )
-        })?;
+    let control = match resolve(&name)? {
+        Target::Auto(toggle) => {
+            openlogi_camera::set_auto(&id, toggle, value != 0)
+                .map_err(|error| format!("setting {name} failed: {error}"))?;
+            return Ok(format!(
+                "{name} is now {} on camera {id}",
+                if value == 0 { "off" } else { "on" }
+            ));
+        }
+        Target::Control(control) => control,
+    };
 
     // Check against the camera's own reported range before writing. A device
     // handed an out-of-range value may clamp it, ignore it, or fail opaquely,
     // and none of those tell the caller what would have worked.
-    let range = current_range(&id, *control)?;
+    let range = current_range(&id, control)?;
     if !range.supports(value) {
         return Err(format!(
             "{value} is not accepted for {name} on camera {id}: it takes {} to {} \
@@ -217,7 +210,7 @@ pub fn set_camera_control(arguments: &Value) -> Result<String, String> {
         ));
     }
 
-    openlogi_camera::set_control(&id, *control, value)
+    openlogi_camera::set_control(&id, control, value)
         .map_err(|error| format!("setting {name} failed: {error}"))?;
     let governed = control.auto_toggle().map_or(String::new(), |toggle| {
         format!(
@@ -227,6 +220,41 @@ pub fn set_camera_control(arguments: &Value) -> Result<String, String> {
         )
     });
     Ok(format!("{name} set to {value} on camera {id}{governed}"))
+}
+
+/// What a control name refers to.
+///
+/// The two are not interchangeable: an automatic mode is a boolean the camera
+/// applies itself, a control is a value within a range, and they are written
+/// through different calls. Naming the distinction keeps a caller from
+/// silently taking the wrong branch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Target {
+    /// An automatic mode: focus, exposure or white balance.
+    Auto(AutoToggle),
+    /// A value control.
+    Control(CameraControl),
+}
+
+/// Resolve a control name to what it addresses.
+///
+/// Automatic modes are checked first: their names end in `_auto` and so cannot
+/// collide with a control's, but resolving them first makes that independent
+/// of the naming convention holding.
+fn resolve(name: &str) -> Result<Target, String> {
+    if let Some(toggle) = AutoToggle::ALL.iter().find(|t| t.name() == name) {
+        return Ok(Target::Auto(*toggle));
+    }
+    CameraControl::ALL
+        .iter()
+        .find(|c| c.name() == name)
+        .map(|control| Target::Control(*control))
+        .ok_or_else(|| {
+            format!(
+                "unknown control {name:?}; this camera's controls are listed by \
+                 read_camera_controls"
+            )
+        })
 }
 
 /// The camera's reported range for one control.
@@ -284,6 +312,33 @@ mod tests {
             .as_array()
             .expect("the control argument is an enum");
         assert_eq!(allowed.len(), control_names().len());
+    }
+
+    #[test]
+    fn every_advertised_name_resolves_to_something() {
+        // The schema offers these names; each must reach a real target, or a
+        // caller following the schema gets "unknown control".
+        for name in control_names() {
+            super::resolve(&name).unwrap_or_else(|error| panic!("{name}: {error}"));
+        }
+    }
+
+    #[test]
+    fn automatic_modes_and_value_controls_resolve_to_different_targets() {
+        assert!(matches!(
+            super::resolve("focus_auto").expect("a known name"),
+            super::Target::Auto(_)
+        ));
+        assert!(matches!(
+            super::resolve("focus").expect("a known name"),
+            super::Target::Control(_)
+        ));
+    }
+
+    #[test]
+    fn an_unknown_name_says_where_to_find_the_real_ones() {
+        let error = super::resolve("no_such_control").expect_err("not a control");
+        assert!(error.contains("read_camera_controls"));
     }
 
     #[test]
