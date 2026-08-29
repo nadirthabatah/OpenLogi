@@ -319,7 +319,7 @@ fn write_receivers(out: &mut String, found: &[Peripheral]) {
         );
         let _ = writeln!(
             out,
-            "    the devices paired to it are listed in their own right"
+            "    the mice and keyboards paired to it: openlogi list"
         );
     }
     let _ = writeln!(out);
@@ -423,7 +423,12 @@ mod tests {
         let text = report(&[receiver], false);
         assert!(text.contains("Unifying receiver"), "{text}");
         assert!(!text.contains("Detected, not configurable"), "{text}");
-        assert!(text.contains("paired to it"), "{text}");
+        // It has to name the command that actually lists them. Whether a
+        // paired device gets its own HID node is platform-dependent — on Linux
+        // `hid-logitech-dj` makes one, elsewhere it does not — so telling
+        // someone they appear "in their own right" here is true on one
+        // platform and a wild goose chase on the others.
+        assert!(text.contains("openlogi list"), "{text}");
     }
 
     /// Every branded receiver has to render as words. `Debug` would too, which

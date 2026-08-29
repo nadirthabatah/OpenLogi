@@ -422,12 +422,22 @@ fn macos_access(facts: &Facts) -> Verdict {
             "HID devices are being read, so Input Monitoring is granted to this program".to_owned(),
         );
     }
+    // Deliberately hedged. macOS gives no way to tell "not allowed to read
+    // HID" apart from "nothing is attached" — both come back as an empty list
+    // — and asserting the permission cause on a Mac with nothing plugged in
+    // would send someone into System Settings to fix nothing. Permissions are
+    // much the likelier of the two, so it is reported as a problem; which one
+    // it is, is left to the reader, with the way to tell.
     Verdict::Problem {
-        detail: "no HID device could be read. On macOS that is usually Input Monitoring, \
-                 which is granted per program — the app having it does not give it to this \
-                 command, and vice versa."
+        detail: "no HID device could be read. That is either a permission this program \
+                 does not have, or nothing being plugged in — macOS reports both as an \
+                 empty list, so this cannot tell them apart. If a mouse or keyboard is \
+                 attached, it is the permission."
             .to_owned(),
         fix: vec![
+            "Input Monitoring is granted per program, so the app having it does not give \
+             it to this command, and the other way round."
+                .to_owned(),
             "Open System Settings, then Privacy & Security, then Input Monitoring.".to_owned(),
             "Turn on the entry for this program. If it is not listed, run any openlogi \
              command that touches a device once and macOS will add it."
@@ -435,7 +445,9 @@ fn macos_access(facts: &Facts) -> Verdict {
             "Quit and reopen your terminal. A grant applies to a process when it starts, \
              so the session you were already in keeps the answer it had."
                 .to_owned(),
-            "Run openlogi doctor again to confirm.".to_owned(),
+            "Run openlogi doctor again to confirm. If it still finds nothing and you are \
+             sure something is plugged in, that is worth reporting."
+                .to_owned(),
         ],
     }
 }
@@ -869,8 +881,21 @@ mod tests {
         let Verdict::Problem { detail, fix } = find(&checks, "Permission to open devices") else {
             panic!("no readable HID on macOS is a problem");
         };
-        assert!(detail.contains("Input Monitoring"), "{detail}");
-        assert!(detail.contains("per program"), "{detail}");
+        assert!(
+            fix.iter().any(|step| step.contains("Input Monitoring")),
+            "{fix:?}"
+        );
+        assert!(
+            fix.iter().any(|step| step.contains("per program")),
+            "{fix:?}"
+        );
+        // macOS gives no way to tell "not allowed" from "nothing attached".
+        // Asserting the permission cause would send someone with an empty desk
+        // into System Settings to fix nothing.
+        assert!(
+            detail.contains("cannot tell them apart"),
+            "the ambiguity has to be stated, not papered over: {detail}"
+        );
         assert!(
             fix.iter().any(|step| step.contains("reopen your terminal")),
             "a grant applies at process start; without this step nothing changes: {fix:?}"

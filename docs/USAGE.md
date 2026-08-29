@@ -105,9 +105,9 @@ sorts what it finds into three groups:
   what that driver actually lets you change and which command to reach it
   with, so the listing is also the instructions.
 - **Wireless receivers** — a Unifying or Bolt receiver is supported, but it is
-  a way in rather than a peripheral; the devices paired to it are listed in
-  their own right. Filing it under "unsupported" would tell you your mouse was
-  not going to work, which is the opposite of the truth.
+  a way in rather than a peripheral; the mice and keyboards paired to it are
+  what `openlogi list` shows. Filing it under "unsupported" would tell you your
+  mouse was not going to work, which is the opposite of the truth.
 - **Detected, not configurable by this build** — everything else. These are
   never hidden. A device the hub cannot drive is still a device you own, and
   omitting it is how vendor software leaves people unable to tell "not
