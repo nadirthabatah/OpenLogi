@@ -49,4 +49,7 @@ objc2-io-kit = { workspace = true, features = ["std", "hidsystem"] }
 workspace = true
 
 [dev-dependencies]
+# Exercising the full render -> frame -> transport path.
+openlogi-streamdeck = { path = "../openlogi-streamdeck", features = ["render"] }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 tempfile = "3"

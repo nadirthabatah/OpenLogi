@@ -34,7 +34,9 @@ every command that takes a key also prints its row and column — so "key 7" and
 
 `fill` takes six hex digits; `image` takes any common picture file and scales
 and rotates it to fit the key, so you do not have to know the model's screen
-size or which way its panel is mounted.
+size or which way its panel is mounted. A picture that is not square is scaled
+to fit inside the key and centred on black rather than stretched to fill it —
+a wide logo arrives smaller, not squashed into a shape you did not choose.
 
 **`openlogi streamdeck verify` is worth running first.** It now checks the
 write path as well as the read path: it dims and restores the screens, paints

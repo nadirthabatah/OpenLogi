@@ -45,10 +45,7 @@ pub fn key_image(model: &Model, picture: &DynamicImage) -> Result<Vec<u8>, Proto
     }
 
     let size = u32::from(screens.size_px);
-    // Triangle filtering: key screens are small and images are usually
-    // downscaled a long way onto them, where nearest-neighbour aliases badly
-    // and a slower filter buys nothing anyone can see at 72 pixels.
-    let scaled = picture.resize_exact(size, size, image::imageops::FilterType::Triangle);
+    let scaled = fit(picture, size);
     let oriented = match screens.rotation {
         ImageRotation::None => scaled,
         ImageRotation::Quarter => scaled.rotate90(),
@@ -68,6 +65,35 @@ pub fn key_image(model: &Model, picture: &DynamicImage) -> Result<Vec<u8>, Proto
             detail: error.to_string(),
         })?;
     Ok(encoded)
+}
+
+/// Scale `picture` to fit a square key without distorting it.
+///
+/// Key screens are square and pictures usually are not. Stretching to fill
+/// would squash a wide logo into something the sender did not choose and
+/// cannot predict, so the picture is scaled to fit *inside* the key and
+/// centred on black. Nothing is distorted and nothing is cropped away — the
+/// image that arrives is the image that was sent, just smaller.
+///
+/// Triangle filtering: key screens are small and pictures are usually
+/// downscaled a long way onto them, where nearest-neighbour aliases badly and
+/// a slower filter buys nothing visible at 72 pixels.
+fn fit(picture: &DynamicImage, size: u32) -> DynamicImage {
+    // `resize` preserves the aspect ratio and fits within the bounds, unlike
+    // `resize_exact`, which stretches to them.
+    let scaled = picture
+        .resize(size, size, image::imageops::FilterType::Triangle)
+        .to_rgb8();
+    if scaled.width() == size && scaled.height() == size {
+        return DynamicImage::ImageRgb8(scaled);
+    }
+    let mut canvas = RgbImage::from_pixel(size, size, Rgb([0, 0, 0]));
+    // Integer halves: an odd leftover pixel lands on the right or bottom,
+    // which is invisible and keeps this total.
+    let x = (size - scaled.width()) / 2;
+    let y = (size - scaled.height()) / 2;
+    image::imageops::replace(&mut canvas, &scaled, i64::from(x), i64::from(y));
+    DynamicImage::ImageRgb8(canvas)
 }
 
 /// A key filled with one colour, ready to encode.
@@ -172,6 +198,46 @@ mod tests {
     /// A half turn is the difference between a legible key and an upside-down
     /// one, so it is asserted rather than assumed: a picture with a distinct
     /// top-left corner must come back with that corner at bottom-right.
+    /// A wide picture must not be squashed into the square key. Stretching
+    /// would change the picture into something the sender did not choose,
+    /// which is worse than showing it smaller.
+    #[test]
+    fn a_wide_picture_keeps_its_shape_and_is_padded_rather_than_squashed() {
+        let mk2 = model(0x0080);
+        // A 2:1 red block. Fitted into 72x72 it becomes 72 wide by 36 tall,
+        // centred, with black above and below.
+        let wide = DynamicImage::ImageRgb8(RgbImage::from_pixel(200, 100, Rgb([255, 0, 0])));
+        let encoded = key_image(mk2, &wide).expect("encodes");
+        let decoded = image::load_from_memory(&encoded)
+            .expect("re-reads")
+            .to_rgb8();
+
+        let red_at = |x: u32, y: u32| u32::from(decoded.get_pixel(x, y).0[0]);
+        assert!(red_at(36, 36) > 200, "the centre band carries the picture");
+        assert!(
+            red_at(36, 4) < 60,
+            "the top must be padding, not a stretched picture"
+        );
+        assert!(red_at(36, 68) < 60, "and so must the bottom");
+    }
+
+    #[test]
+    fn a_square_picture_fills_the_key_edge_to_edge() {
+        // The padding path must not shrink a picture that already fits.
+        let mk2 = model(0x0080);
+        let square = DynamicImage::ImageRgb8(RgbImage::from_pixel(300, 300, Rgb([0, 255, 0])));
+        let encoded = key_image(mk2, &square).expect("encodes");
+        let decoded = image::load_from_memory(&encoded)
+            .expect("re-reads")
+            .to_rgb8();
+        for (x, y) in [(2, 2), (69, 2), (2, 69), (69, 69), (36, 36)] {
+            assert!(
+                u32::from(decoded.get_pixel(x, y).0[1]) > 200,
+                "corner ({x}, {y}) should be the picture, not padding"
+            );
+        }
+    }
+
     #[test]
     fn the_models_rotation_is_actually_applied() {
         let mk2 = model(0x0080); // rotation: Half

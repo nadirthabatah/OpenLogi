@@ -614,6 +614,48 @@ mod tests {
         assert_eq!(sent[2][3], 1, "only the last packet commits the image");
     }
 
+    /// The whole image path in one test: render a picture, push it through a
+    /// session, then reassemble the payload the device would have received and
+    /// decode it back.
+    ///
+    /// Each stage is covered on its own elsewhere. This checks they compose —
+    /// that what `render` produces is what the framer accepts, that the framer's
+    /// packets survive the transport in order, and that a device reassembling
+    /// them by the rules in their headers gets the original bytes back. A
+    /// mismatch anywhere in that chain shows up here and nowhere else.
+    #[tokio::test]
+    async fn a_rendered_image_survives_the_whole_path_to_the_device() {
+        use openlogi_streamdeck::render;
+
+        let model = mk2();
+        let picture = render::solid(model, 0x20, 0x90, 0xd0).expect("has screens");
+        let encoded = render::key_image(model, &picture).expect("encodes");
+
+        let (scripted, (_, outputs)) = Scripted::new(Vec::new());
+        let mut session = Session::with_transport(model, Box::new(scripted));
+        session.set_key_image(5, &encoded).await.expect("accepted");
+
+        // Reassemble the way the device would: each packet declares its own
+        // payload length at bytes 4..6, after an eight-byte header.
+        let packets = outputs.lock().expect("uncontended");
+        let mut reassembled = Vec::new();
+        for packet in packets.iter() {
+            let length = usize::from(u16::from_le_bytes([packet[4], packet[5]]));
+            reassembled.extend_from_slice(&packet[8..8 + length]);
+        }
+        assert_eq!(
+            reassembled, encoded,
+            "the bytes the device receives must be the bytes render produced"
+        );
+
+        let decoded = image::load_from_memory(&reassembled).expect("still a valid image");
+        assert_eq!(
+            image::GenericImageView::dimensions(&decoded),
+            (72, 72),
+            "and still the key's size"
+        );
+    }
+
     #[tokio::test]
     async fn an_image_for_a_key_the_model_lacks_writes_nothing_at_all() {
         let (scripted, (_, outputs)) = Scripted::new(Vec::new());

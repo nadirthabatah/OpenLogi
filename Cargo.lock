@@ -5594,6 +5594,7 @@ dependencies = [
  "atomic-write-file",
  "futures-concurrency",
  "futures-lite",
+ "image",
  "objc2-io-kit",
  "openlogi-async-hid",
  "openlogi-core",
