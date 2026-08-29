@@ -25,6 +25,15 @@ const GEN2_HEADER_LEN: usize = 8;
 /// Image bytes carried by one [`Generation::Gen2`] packet.
 const GEN2_PAYLOAD_LEN: usize = GEN2_PACKET_LEN - GEN2_HEADER_LEN;
 
+/// Largest image the [`Generation::Gen2`] framing can address.
+///
+/// The page number is a 16-bit wire field, so pages `0..=u16::MAX` are all
+/// that can be named. No real key image comes close — a 96×96 JPEG is tens of
+/// kilobytes against this ~66 MB ceiling — but the alternative to checking is
+/// a counter that saturates and emits a run of packets all claiming the last
+/// page, which is a silently corrupt upload rather than a refusal.
+const GEN2_MAX_IMAGE_LEN: usize = GEN2_PAYLOAD_LEN * (u16::MAX as usize + 1);
+
 /// Split an encoded key image into the output reports that upload it.
 ///
 /// Every returned packet is exactly [`GEN2_PACKET_LEN`] bytes, zero-padded,
@@ -40,6 +49,8 @@ const GEN2_PAYLOAD_LEN: usize = GEN2_PACKET_LEN - GEN2_HEADER_LEN;
 /// - [`ProtocolError::ScreenlessModel`] if the model has no key screens.
 /// - [`ProtocolError::KeyOutOfRange`] if `key` is not a key on this model.
 /// - [`ProtocolError::ImageFramingUnsupported`] for [`Generation::Gen1`].
+/// - [`ProtocolError::ImageTooLarge`] if `image` needs more pages than the
+///   wire's 16-bit page counter can name.
 pub fn key_image_packets(
     model: &Model,
     key: u16,
@@ -57,6 +68,12 @@ pub fn key_image_packets(
     if model.generation == Generation::Gen1 {
         return Err(ProtocolError::ImageFramingUnsupported { model: model.name });
     }
+    if image.len() > GEN2_MAX_IMAGE_LEN {
+        return Err(ProtocolError::ImageTooLarge {
+            bytes: image.len(),
+            max: GEN2_MAX_IMAGE_LEN,
+        });
+    }
     // Catalogued key counts are far below u8::MAX, and `key` was just bounds
     // checked against one, so the wire field cannot truncate.
     let key_byte = u8::try_from(key).map_err(|_| ProtocolError::KeyOutOfRange {
@@ -71,9 +88,13 @@ pub fn key_image_packets(
         let take = remaining.len().min(GEN2_PAYLOAD_LEN);
         let (chunk, rest) = remaining.split_at(take);
         let last = rest.is_empty();
-        // `take` is capped at GEN2_PAYLOAD_LEN, which fits a u16 many times
-        // over, so this length field cannot truncate.
-        let length = u16::try_from(take).unwrap_or(u16::MAX);
+        // `take` is capped at GEN2_PAYLOAD_LEN, itself far below u16::MAX, so
+        // this conversion is total; it is written fallibly rather than as a
+        // cast so a future packet size cannot silently truncate it.
+        let length = u16::try_from(take).map_err(|_| ProtocolError::ImageTooLarge {
+            bytes: image.len(),
+            max: GEN2_MAX_IMAGE_LEN,
+        })?;
 
         let mut packet = Vec::with_capacity(GEN2_PACKET_LEN);
         packet.extend_from_slice(&[
@@ -94,7 +115,13 @@ pub fn key_image_packets(
             break;
         }
         remaining = rest;
-        page = page.saturating_add(1);
+        // Cannot overflow: the length check above bounds the page count to
+        // u16::MAX + 1 pages, so the final page is reached before this runs
+        // on the last one.
+        page = page.checked_add(1).ok_or(ProtocolError::ImageTooLarge {
+            bytes: image.len(),
+            max: GEN2_MAX_IMAGE_LEN,
+        })?;
     }
     Ok(packets)
 }
@@ -178,6 +205,16 @@ mod tests {
             .flat_map(|packet| packet[8..8 + declared_len(packet)].to_vec())
             .collect();
         assert_eq!(reassembled, image);
+    }
+
+    #[test]
+    fn an_image_past_the_page_counters_reach_is_refused_not_wrapped() {
+        // One byte past what the 16-bit page field can address. Allocating the
+        // ceiling itself would cost ~66 MB, so this probes the boundary from
+        // above with a slice that is never actually paged.
+        let oversized = vec![0u8; super::GEN2_MAX_IMAGE_LEN + 1];
+        let error = key_image_packets(mk2(), 0, &oversized).expect_err("beyond the page counter");
+        assert!(matches!(error, ProtocolError::ImageTooLarge { .. }));
     }
 
     #[test]

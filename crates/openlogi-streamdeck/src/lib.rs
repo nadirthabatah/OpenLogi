@@ -86,4 +86,12 @@ pub enum ProtocolError {
         /// Marketing name of the model.
         model: &'static str,
     },
+    /// An image needing more packets than the wire's page counter can express.
+    #[error("image is {bytes} bytes, more than the {max} the page counter can address")]
+    ImageTooLarge {
+        /// Size of the offending image.
+        bytes: usize,
+        /// Largest image the framing can address.
+        max: usize,
+    },
 }
