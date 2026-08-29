@@ -1,0 +1,17 @@
+[package]
+name = "roadie-scarlett"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Pure Focusrite Scarlett control protocol: request framing, the configuration-item model, and the device tables. No host I/O."
+keywords = ["focusrite", "scarlett", "audio-interface", "usb", "protocol"]
+categories = ["hardware-support", "encoding"]
+
+[dependencies]
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

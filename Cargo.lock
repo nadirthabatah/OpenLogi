@@ -6866,6 +6866,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "roadie-scarlett"
+version = "0.8.1"
+dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "roadie-streamdeck"
 version = "0.8.1"
 dependencies = [
