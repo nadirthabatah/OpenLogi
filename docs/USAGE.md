@@ -18,14 +18,15 @@ openlogi streamdeck verify    # check the Stream Deck driver against your hardwa
 openlogi streamdeck fill 0 ff8800   # fill the top-left key with a colour
 openlogi streamdeck image 0 icon.png # show a picture on the top-left key
 openlogi streamdeck label 0 "MUTE MIC"  # write a label, sized to fit
-openlogi streamdeck example deck.toml   # write a layout file to start from
-openlogi streamdeck apply deck.toml     # apply a whole layout at once
-openlogi streamdeck run deck.toml       # apply it, then act on key presses
+openlogi streamdeck layouts             # the layouts you have saved, by name
+openlogi streamdeck example streaming   # start a layout called "streaming"
+openlogi streamdeck apply streaming     # apply it by name, from anywhere
+openlogi streamdeck run streaming       # apply it, then act on key presses
 openlogi via                  # QMK/VIA keyboards and macro pads attached
 openlogi via keymap 0         # print layer 0, key by key, with names not numbers
 openlogi via set 0 2 3 F13    # make one key send F13, confirmed by reading it back
 openlogi mcp                  # serve the agent to an AI assistant over MCP (see below)
-openlogi profile export FILE  # write this machine's whole configuration to a file
+openlogi profile export my-setup # save the whole setup — configuration and layouts
 openlogi profile inspect FILE # show what a profile holds, without applying it
 openlogi profile import FILE  # apply a profile, backing up the current one first
 ```
@@ -97,11 +98,27 @@ index = 2
 image = "icons/camera.png"
 ```
 
-`openlogi streamdeck example deck.toml` writes one to start from, and
-`openlogi streamdeck apply deck.toml` applies it. Image paths are relative to
+`openlogi streamdeck example streaming` writes one to start from, and
+`openlogi streamdeck apply streaming` applies it. Image paths are relative to
 the layout file, so a layout and its icons travel together. Neither the example
 nor a parse error needs a device attached, so you can write and check a layout
 before the hardware arrives.
+
+### Layouts have a home
+
+A bare word is a **name**: `streaming` means the layout saved under that name,
+in `layouts/` inside your configuration directory. Anything with a slash or a
+`.toml` on the end is a **path**, used as written — a layout kept in a git
+repository beside the project it belongs to is a perfectly good place for it.
+
+`openlogi streamdeck layouts` lists what you have saved. Naming layouts rather
+than remembering paths is the smaller half of why the library exists; the
+larger half is that a profile bundle can then gather them, so moving to another
+computer moves your decks too. See portable profiles below.
+
+`example` will not write over a layout that already exists. The deck's own
+memory is not a copy of the file — it goes when the cable does — so an
+overwrite would leave nothing to restore from.
 
 A layout is checked before anything is written: a key the attached model does
 not have, the same key listed twice, a key with both a label and an image, or
@@ -244,11 +261,39 @@ renders here as its number, which is honest; a misnamed one would not be.
 
 ## Portable profiles
 
-`openlogi profile export` writes the whole configuration to one file you can
-carry to another computer — a USB stick, a network share, whatever you already
-trust. `openlogi profile import` applies it there, copying the existing
-configuration aside first so the change is always reversible. On a machine that
-has never run OpenLogi there is nothing to back up, and the import says so.
+`openlogi profile export` saves this machine's setup somewhere you can carry it
+— a USB stick, a network share, whatever you already trust. `openlogi profile
+import` applies it there, copying the existing configuration aside first so the
+change is always reversible. On a machine that has never run OpenLogi there is
+nothing to back up, and the import says so.
+
+### One file, or the whole setup
+
+Where you export to decides what you get, and the command tells you which it
+wrote:
+
+```console
+$ openlogi profile export my-setup
+setup written to my-setup
+  configuration: config.toml
+  2 layout(s): streaming, work
+Copy the whole folder to another machine and apply it with: openlogi profile import my-setup
+```
+
+A path ending in `.toml` writes the **configuration alone**, as one file:
+bindings, per-app overlays, camera settings. Any other path writes a **bundle**
+— a folder holding that same configuration plus every saved Stream Deck layout,
+icons included. `import` takes either.
+
+A bundle is a folder rather than a zip on purpose. The promise this project
+makes is that your settings are plain text you can read and edit, and an
+archive would take that back for the sake of one fewer thing to copy. A folder
+can be read, diffed, and kept in git, and every tool you already have can move
+one.
+
+Exit status `4` on an import means the configuration landed but the layouts did
+not — half the setup in place, which is neither success nor a clean failure,
+and the message says which half.
 
 A configuration is not inert data: it can bind a button to a shell command, an
 AppleScript, an application launch, or typed text. Importing a profile someone

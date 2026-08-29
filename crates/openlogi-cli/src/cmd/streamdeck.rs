@@ -10,6 +10,7 @@
 //! asking a user to describe what happened.
 
 mod layout;
+mod library;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -29,6 +30,9 @@ const NOTHING_FOUND: u8 = 2;
 /// them apart — the same status `openlogi profile import` uses for the same
 /// reason.
 const UNTRUSTED: u8 = 3;
+
+/// Exit status for "that layout already exists and was not overwritten".
+const EXISTS: u8 = 4;
 
 /// How long `verify` and `watch` wait for a key press.
 const WATCH: Duration = Duration::from_secs(15);
@@ -60,24 +64,29 @@ pub enum StreamDeckCmd {
     Label(LabelArgs),
     /// Clear every key back to black.
     Clear,
-    /// Apply a whole deck layout from a file.
+    /// Apply a whole deck layout, by library name or file path.
     Apply(PathArgs),
     /// Apply a layout, then run it: pressing a key performs its action.
     Run(RunArgs),
-    /// Write an example layout file to get started from.
+    /// Write an example layout to start from, into the library or a file.
     Example(PathArgs),
+    /// List the layouts saved in the library.
+    Layouts,
 }
 
 #[derive(Debug, Args)]
 pub struct PathArgs {
-    /// The layout file.
-    pub file: PathBuf,
+    /// A layout: a name in your library, or a path to a file.
+    ///
+    /// A bare word is a name — `streaming` means the layout you saved under
+    /// that name. Anything with a slash or a `.toml` on the end is a path.
+    pub layout: String,
 }
 
 #[derive(Debug, Args)]
 pub struct RunArgs {
-    /// The layout file.
-    pub file: PathBuf,
+    /// A layout: a name in your library, or a path to a file.
+    pub layout: String,
     /// Accept actions that run a program or type text.
     ///
     /// Without this, a layout carrying any such action is refused and nothing
@@ -131,26 +140,33 @@ impl StreamDeckCmd {
     /// Propagates enumeration and I/O failures. "No device attached" is not an
     /// error: it exits [`NOTHING_FOUND`].
     pub async fn run(self) -> Result<ExitCode> {
+        // Listing the library needs no device either, and is the answer to
+        // "what did I call that layout".
+        if matches!(self, Self::Layouts) {
+            return list_layouts();
+        }
+
+        // A bare name means the library; a path means that path. Resolved
+        // once here so every use below sees a real file.
+        let target = match &self {
+            Self::Apply(args) | Self::Example(args) => Some(library::resolve(&args.layout)?),
+            Self::Run(args) => Some(library::resolve(&args.layout)?),
+            _ => None,
+        };
+
         // Writing an example layout needs no device, and wanting one before
         // the hardware arrives — or on a machine that will never have it — is
         // the ordinary case, not an edge one.
         if let Self::Example(args) = &self {
-            std::fs::write(&args.file, EXAMPLE_LAYOUT)
-                .with_context(|| format!("failed to write {}", args.file.display()))?;
-            println!("example layout written to {}", args.file.display());
-            println!(
-                "Edit it, then: openlogi streamdeck apply {}",
-                args.file.display()
-            );
-            return Ok(ExitCode::SUCCESS);
+            let path = target.ok_or_else(|| anyhow!("the example path was not resolved"))?;
+            return write_example(&args.layout, &path);
         }
 
         // Likewise, a layout that does not parse is worth saying so about
         // before demanding hardware: the file is wrong either way, and "no
         // Stream Deck found" would send someone hunting the wrong problem.
-        let parsed = match &self {
-            Self::Apply(args) => Some(read_layout(&args.file)?),
-            Self::Run(args) => Some(read_layout(&args.file)?),
+        let parsed = match (&self, target.as_deref()) {
+            (Self::Apply(_) | Self::Run(_), Some(path)) => Some(read_layout(path)?),
             _ => None,
         };
 
@@ -172,7 +188,7 @@ impl StreamDeckCmd {
             return Ok(ExitCode::from(NOTHING_FOUND));
         }
 
-        self.dispatch(&collections, parsed).await
+        self.dispatch(&collections, parsed, target.as_deref()).await
     }
 
     /// The half of the command tree that needs an attached device.
@@ -184,6 +200,7 @@ impl StreamDeckCmd {
         self,
         collections: &[Attached],
         parsed: Option<layout::Layout>,
+        target: Option<&Path>,
     ) -> Result<ExitCode> {
         match self {
             Self::List => list(collections),
@@ -234,16 +251,20 @@ impl StreamDeckCmd {
                 }
                 println!("cleared all {} keys", model.key_count());
             }
-            Self::Apply(args) => {
+            Self::Apply(_) => {
                 let layout = parsed.ok_or_else(|| anyhow!("the layout was not read"))?;
-                return apply(collections, &args.file, &layout).await;
+                let path = target.ok_or_else(|| anyhow!("the layout path was not resolved"))?;
+                return apply(collections, path, &layout).await;
             }
-            Self::Run(args) => {
+            Self::Run(_) => {
                 let layout = parsed.ok_or_else(|| anyhow!("the layout was not read"))?;
-                return run_layout(collections, &args.file, &layout).await;
+                let path = target.ok_or_else(|| anyhow!("the layout path was not resolved"))?;
+                return run_layout(collections, path, &layout).await;
             }
             // Handled before the device scan above.
-            Self::Example(_) => unreachable!("example returns before the device scan"),
+            Self::Example(_) | Self::Layouts => {
+                unreachable!("handled before the device scan")
+            }
             Self::Watch => {
                 let mut session = open_preferred(collections).await?;
                 println!(
@@ -306,6 +327,70 @@ colour = "ff4040"
 # label = "BUILD"
 # action = { RunShellCommand = "make -C ~/project" }
 "#;
+
+/// Where this machine keeps its Stream Deck layouts.
+///
+/// Re-exported for the profile bundle, which has to gather them: the library's
+/// location is one fact, and two modules deciding it separately is how a
+/// bundle ends up carrying nothing from a directory that is full.
+///
+/// # Errors
+///
+/// Fails when the configuration directory cannot be determined.
+pub fn layout_library() -> Result<std::path::PathBuf> {
+    library::directory()
+}
+
+/// `openlogi streamdeck layouts`.
+///
+/// An empty library is not a failure and does not read like one: on a fresh
+/// machine there is nothing saved yet, and the useful answer is how to make
+/// the first one rather than a bare "none".
+fn list_layouts() -> Result<ExitCode> {
+    let names = library::list()?;
+    let directory = library::directory()?;
+    if names.is_empty() {
+        println!("No layouts saved yet.");
+        println!();
+        println!("Layouts live in {}.", directory.display());
+        println!("Start one with: openlogi streamdeck example streaming");
+        return Ok(ExitCode::SUCCESS);
+    }
+    println!("Layouts ({}), in {}:", names.len(), directory.display());
+    for name in &names {
+        println!("  {name}");
+    }
+    println!();
+    println!("Apply one with: openlogi streamdeck apply <name>");
+    Ok(ExitCode::SUCCESS)
+}
+
+/// `openlogi streamdeck example`.
+///
+/// Refuses to write over an existing layout. Overwriting the layout someone
+/// spent an evening on with the stock example, because they reached for
+/// `example` to remind themselves of the syntax, is not a mistake they can
+/// undo — the deck's own memory is not a copy, it goes when the cable does.
+fn write_example(argument: &str, path: &Path) -> Result<ExitCode> {
+    if path.exists() {
+        eprintln!(
+            "{} already exists. Not overwriting it — the deck's own memory is not \
+             a copy of it, so there would be nothing to restore from.",
+            path.display()
+        );
+        eprintln!("Pick another name, or delete that file first.");
+        return Ok(ExitCode::from(EXISTS));
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    std::fs::write(path, EXAMPLE_LAYOUT)
+        .with_context(|| format!("failed to write {}", path.display()))?;
+    println!("example layout written to {}", path.display());
+    println!("Edit it, then: openlogi streamdeck apply {argument}");
+    Ok(ExitCode::SUCCESS)
+}
 
 /// Read and parse a layout file, without needing a device.
 fn read_layout(file: &Path) -> Result<layout::Layout> {
