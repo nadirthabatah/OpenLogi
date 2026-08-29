@@ -68,8 +68,10 @@ pub async fn run(args: DevicesArgs) -> Result<ExitCode> {
 fn nothing_found() -> String {
     "Nothing found.\n\n\
      No HID device and no camera was reported. On Linux that is usually a \
-     permissions problem rather than an empty desk — see the udev rules in the \
-     README — and on macOS it can be a missing Input Monitoring grant.\n"
+     permissions problem rather than an empty desk, and on macOS it can be a \
+     missing Input Monitoring grant.\n\n\
+     Run `openlogi doctor`: it checks which of those it is and says what to do \
+     about it, in order.\n"
         .to_owned()
 }
 
@@ -337,11 +339,15 @@ mod tests {
     /// "Nothing found" on Linux almost always means permissions. Saying only
     /// "nothing found" sends someone to check their cables.
     #[test]
-    fn an_empty_scan_names_the_likely_cause() {
+    fn an_empty_scan_names_the_likely_cause_and_where_to_go_next() {
         let text = nothing_found();
         assert!(text.contains("permissions"), "{text}");
-        assert!(text.contains("udev"), "{text}");
         assert!(text.contains("Input Monitoring"), "{text}");
+        assert!(
+            text.contains("openlogi doctor"),
+            "naming the cause is half of it; the other half is the command that \
+             works out which cause it is: {text}"
+        );
     }
 
     /// The guard the whole command rests on: **no device ever vanishes**.

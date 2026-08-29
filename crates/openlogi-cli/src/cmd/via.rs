@@ -93,8 +93,9 @@ impl ViaCmd {
             println!();
             println!(
                 "A QMK board only answers here if its firmware was built with VIA \
-                 enabled. If yours has it, check that this process can open raw HID \
-                 devices — on Linux that is the udev rules in the README."
+                 enabled. If yours has it, the next thing to check is whether this \
+                 process can open raw HID devices at all — `openlogi doctor` answers \
+                 that and says what to do about it."
             );
             return Ok(ExitCode::from(NOTHING_FOUND));
         }

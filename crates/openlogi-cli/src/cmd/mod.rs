@@ -8,6 +8,7 @@ pub mod backlight;
 pub mod camera;
 pub mod devices;
 pub mod diag;
+pub mod doctor;
 pub mod light;
 pub mod list;
 pub mod mcp;
@@ -23,6 +24,8 @@ pub enum Command {
     /// Survey every peripheral attached, whoever made it, and say what
     /// this build can configure on each.
     Devices(devices::DevicesArgs),
+    /// Check why devices are not being found, and say what to do about it.
+    Doctor(doctor::DoctorArgs),
     /// Read or persistently set the keyboard backlight (HID++ 0x1982).
     Backlight(backlight::BacklightArgs),
     /// Capture one frame from a Logitech webcam to a PNG.
@@ -60,6 +63,7 @@ impl Command {
         match self {
             Self::List(args) => return list::run(args).await,
             Self::Devices(args) => return devices::run(args).await,
+            Self::Doctor(args) => return doctor::run(args).await,
             Self::Backlight(args) => backlight::run(args).await?,
             // Camera capture is blocking AVFoundation — no need for the async runtime.
             Self::Snapshot(args) => snapshot::run(args)?,
