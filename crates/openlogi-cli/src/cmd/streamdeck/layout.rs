@@ -230,18 +230,19 @@ mod tests {
         layout.validate(mk2()).expect("valid");
     }
 
-    /// A misspelled field silently doing nothing is worse than a refusal:
-    /// the key just stays blank and nothing says why.
+    /// A field name this build does not know, silently doing nothing, is
+    /// worse than a refusal: the key just stays blank and nothing says why.
+    /// In practice this is almost always a misspelling of a real field.
     #[test]
     fn an_unknown_field_is_refused_rather_than_ignored() {
         let error = parse(
             r#"
             [[keys]]
             index = 0
-            lable = "TYPO"
+            caption = "NOT A FIELD"
             "#,
         )
-        .expect_err("misspelled field");
+        .expect_err("unknown field");
         assert!(matches!(error, LayoutError::Malformed { .. }));
     }
 
