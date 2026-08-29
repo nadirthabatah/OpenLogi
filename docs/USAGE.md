@@ -411,6 +411,13 @@ what comes back is `F13` rather than `0x0068`. A keymap dumped as numbers tells
 nobody anything; dumped as names it is something you can reason about, say out
 loud, and write down.
 
+Every answer from the board is checked against the question: not just that it
+replied to the right command, but that it replied about the right key. Every
+keycode reply carries the same command byte, so the command alone cannot tell
+one position's answer from the previous one's — and `keymap` walks the matrix
+in a tight loop, where a single stale report would shift every answer after it
+and print a keymap that is confidently wrong.
+
 ### Why `set` is careful
 
 A wrong keycode written to a keyboard takes a key away from whoever is using

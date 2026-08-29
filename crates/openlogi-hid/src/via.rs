@@ -457,9 +457,23 @@ mod tests {
         ]
     }
 
-    fn keycode_reply(keycode: u16) -> [u8; REPORT_LEN] {
+    /// A board's answer to a keycode read, echoing the position asked about.
+    ///
+    /// The echo is not decoration: it is what tells this position's answer
+    /// from the previous one's, since every keycode reply carries the same
+    /// command byte. A fixture that left it zero would be a board that no
+    /// real firmware resembles, and would let a bug through here.
+    fn keycode_reply_at(layer: u8, row: u8, column: u8, keycode: u16) -> [u8; REPORT_LEN] {
         let [high, low] = keycode.to_be_bytes();
-        reply(CommandId::GetKeycode, &[(4, high), (5, low)])
+        reply(
+            CommandId::GetKeycode,
+            &[(1, layer), (2, row), (3, column), (4, high), (5, low)],
+        )
+    }
+
+    /// The commonest case in these tests: the origin key.
+    fn keycode_reply(keycode: u16) -> [u8; REPORT_LEN] {
+        keycode_reply_at(0, 0, 0, keycode)
     }
 
     #[test]
@@ -575,8 +589,11 @@ mod tests {
     #[tokio::test]
     async fn a_write_that_lands_is_reported_as_success() {
         let mut replies = handshake();
-        replies.push(reply(CommandId::SetKeycode, &[(4, 0x00), (5, 0x68)]));
-        replies.push(keycode_reply(0x0068));
+        replies.push(reply(
+            CommandId::SetKeycode,
+            &[(1, 0), (2, 1), (3, 2), (4, 0x00), (5, 0x68)],
+        ));
+        replies.push(keycode_reply_at(0, 1, 2, 0x0068));
         let mut session = Session::with_transport(Box::new(Scripted::new(replies)))
             .await
             .expect("the handshake succeeds");
@@ -592,8 +609,11 @@ mod tests {
     #[tokio::test]
     async fn a_write_that_did_not_take_is_reported_rather_than_assumed() {
         let mut replies = handshake();
-        replies.push(reply(CommandId::SetKeycode, &[(4, 0x00), (5, 0x68)]));
-        replies.push(keycode_reply(0x0004));
+        replies.push(reply(
+            CommandId::SetKeycode,
+            &[(1, 0), (2, 1), (3, 2), (4, 0x00), (5, 0x68)],
+        ));
+        replies.push(keycode_reply_at(0, 1, 2, 0x0004));
         let mut session = Session::with_transport(Box::new(Scripted::new(replies)))
             .await
             .expect("the handshake succeeds");

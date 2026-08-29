@@ -52,6 +52,33 @@ pub enum ProtocolError {
         /// The command the device echoed.
         answered: u8,
     },
+    /// The answer echoed a different position than the one asked about.
+    ///
+    /// Like [`Self::Mismatched`], not necessarily a broken device: a reply to
+    /// an earlier request can still be in the pipe. It matters far more than
+    /// it looks, because a keymap read walks the matrix in a tight loop and
+    /// every reply carries the same command byte — so one stale or duplicated
+    /// report would shift every answer after it by one position, and report a
+    /// whole keymap that is confidently wrong.
+    #[error(
+        "asked about layer {asked_layer}, row {asked_row}, column {asked_column} and \
+         the device answered about layer {answered_layer}, row {answered_row}, \
+         column {answered_column}"
+    )]
+    WrongPosition {
+        /// Layer asked about.
+        asked_layer: u8,
+        /// Row asked about.
+        asked_row: u8,
+        /// Column asked about.
+        asked_column: u8,
+        /// Layer the device answered about.
+        answered_layer: u8,
+        /// Row the device answered about.
+        answered_row: u8,
+        /// Column the device answered about.
+        answered_column: u8,
+    },
     /// A layer index the keyboard does not have.
     #[error("layer {layer} does not exist; this keymap has {count}")]
     LayerOutOfRange {
@@ -196,7 +223,26 @@ impl Response {
             // A read answers with the keycode after the three coordinates it
             // echoes; a write answers with the same shape, which is what lets
             // a caller confirm what actually landed rather than assume.
-            Command::GetKeycode { .. } | Command::SetKeycode { .. } => {
+            //
+            // The echoed coordinates are checked, not skipped over. Every
+            // keycode reply carries the same command byte, so the command
+            // check above cannot tell this position's answer from the previous
+            // one's — and a keymap read walks the matrix in a tight loop,
+            // where one stale report would shift every answer after it.
+            Command::GetKeycode { layer, row, column }
+            | Command::SetKeycode {
+                layer, row, column, ..
+            } => {
+                if [report[1], report[2], report[3]] != [layer, row, column] {
+                    return Err(ProtocolError::WrongPosition {
+                        asked_layer: layer,
+                        asked_row: row,
+                        asked_column: column,
+                        answered_layer: report[1],
+                        answered_row: report[2],
+                        answered_column: report[3],
+                    });
+                }
                 Self::Keycode(u16::from_be_bytes([report[4], report[5]]))
             }
         })
@@ -313,6 +359,78 @@ mod tests {
         assert_eq!(
             Response::parse(Command::GetLayerCount, &report),
             Ok(Response::LayerCount(4))
+        );
+    }
+
+    /// The check the command byte alone cannot make.
+    ///
+    /// Every keycode reply carries command 0x04, so a reply about another
+    /// position is indistinguishable from this one's by command id. A keymap
+    /// read walks the matrix in a tight loop; one stale report accepted here
+    /// shifts every answer after it and reports a keymap that is confidently
+    /// wrong.
+    #[test]
+    fn a_keycode_reply_about_another_position_is_refused() {
+        let asked = Command::GetKeycode {
+            layer: 1,
+            row: 2,
+            column: 3,
+        };
+        // The board answering about the position read just before this one.
+        let stale = answer(
+            CommandId::GetKeycode,
+            &[(1, 1), (2, 2), (3, 2), (4, 0x00), (5, 0x04)],
+        );
+        assert_eq!(
+            Response::parse(asked, &stale),
+            Err(ProtocolError::WrongPosition {
+                asked_layer: 1,
+                asked_row: 2,
+                asked_column: 3,
+                answered_layer: 1,
+                answered_row: 2,
+                answered_column: 2,
+            })
+        );
+    }
+
+    /// The same check on a write, where accepting another position's echo
+    /// would confirm a keycode landed somewhere it did not.
+    #[test]
+    fn a_write_confirmed_by_another_positions_echo_is_refused() {
+        let asked = Command::SetKeycode {
+            layer: 0,
+            row: 4,
+            column: 5,
+            keycode: 0x0068,
+        };
+        let elsewhere = answer(
+            CommandId::SetKeycode,
+            &[(1, 0), (2, 4), (3, 6), (4, 0x00), (5, 0x68)],
+        );
+        assert!(matches!(
+            Response::parse(asked, &elsewhere),
+            Err(ProtocolError::WrongPosition { .. })
+        ));
+    }
+
+    /// And the position it did ask about is still accepted, at coordinates
+    /// that are not all zero — which is what the round-trip tests above use,
+    /// and why they could not have caught the bug this pins.
+    #[test]
+    fn the_right_position_is_accepted_at_non_zero_coordinates() {
+        let asked = Command::GetKeycode {
+            layer: 2,
+            row: 3,
+            column: 7,
+        };
+        let reply = answer(
+            CommandId::GetKeycode,
+            &[(1, 2), (2, 3), (3, 7), (4, 0x00), (5, 0x68)],
+        );
+        assert_eq!(
+            Response::parse(asked, &reply),
+            Ok(Response::Keycode(0x0068))
         );
     }
 

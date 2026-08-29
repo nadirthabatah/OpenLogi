@@ -727,4 +727,42 @@ mod tests {
             "a transparent icon reached the key as {centre:?}, not black"
         );
     }
+
+    /// A picture with a degenerate shape must come back as a key, not a panic.
+    ///
+    /// The centring arithmetic subtracts the scaled size from the key size, so
+    /// anything that scaled *larger* than the key would underflow and abort
+    /// the program. Aspect ratios this extreme also round one dimension to
+    /// zero, which is the other way an image pipeline falls over. Someone will
+    /// point this at a banner, a 1-pixel spacer, or a file that is not the
+    /// shape they think it is, and getting a black key beats getting a crash.
+    #[test]
+    fn a_picture_of_any_shape_produces_a_key_rather_than_a_panic() {
+        let mk2 = model(0x0080);
+        for (width, height) in [
+            (1_u32, 1_u32),
+            (10_000, 1),
+            (1, 10_000),
+            (3000, 2),
+            (2, 3000),
+            (1, 72),
+            (72, 1),
+        ] {
+            let picture = DynamicImage::ImageRgba8(RgbaImage::new(width, height));
+            let encoded = key_image(mk2, &picture)
+                .unwrap_or_else(|error| panic!("{width}x{height} failed: {error}"));
+            assert!(
+                !encoded.is_empty(),
+                "{width}x{height} encoded to nothing at all"
+            );
+            // Still a JPEG of the key's own size, not a picture of the shape
+            // that went in.
+            let decoded = image::load_from_memory(&encoded).expect("a JPEG comes back");
+            assert_eq!(
+                (decoded.width(), decoded.height()),
+                (72, 72),
+                "{width}x{height} did not come back as a key-sized image"
+            );
+        }
+    }
 }
