@@ -21,6 +21,7 @@ openlogi streamdeck image 0 icon.png # show a picture on the top-left key
 openlogi streamdeck label 0 "MUTE MIC"  # write a label, sized to fit
 openlogi streamdeck layouts             # the layouts you have saved, by name
 openlogi streamdeck example streaming   # start a layout called "streaming"
+openlogi streamdeck set streaming 0 --label "MUTE MIC"  # set a key, no editor needed
 openlogi streamdeck apply streaming     # apply it by name, from anywhere
 openlogi streamdeck run streaming       # apply it, then act on key presses
 openlogi via                  # QMK/VIA keyboards and macro pads attached
@@ -168,6 +169,45 @@ image = "icons/camera.png"
 the layout file, so a layout and its icons travel together. Neither the example
 nor a parse error needs a device attached, so you can write and check a layout
 before the hardware arrives.
+
+### Building a layout without a text editor
+
+You never have to open a layout file. `openlogi streamdeck set` writes one key
+at a time:
+
+```sh
+openlogi streamdeck set mydeck 0 --label "MUTE MIC" --background 802020
+openlogi streamdeck set mydeck 1 --label REC --colour ff4040 --action Copy
+openlogi streamdeck unset mydeck 1
+```
+
+There is no need to run `example` first — the first key you set *is* the
+layout. For anyone this saves a step; for anyone working by dictation, editing
+TOML by hand is the difference between this feature being usable and not, which
+is why it works this way.
+
+Three things about it are deliberate:
+
+**Setting a key replaces it, it does not merge.** Saying `--label` again gives
+you the second label and nothing else. A command that quietly kept the old
+background underneath new words would produce a key you did not ask for.
+
+**Mistakes are caught while you are still thinking about that key** — a colour
+that is not six hex digits, an action name this build does not know, or asking
+for words and a picture on the same key. Finding out at apply time, with the
+deck in front of you, is too late to be useful.
+
+**Removing a key that was not there says so**, and exits `2`. Told "removed",
+you would believe something changed and then wonder why the deck looks the
+same.
+
+Keys are kept in deck order in the file however you set them, so a layout in
+git does not churn because of the order you happened to type things.
+
+An action that carries a value — `RunShellCommand`, `TypeText` — has to be
+written in the file rather than passed here. That is not an oversight: those
+are the actions `run` refuses without `--accept-actions`, and adding one should
+be a deliberate act of editing, not a flag on a convenience command.
 
 ### Layouts have a home
 

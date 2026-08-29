@@ -74,6 +74,41 @@ pub enum StreamDeckCmd {
     Example(PathArgs),
     /// List the layouts saved in the library.
     Layouts,
+    /// Set one key in a saved layout, without opening a text editor.
+    Set(SetArgs),
+    /// Remove one key from a saved layout.
+    Unset(UnsetArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct SetArgs {
+    /// A layout: a name in your library, or a path to a file.
+    pub layout: String,
+    /// Key index, counting from 0 at the top left.
+    pub key: u16,
+    /// Words to write on the key.
+    #[arg(long)]
+    pub label: Option<String>,
+    /// A picture to show on it instead of words.
+    #[arg(long)]
+    pub image: Option<PathBuf>,
+    /// Text colour, six hex digits, no leading '#'. Defaults to white.
+    #[arg(long)]
+    pub colour: Option<String>,
+    /// Background colour, six hex digits. Defaults to black.
+    #[arg(long)]
+    pub background: Option<String>,
+    /// What pressing the key does, as an action name such as `Copy`.
+    #[arg(long)]
+    pub action: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct UnsetArgs {
+    /// A layout: a name in your library, or a path to a file.
+    pub layout: String,
+    /// Key index, counting from 0 at the top left.
+    pub key: u16,
 }
 
 #[derive(Debug, Args)]
@@ -153,8 +188,25 @@ impl StreamDeckCmd {
         let target = match &self {
             Self::Apply(args) | Self::Example(args) => Some(library::resolve(&args.layout)?),
             Self::Run(args) => Some(library::resolve(&args.layout)?),
+            Self::Set(args) => Some(library::resolve(&args.layout)?),
+            Self::Unset(args) => Some(library::resolve(&args.layout)?),
             _ => None,
         };
+
+        // Editing a layout needs no device, and is most of what someone does
+        // with one — a deck that is not plugged in yet is still a deck whose
+        // layout can be written.
+        match &self {
+            Self::Set(args) => {
+                let path = target.ok_or_else(|| anyhow!("the layout path was not resolved"))?;
+                return set_key(&path, args);
+            }
+            Self::Unset(args) => {
+                let path = target.ok_or_else(|| anyhow!("the layout path was not resolved"))?;
+                return unset_key(&path, args.key);
+            }
+            _ => {}
+        }
 
         // Writing an example layout needs no device, and wanting one before
         // the hardware arrives — or on a machine that will never have it — is
@@ -264,7 +316,7 @@ impl StreamDeckCmd {
                 return run_layout(collections, path, &layout).await;
             }
             // Handled before the device scan above.
-            Self::Example(_) | Self::Layouts => {
+            Self::Example(_) | Self::Layouts | Self::Set(_) | Self::Unset(_) => {
                 unreachable!("handled before the device scan")
             }
             Self::Watch => {
@@ -380,6 +432,110 @@ pub async fn apply_saved(name: &str) -> Result<usize> {
     let keys = parsed.keys.len();
     apply(&collections, &path, &parsed).await?;
     Ok(keys)
+}
+
+/// `openlogi streamdeck set`.
+///
+/// The point of this command is that configuring a deck should never require
+/// opening a text editor and getting TOML right. That is friction for anyone
+/// and a wall for someone working by dictation, which is the case this project
+/// is built around.
+///
+/// Writes to a layout that does not exist yet rather than refusing: the first
+/// key someone sets is the layout, and making them run `example` first to get
+/// a file full of things they did not ask for is a step with no purpose.
+fn set_key(path: &Path, args: &SetArgs) -> Result<ExitCode> {
+    if args.label.is_some() && args.image.is_some() {
+        eprintln!("A key shows words or a picture, not both. Pass one of --label or --image.");
+        return Ok(ExitCode::from(EXISTS));
+    }
+    // Colours are checked here rather than at apply time, so a typo is caught
+    // while the person is still thinking about that key.
+    for (name, value) in [
+        ("--colour", &args.colour),
+        ("--background", &args.background),
+    ] {
+        if let Some(value) = value {
+            parse_colour(value).with_context(|| format!("{name} is not a colour"))?;
+        }
+    }
+    let action = args.action.as_deref().map(parse_action).transpose()?;
+
+    let mut layout = if path.exists() {
+        read_layout(path)?
+    } else {
+        layout::Layout::default()
+    };
+    let existing = layout.keys.iter().any(|key| key.index == args.key);
+    layout.set(layout::Key {
+        index: args.key,
+        label: args.label.clone(),
+        image: args.image.clone(),
+        colour: args.colour.clone(),
+        background: args.background.clone(),
+        action,
+    });
+
+    write_layout(path, &layout)?;
+    println!(
+        "key {} {} in {}",
+        args.key,
+        if existing { "replaced" } else { "added" },
+        path.display()
+    );
+    // Said because a key set with only an action shows nothing, and someone
+    // who cannot see the deck has no other way to notice.
+    if args.label.is_none() && args.image.is_none() {
+        println!("That key will stay blank — it has an action but nothing to show.");
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// `openlogi streamdeck unset`.
+fn unset_key(path: &Path, key: u16) -> Result<ExitCode> {
+    if !path.exists() {
+        eprintln!("There is no layout at {}.", path.display());
+        return Ok(ExitCode::from(NOTHING_FOUND));
+    }
+    let mut layout = read_layout(path)?;
+    if !layout.remove(key) {
+        // Told "removed", someone believes something changed, and the next
+        // thing they do is wonder why the deck looks the same.
+        eprintln!(
+            "Key {key} was not in {}, so nothing changed.",
+            path.display()
+        );
+        return Ok(ExitCode::from(NOTHING_FOUND));
+    }
+    write_layout(path, &layout)?;
+    println!("key {key} removed from {}", path.display());
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Turn an action name into an action.
+///
+/// Goes through the same serde representation the layout file uses, so
+/// whatever a file accepts the command line accepts, and the two cannot come
+/// to disagree about what an action is called.
+fn parse_action(name: &str) -> Result<openlogi_core::binding::Action> {
+    serde_json::from_value(serde_json::Value::String(name.to_owned())).map_err(|_| {
+        anyhow!(
+            "{name} is not an action this build knows. Actions are named the way they \
+             are in a layout file — Copy, Paste, NextTab, VolumeUp and so on. An action \
+             that takes a value, such as RunShellCommand, has to be written in the file \
+             rather than passed here."
+        )
+    })
+}
+
+/// Write a layout back to its file, creating the library if it is new.
+fn write_layout(path: &Path, layout: &layout::Layout) -> Result<()> {
+    let body = layout.to_toml().map_err(|error| anyhow!("{error}"))?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    std::fs::write(path, body).with_context(|| format!("failed to write {}", path.display()))
 }
 
 /// `openlogi streamdeck layouts`.

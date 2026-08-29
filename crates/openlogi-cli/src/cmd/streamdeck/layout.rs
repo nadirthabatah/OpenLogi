@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// A deck layout as written in a file.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Layout {
     /// Key screen brightness, as a percentage. Left alone when absent.
@@ -75,6 +75,12 @@ pub enum LayoutError {
     DuplicateKey {
         /// The key claimed twice.
         index: u16,
+    },
+    /// The layout could not be written back out.
+    #[error("the layout could not be written back as TOML: {detail}")]
+    Unwritable {
+        /// What the serializer reported.
+        detail: String,
     },
     /// A key the attached model does not have.
     #[error("key {index} does not exist on the {model}, which has keys 0 to {last}")]
@@ -162,6 +168,52 @@ impl Layout {
         Ok(())
     }
 
+    /// Add or replace one key, keeping the rest of the layout as it is.
+    ///
+    /// Editing a layout by hand means opening a text editor and getting TOML
+    /// right — which for anyone working by dictation is the difference between
+    /// this being usable and not. So a key can be set from the command line
+    /// instead, and this is the part that decides what "set" means.
+    ///
+    /// Replacement rather than merge: a key is a small, whole thing, and a
+    /// command that quietly kept the old picture underneath new words would
+    /// produce a key nobody asked for. Saying `--label` twice should give the
+    /// second label and nothing else.
+    pub fn set(&mut self, key: Key) {
+        match self.keys.iter_mut().find(|held| held.index == key.index) {
+            Some(held) => *held = key,
+            None => self.keys.push(key),
+        }
+        // Sorted so the file reads in the order the keys sit on the deck, and
+        // so setting the same keys in a different order produces the same
+        // file — which matters when a layout is kept in git.
+        self.keys.sort_by_key(|key| key.index);
+    }
+
+    /// Remove one key, reporting whether it was there.
+    ///
+    /// A key that was not in the layout is worth saying so about rather than
+    /// silently succeeding: told "removed", someone believes something
+    /// changed, and the next thing they do is wonder why the deck looks the
+    /// same.
+    pub fn remove(&mut self, index: u16) -> bool {
+        let before = self.keys.len();
+        self.keys.retain(|key| key.index != index);
+        before != self.keys.len()
+    }
+
+    /// Render back to TOML, for writing to a file.
+    ///
+    /// # Errors
+    ///
+    /// Fails only if the layout cannot be serialized, which would mean a field
+    /// TOML cannot represent had been added to it.
+    pub fn to_toml(&self) -> Result<String, LayoutError> {
+        toml::to_string_pretty(self).map_err(|error| LayoutError::Unwritable {
+            detail: error.to_string(),
+        })
+    }
+
     /// Resolve a key's image path against the layout file's own directory, so
     /// a layout and its icons travel together.
     #[must_use]
@@ -177,11 +229,11 @@ impl Layout {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use openlogi_streamdeck::model::{ELGATO_VENDOR_ID, Model, identify};
 
-    use super::{Layout, LayoutError};
+    use super::{Action, Key, Layout, LayoutError};
 
     fn mk2() -> &'static Model {
         identify(ELGATO_VENDOR_ID, 0x0080).expect("catalogued")
@@ -455,5 +507,124 @@ mod tests {
             Layout::resolve(Path::new("/home/me/work.toml"), Path::new("/opt/icon.png")),
             Path::new("/opt/icon.png")
         );
+    }
+
+    fn key(index: u16, label: &str) -> Key {
+        Key {
+            index,
+            label: Some(label.to_owned()),
+            image: None,
+            colour: None,
+            background: None,
+            action: None,
+        }
+    }
+
+    #[test]
+    fn setting_a_new_key_adds_it() {
+        let mut layout = Layout::default();
+        layout.set(key(2, "REC"));
+        assert_eq!(layout.keys.len(), 1);
+        assert_eq!(layout.keys[0].index, 2);
+    }
+
+    /// Replacement, not merge. A command that quietly kept the old picture
+    /// underneath new words would produce a key nobody asked for, and saying
+    /// `--label` twice should give the second label and nothing else.
+    #[test]
+    fn setting_an_existing_key_replaces_it_rather_than_merging() {
+        let mut layout = Layout::default();
+        let mut first = key(0, "MUTE MIC");
+        first.background = Some("802020".to_owned());
+        layout.set(first);
+        layout.set(key(0, "MUTE"));
+
+        assert_eq!(layout.keys.len(), 1, "one key, not two");
+        assert_eq!(layout.keys[0].label.as_deref(), Some("MUTE"));
+        assert_eq!(
+            layout.keys[0].background, None,
+            "the old background must not survive under the new label"
+        );
+    }
+
+    /// The file has to read in the order the keys sit on the deck, and setting
+    /// the same keys in a different order has to produce the same file — a
+    /// layout kept in git should not churn because of the order someone
+    /// happened to type things.
+    #[test]
+    fn keys_are_kept_in_deck_order_however_they_were_set() {
+        let mut forwards = Layout::default();
+        for index in [0, 1, 2, 3] {
+            forwards.set(key(index, "x"));
+        }
+        let mut backwards = Layout::default();
+        for index in [3, 1, 0, 2] {
+            backwards.set(key(index, "x"));
+        }
+        assert_eq!(forwards, backwards);
+        let order: Vec<u16> = forwards.keys.iter().map(|key| key.index).collect();
+        assert_eq!(order, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn removing_a_key_reports_whether_it_was_there() {
+        let mut layout = Layout::default();
+        layout.set(key(0, "MUTE"));
+        assert!(layout.remove(0), "the key was there");
+        assert!(layout.keys.is_empty());
+        // Told "removed", someone believes something changed, and the next
+        // thing they do is wonder why the deck looks the same.
+        assert!(!layout.remove(0), "it is no longer there");
+    }
+
+    #[test]
+    fn removing_one_key_leaves_the_others_alone() {
+        let mut layout = Layout::default();
+        layout.set(key(0, "A"));
+        layout.set(key(1, "B"));
+        layout.remove(0);
+        assert_eq!(layout.keys.len(), 1);
+        assert_eq!(layout.keys[0].label.as_deref(), Some("B"));
+    }
+
+    /// The round trip a command-line edit depends on: written out, read back,
+    /// and identical. Anything lost here is a setting someone made that the
+    /// next edit silently discards.
+    #[test]
+    fn a_layout_survives_being_written_and_read_back() {
+        let mut layout = Layout {
+            brightness: Some(80),
+            keys: Vec::new(),
+        };
+        layout.set(Key {
+            index: 0,
+            label: Some("MUTE MIC".to_owned()),
+            image: None,
+            colour: Some("ffffff".to_owned()),
+            background: Some("802020".to_owned()),
+            action: Some(Action::Copy),
+        });
+        layout.set(Key {
+            index: 2,
+            label: None,
+            image: Some(PathBuf::from("icons/camera.png")),
+            colour: None,
+            background: None,
+            action: None,
+        });
+
+        let written = layout.to_toml().expect("a layout renders as TOML");
+        let read = Layout::parse(Path::new("round.toml"), &written).expect("and reads back");
+        assert_eq!(read, layout);
+    }
+
+    /// An empty layout is a legitimate starting point — the first key someone
+    /// sets is the layout — so it has to survive the round trip too.
+    #[test]
+    fn an_empty_layout_round_trips() {
+        let layout = Layout::default();
+        let written = layout.to_toml().expect("renders");
+        let read = Layout::parse(Path::new("empty.toml"), &written).expect("reads back");
+        assert_eq!(read, layout);
     }
 }

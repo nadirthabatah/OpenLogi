@@ -411,6 +411,118 @@ fn a_layout_can_be_created_listed_and_not_clobbered() {
         .expect_says("already exists");
 }
 
+/// A whole layout built from the command line, never opening a text editor.
+///
+/// For anyone this is convenience; for someone working by dictation it is the
+/// difference between the layout feature being usable and not, which is why it
+/// gets an end-to-end test rather than only unit coverage of the pieces.
+#[test]
+fn a_layout_can_be_built_entirely_from_the_command_line() {
+    let sandbox = Sandbox::new("nokeyboard");
+
+    // No `example` first: the first key someone sets is the layout.
+    sandbox
+        .run(&["streamdeck", "set", "mydeck", "0", "--label", "MUTE MIC"])
+        .expect_status(0)
+        .expect_says("added");
+    sandbox
+        .run(&[
+            "streamdeck",
+            "set",
+            "mydeck",
+            "1",
+            "--label",
+            "REC",
+            "--colour",
+            "ff4040",
+            "--action",
+            "Copy",
+        ])
+        .expect_status(0);
+
+    sandbox
+        .run(&["streamdeck", "layouts"])
+        .expect_status(0)
+        .expect_says("mydeck");
+
+    // Replacement, not merge.
+    sandbox
+        .run(&["streamdeck", "set", "mydeck", "0", "--label", "MUTE"])
+        .expect_status(0)
+        .expect_says("replaced");
+
+    sandbox
+        .run(&["streamdeck", "unset", "mydeck", "1"])
+        .expect_status(0)
+        .expect_says("removed");
+
+    // Removing something that is not there must not claim to have changed
+    // anything: told "removed", someone believes the deck changed.
+    sandbox
+        .run(&["streamdeck", "unset", "mydeck", "1"])
+        .expect_status(2)
+        .expect_says("nothing changed");
+
+    // And what was built is a layout the program will actually read back.
+    let path = sandbox.path("config/openlogi/layouts/mydeck.toml");
+    let body = std::fs::read_to_string(&path).expect("the layout exists");
+    assert!(body.contains("MUTE"), "{body}");
+    assert!(!body.contains("REC"), "the removed key is gone: {body}");
+}
+
+/// Mistakes have to be caught while the person is still thinking about that
+/// key, not at apply time when the deck is in front of them.
+#[test]
+fn a_bad_key_setting_is_refused_at_the_moment_it_is_made() {
+    let sandbox = Sandbox::new("badset");
+
+    let both = sandbox.run(&[
+        "streamdeck",
+        "set",
+        "d",
+        "0",
+        "--label",
+        "X",
+        "--image",
+        "y.png",
+    ]);
+    assert_ne!(
+        both.status(),
+        0,
+        "words or a picture, not both:\n{}",
+        both.said()
+    );
+    both.expect_says("not both");
+
+    let colour = sandbox.run(&[
+        "streamdeck",
+        "set",
+        "d",
+        "0",
+        "--label",
+        "X",
+        "--colour",
+        "zzz",
+    ]);
+    assert_ne!(colour.status(), 0, "{}", colour.said());
+    colour.expect_says("--colour");
+
+    let action = sandbox.run(&[
+        "streamdeck",
+        "set",
+        "d",
+        "0",
+        "--label",
+        "X",
+        "--action",
+        "Frobnicate",
+    ]);
+    assert_ne!(action.status(), 0, "{}", action.said());
+    // A rejection that does not say what the vocabulary is leaves someone
+    // guessing at names.
+    action.expect_says("Copy");
+}
+
 /// A malformed layout must be reported as malformed, whether or not a deck is
 /// attached. Reporting "no Stream Deck found" would send someone hunting a
 /// hardware problem they do not have.
