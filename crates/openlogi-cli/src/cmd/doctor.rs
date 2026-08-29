@@ -109,6 +109,15 @@ pub struct Check {
     pub verdict: Verdict,
 }
 
+/// Read the machine and diagnose it, without printing anything.
+///
+/// The half of this command the MCP server needs: the findings as data, so an
+/// assistant can read the steps out rather than parse the text meant for a
+/// terminal.
+pub async fn examine() -> Vec<Check> {
+    diagnose(&gather().await)
+}
+
 /// Look at the machine and say what is wrong with it.
 ///
 /// # Errors

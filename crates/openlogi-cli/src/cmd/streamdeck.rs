@@ -341,6 +341,45 @@ pub fn layout_library() -> Result<std::path::PathBuf> {
     library::directory()
 }
 
+/// Every saved layout's name.
+///
+/// Re-exported for the MCP server so an assistant offers names that exist
+/// rather than ones it inferred from the conversation.
+///
+/// # Errors
+///
+/// Fails when the configuration directory cannot be determined.
+pub fn saved_layouts() -> Result<Vec<String>> {
+    library::list()
+}
+
+/// Apply a saved layout by name, returning how many keys it set.
+///
+/// The MCP server's route in. Shares [`apply`] with the CLI rather than
+/// repeating it, so an assistant and a person applying the same layout get
+/// the same result — including the same refusals.
+///
+/// # Errors
+///
+/// Fails when the layout cannot be read or parsed, no deck is attached, or
+/// the device rejects a write.
+pub async fn apply_saved(name: &str) -> Result<usize> {
+    let path = library::resolve(name)?;
+    let parsed = read_layout(&path)?;
+    let collections = streamdeck::attached()
+        .await
+        .context("failed to enumerate HID devices")?;
+    if collections.is_empty() {
+        return Err(anyhow!(
+            "no Stream Deck is attached. `openlogi doctor` says whether that is a \
+             permissions problem rather than an absent device."
+        ));
+    }
+    let keys = parsed.keys.len();
+    apply(&collections, &path, &parsed).await?;
+    Ok(keys)
+}
+
 /// `openlogi streamdeck layouts`.
 ///
 /// An empty library is not a failure and does not read like one: on a fresh

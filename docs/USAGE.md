@@ -408,6 +408,11 @@ The tools exposed are:
 | `set_stream_deck_key_colour` | Fill one key with a colour |
 | `set_stream_deck_key_label` | Write a text label on one key, sized to fit |
 | `clear_stream_deck` | Turn every key black |
+| `list_layouts` / `apply_layout` | Saved deck layouts, restored whole by name |
+| `list_keyboards` | QMK/VIA boards attached, with protocol revision and layer count |
+| `read_keymap` | A layer's keys, by name rather than by number |
+| `set_key` | Change what one key sends, confirmed by reading it back |
+| `diagnose` | Why devices are not being found, and the steps that fix it |
 
 `list_peripherals` is the one to reach for when the question is "what do I
 have plugged in". It spans vendors, where `list_devices` covers only Logitech
@@ -424,6 +429,25 @@ CLI's own. Enumeration there is deliberately **not** filtered by vendor: the
 same UVC registers answer on an Elgato, an Obsbot or a built-in camera, so
 restricting the list to one manufacturer would hide devices that are in fact
 controllable.
+
+`diagnose` is what an assistant should reach for when a device the person says
+is plugged in does not appear. It hands back the same findings `openlogi
+doctor` prints, as data — and says plainly that the steps are for the person to
+carry out, since only they can install system rules or grant access. A model
+that reads "install the udev rules" as an instruction to itself will either
+fail or, worse, try.
+
+`apply_layout` exists so "put my streaming layout back" is one call rather than
+thirty-two. There is deliberately no tool that *writes* a layout file: a layout
+is something a person composed, and an assistant rewriting one on a
+misunderstanding would destroy work with no copy anywhere — the deck's own
+memory is not a copy, it goes when the cable does.
+
+The keyboard tools take and give keys by name — `F13`, not `0x0068`. An
+assistant relaying "your key is zero x zero zero six eight" has relayed nothing
+usable. `set_key` reports what was there before the change, so the model can
+offer to put it back, and an unrecognised name is refused with the vocabulary
+that does exist rather than a bare rejection the model would only guess against.
 
 The Stream Deck tools answer with a key's row and column as well as its index,
 for the same reason the CLI does: an index alone is not something anyone can
