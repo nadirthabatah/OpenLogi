@@ -48,6 +48,47 @@ pub fn resolve(argument: &str) -> Result<PathBuf> {
     Ok(directory()?.join(format!("{argument}.toml")))
 }
 
+/// Refuse anything that is not a bare library name.
+///
+/// The command line takes a name *or* a path, because a person who types a
+/// path means that path. The MCP tools must not: their argument comes from a
+/// language model, which can be steered by whatever it has been reading —
+/// a web page, a document, a comment on a pull request. `library::resolve`
+/// would happily treat `../../../../etc/thing` as a path and write there, and
+/// "the model was asked nicely by a web page" is not a story anyone wants to
+/// hear about why a file was overwritten.
+///
+/// So the model-driven surface is names only, and this is the boundary that
+/// enforces it. A name is one path component: no separators, no `..`, no
+/// leading dot, and not empty.
+///
+/// # Errors
+///
+/// A message naming what was wrong with it, phrased for the model to correct
+/// itself rather than retry the same thing.
+pub fn resolve_saved_name(name: &str) -> Result<PathBuf> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(anyhow::anyhow!(
+            "a layout name is needed; list_layouts gives the ones saved here"
+        ));
+    }
+    let is_a_bare_name = !trimmed.contains(['/', '\\'])
+        && trimmed != ".."
+        && trimmed != "."
+        && !trimmed.starts_with('.')
+        && !trimmed.contains('\0')
+        && Path::new(trimmed).components().count() == 1;
+    if !is_a_bare_name {
+        return Err(anyhow::anyhow!(
+            "\"{name}\" is not a layout name. These tools address layouts saved on \
+             this machine by name — list_layouts gives them — and cannot reach a \
+             path elsewhere on the disk."
+        ));
+    }
+    Ok(directory()?.join(format!("{trimmed}.toml")))
+}
+
 /// Whether an argument names a file on disk rather than a layout in the
 /// library.
 ///
@@ -109,7 +150,54 @@ fn name_of(path: &Path) -> Option<String> {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use super::{looks_like_a_path, name_of};
+    use super::{looks_like_a_path, name_of, resolve_saved_name};
+
+    /// The boundary the MCP tools sit behind. Its argument comes from a
+    /// language model, and a model can be steered by whatever it has been
+    /// reading — so anything that could reach outside the library is refused
+    /// here rather than resolved into a path and written to.
+    #[test]
+    fn a_saved_name_cannot_reach_outside_the_library() {
+        for escape in [
+            "../../../../etc/passwd",
+            "..",
+            ".",
+            "../secrets",
+            "sub/deck",
+            "sub\\deck",
+            ".hidden",
+            "",
+            "   ",
+            "/etc/passwd",
+        ] {
+            resolve_saved_name(escape)
+                .map(|path| path.display().to_string())
+                .expect_err(&format!("{escape:?} must be refused"));
+        }
+    }
+
+    #[test]
+    fn an_ordinary_saved_name_resolves_inside_the_library() {
+        let path = resolve_saved_name("streaming").expect("an ordinary name");
+        assert!(
+            path.ends_with("layouts/streaming.toml"),
+            "{}",
+            path.display()
+        );
+        // Surrounding space is a typo, not an escape; it is trimmed.
+        let trimmed = resolve_saved_name("  streaming  ").expect("trimmed");
+        assert_eq!(trimmed, path);
+    }
+
+    /// The refusal has to say what to do instead, or a model retries it.
+    #[test]
+    fn the_refusal_points_at_the_tool_that_lists_names() {
+        let message = resolve_saved_name("../x")
+            .map(|_| String::new())
+            .expect_err("refused")
+            .to_string();
+        assert!(message.contains("list_layouts"), "{message}");
+    }
 
     /// A bare name is the whole point of the library.
     #[test]

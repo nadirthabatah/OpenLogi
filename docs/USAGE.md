@@ -527,6 +527,13 @@ The tools exposed are:
 | `set_key` | Change what one key sends, confirmed by reading it back |
 | `diagnose` | Why devices are not being found, and the steps that fix it |
 
+The layout tools address layouts **by name only**. The command line takes a
+name or a path, because someone who types a path means that path; this surface
+does not, because its argument comes from a model that can be steered by
+whatever it has been reading. A name that looks like a path is refused, and the
+refusal points at `list_layouts` so the model corrects itself rather than
+retrying.
+
 `list_peripherals` is the one to reach for when the question is "what do I
 have plugged in". It spans vendors, where `list_devices` covers only Logitech
 HID++ devices — an assistant that reaches for the narrower tool will report an

@@ -309,6 +309,26 @@ mod tests {
         assert_eq!(resolve("200"), Ok(200));
     }
 
+    /// `set_key` hands back a `to_undo` instruction built from
+    /// `keycode::describe`. If a name it can print does not resolve again, the
+    /// undo is not a way back — it is something that looks like one, which is
+    /// worse than offering nothing. The CLI has this check; the tool an
+    /// assistant drives needs it more, because the assistant will repeat that
+    /// string verbatim and trust it.
+    #[test]
+    fn every_key_the_undo_instruction_can_name_resolves_again() {
+        for code in [
+            0x0000_u16, 0x0001, 0x0004, 0x001e, 0x0045, 0x0068, 0x00e0, 0x00ff, 0xffff,
+        ] {
+            let printed = openlogi_via::keycode::describe(code);
+            assert_eq!(
+                resolve(&printed),
+                Ok(code),
+                "the undo instruction would say {printed:?}, which does not resolve"
+            );
+        }
+    }
+
     /// A model that gets "unknown key" and nothing else will guess again. The
     /// message has to say what the vocabulary is, and what is missing from it.
     #[test]

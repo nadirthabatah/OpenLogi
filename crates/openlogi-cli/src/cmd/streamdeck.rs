@@ -417,8 +417,14 @@ pub fn saved_layouts() -> Result<Vec<String>> {
 ///
 /// Fails when the layout cannot be read or parsed, no deck is attached, or
 /// the device rejects a write.
+// The three functions below are the layout surface an assistant drives, and
+// each resolves its argument with `resolve_saved_name` rather than
+// `library::resolve`. The difference is the whole point: the command line
+// takes a name *or* a path, because a person who types a path means it, while
+// a name arriving over MCP came from a model that can be steered by whatever
+// it has been reading. Names only, inside the library, or nothing.
 pub async fn apply_saved(name: &str) -> Result<usize> {
-    let path = library::resolve(name)?;
+    let path = library::resolve_saved_name(name)?;
     let parsed = read_layout(&path)?;
     let collections = streamdeck::attached()
         .await
@@ -474,7 +480,7 @@ pub fn layout_key(
 /// Fails when the layout cannot be read, the key description is not usable,
 /// or the file cannot be written.
 pub fn set_layout_key(name: &str, key: &layout::Key) -> Result<Option<layout::Key>> {
-    let path = library::resolve(name)?;
+    let path = library::resolve_saved_name(name)?;
     let (source, was) = if path.exists() {
         let source = std::fs::read_to_string(&path)
             .with_context(|| format!("failed to read {}", path.display()))?;
@@ -504,7 +510,7 @@ pub fn set_layout_key(name: &str, key: &layout::Key) -> Result<Option<layout::Ke
 ///
 /// Fails when the layout does not exist, cannot be read, or cannot be written.
 pub fn unset_layout_key(name: &str, index: u16) -> Result<Option<layout::Key>> {
-    let path = library::resolve(name)?;
+    let path = library::resolve_saved_name(name)?;
     if !path.exists() {
         return Err(anyhow!("there is no layout at {}", path.display()));
     }

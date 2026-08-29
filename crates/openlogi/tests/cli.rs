@@ -824,6 +824,77 @@ fn the_mcp_server_answers_over_stdio() {
     }
 }
 
+/// A layout name arriving over MCP must not be able to name a path.
+///
+/// The argument comes from a language model, and a model can be steered by
+/// whatever it has been reading — a web page, a document, a comment on a pull
+/// request. Before this was closed, `set_layout_key` with a name of
+/// `../../..` wrote a TOML file wherever it pointed, truncating whatever was
+/// there. The command line still takes paths, because a person who types one
+/// means it; this surface does not.
+#[test]
+fn an_mcp_layout_name_cannot_reach_outside_the_library() {
+    use std::io::Write as _;
+    use std::process::Stdio;
+
+    let sandbox = Sandbox::new("mcp-escape");
+    let target = sandbox.path("must-not-be-touched.txt");
+    std::fs::write(&target, "the original contents").expect("a file to try to clobber");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_openlogi"))
+        .arg("mcp")
+        .env("XDG_CONFIG_HOME", sandbox.path("config"))
+        .env("XDG_DATA_HOME", sandbox.path("data"))
+        .env("XDG_STATE_HOME", sandbox.path("state"))
+        .env("XDG_RUNTIME_DIR", sandbox.path("run"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("the mcp server starts");
+
+    let escapes = [
+        target.with_extension("").to_string_lossy().into_owned(),
+        "../../../../etc/openlogi-should-never-write-this".to_owned(),
+        "..".to_owned(),
+        "sub/deck".to_owned(),
+    ];
+    {
+        let stdin = child.stdin.as_mut().expect("a pipe");
+        for (id, escape) in escapes.iter().enumerate() {
+            let request = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id + 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "set_layout_key",
+                    "arguments": { "layout": escape, "key": 0, "label": "X" },
+                },
+            });
+            writeln!(stdin, "{request}").expect("the server accepts a request");
+        }
+    }
+
+    let output = child.wait_with_output().expect("the server exits on EOF");
+    let answered = String::from_utf8_lossy(&output.stdout);
+    for line in answered.lines().filter(|line| !line.is_empty()) {
+        assert!(
+            line.contains("is not a layout name"),
+            "an escape was not refused:\n{line}"
+        );
+    }
+
+    assert_eq!(
+        std::fs::read_to_string(&target).expect("the file is still there"),
+        "the original contents",
+        "a layout name reached outside the library and overwrote a file"
+    );
+    assert!(
+        !sandbox.path("must-not-be-touched.toml").exists(),
+        "a layout name reached outside the library"
+    );
+}
+
 /// A malformed request must not take the server down: a client that sends one
 /// bad frame should get an error and keep its session.
 #[test]
