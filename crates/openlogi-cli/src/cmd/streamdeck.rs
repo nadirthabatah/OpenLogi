@@ -413,7 +413,7 @@ pub fn layout_library() -> Result<std::path::PathBuf> {
 ///
 /// Fails when the configuration directory cannot be determined.
 pub fn saved_layouts() -> Result<Vec<String>> {
-    library::list()
+    Ok(library::list()?.names)
 }
 
 /// Apply a saved layout by name, returning how many keys it set.
@@ -681,20 +681,35 @@ fn write_layout_text(path: &Path, body: &str) -> Result<()> {
 /// machine there is nothing saved yet, and the useful answer is how to make
 /// the first one rather than a bare "none".
 fn list_layouts() -> Result<ExitCode> {
-    let names = library::list()?;
+    let listing = library::list()?;
     let directory = library::directory()?;
-    if names.is_empty() {
+    if listing.names.is_empty() && listing.unnameable == 0 {
         println!("No layouts saved yet.");
         println!();
         println!("Layouts live in {}.", directory.display());
         println!("Start one with: openlogi streamdeck example streaming");
         return Ok(ExitCode::SUCCESS);
     }
-    println!("Layouts ({}), in {}:", names.len(), directory.display());
-    for name in &names {
+    println!(
+        "Layouts ({}), in {}:",
+        listing.names.len(),
+        directory.display()
+    );
+    for name in &listing.names {
         println!("  {name}");
     }
     println!();
+    // Never silent. A file skipped without a word is a layout the person owns
+    // and cannot find, and they would have no reason to go looking.
+    if listing.unnameable > 0 {
+        println!(
+            "{} in that folder cannot be listed: the filename contains a line break \
+             or other control character, so it cannot be printed or typed as a name. \
+             Rename the file to fix it.",
+            counted(listing.unnameable, "file", "files")
+        );
+        println!();
+    }
     println!("Apply one with: openlogi streamdeck apply <name>");
     Ok(ExitCode::SUCCESS)
 }

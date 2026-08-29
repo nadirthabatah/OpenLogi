@@ -60,7 +60,7 @@ pub fn resolve(argument: &str) -> Result<PathBuf> {
 ///
 /// So the model-driven surface is names only, and this is the boundary that
 /// enforces it. A name is one path component: no separators, no `..`, no
-/// leading dot, and not empty.
+/// leading dot, no control characters, and not empty.
 ///
 /// # Errors
 ///
@@ -73,11 +73,22 @@ pub fn resolve_saved_name(name: &str) -> Result<PathBuf> {
             "a layout name is needed; list_layouts gives the ones saved here"
         ));
     }
+    // Control characters are not a path-escape risk; they are a *naming*
+    // risk, which is why they are refused separately and with their own
+    // reason. The name is the filename, and the listing prints one per line —
+    // so a line break in it makes the listing disagree with its own count and
+    // produces a layout nobody can name well enough to apply.
+    if let Some(bad) = trimmed.chars().find(|c| char::is_control(*c)) {
+        return Err(anyhow::anyhow!(
+            "a layout name cannot contain a control character (found {bad:?}). \
+             The name becomes the filename, and list_layouts prints one name per \
+             line, so a line break in it gives a layout nobody can name."
+        ));
+    }
     let is_a_bare_name = !trimmed.contains(['/', '\\'])
         && trimmed != ".."
         && trimmed != "."
         && !trimmed.starts_with('.')
-        && !trimmed.contains('\0')
         && Path::new(trimmed).components().count() == 1;
     if !is_a_bare_name {
         return Err(anyhow::anyhow!(
@@ -126,16 +137,40 @@ fn has_toml_extension(argument: &str) -> bool {
 /// # Errors
 ///
 /// Fails only when the configuration directory cannot be determined.
-pub fn list() -> Result<Vec<String>> {
+pub fn list() -> Result<Listing> {
     let Ok(entries) = std::fs::read_dir(directory()?) else {
-        return Ok(Vec::new());
+        return Ok(Listing::default());
     };
-    let mut names: Vec<String> = entries
+    let mut listing = Listing::default();
+    for name in entries
         .filter_map(Result::ok)
         .filter_map(|entry| name_of(&entry.path()))
-        .collect();
-    names.sort();
-    Ok(names)
+    {
+        // A name that cannot be printed on one line is set aside rather than
+        // listed. The guard on saving refuses to make one, but a file can
+        // arrive from a sync, a restore, or a hand-written mistake, and a
+        // listing that a stray file can make disagree with its own count is
+        // worse than one that says a file was skipped.
+        if name.chars().any(char::is_control) {
+            listing.unnameable += 1;
+        } else {
+            listing.names.push(name);
+        }
+    }
+    listing.names.sort();
+    Ok(listing)
+}
+
+/// What the library holds.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Listing {
+    /// Layouts that can be named and applied.
+    pub names: Vec<String>,
+    /// Files that are layouts but whose names cannot be printed on one line.
+    ///
+    /// Counted rather than dropped: something skipped silently is something
+    /// missing, and the count is what tells a person to go and look.
+    pub unnameable: usize,
 }
 
 /// The library name of a path, when it is a layout file.
@@ -242,5 +277,47 @@ mod tests {
     #[test]
     fn an_icon_beside_a_layout_is_not_itself_a_layout() {
         assert_eq!(name_of(Path::new("/x/icons/camera.png")), None);
+    }
+
+    /// A newline in a name is not a path escape, so the separator guard lets
+    /// it through — and it was let through, and it wrote a file whose name
+    /// contains a line break. The listing prints one name per line, so that
+    /// file made the count disagree with the list and produced a layout
+    /// nobody could name well enough to apply.
+    #[test]
+    fn a_control_character_in_a_name_is_refused() {
+        for bad in [
+            "deck\nother",
+            "deck\ttab",
+            "deck\rreturn",
+            "\u{1b}[31mred",
+            "deck\u{0}nul",
+        ] {
+            let error = resolve_saved_name(bad)
+                .expect_err(&format!("{bad:?} must be refused"))
+                .to_string();
+            assert!(
+                error.contains("control character"),
+                "{bad:?} was refused for the wrong reason: {error}"
+            );
+        }
+    }
+
+    /// The ordinary names must keep working, including ones that are not
+    /// ASCII: a person naming a layout in their own language is not an
+    /// attack, and this guard is about control characters only.
+    #[test]
+    fn an_ordinary_name_still_resolves() {
+        for good in [
+            "streaming",
+            "my-deck",
+            "deck2",
+            "work_setup",
+            "работа",
+            "配置",
+        ] {
+            resolve_saved_name(good)
+                .unwrap_or_else(|error| panic!("{good:?} should be a valid layout name: {error}"));
+        }
     }
 }

@@ -235,7 +235,7 @@ in `layouts/` inside your configuration directory. Anything with a slash or a
 `.toml` on the end is a **path**, used as written — a layout kept in a git
 repository beside the project it belongs to is a perfectly good place for it.
 
-`openlogi streamdeck layouts` lists what you have saved. Naming layouts rather
+`openlogi streamdeck layouts` lists what you have saved. A layout name is a plain name — no slashes, and no control characters, because the name becomes the filename and the listing prints one per line. A file in that folder whose name breaks that rule is counted and reported rather than listed, so it cannot make the listing disagree with its own count. Naming layouts rather
 than remembering paths is the smaller half of why the library exists; the
 larger half is that a profile bundle can then gather them, so moving to another
 computer moves your decks too. See portable profiles below.
