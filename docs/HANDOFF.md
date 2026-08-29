@@ -38,6 +38,13 @@ actually correctness rules:
   `is_recoverable` exists to be checked and anything unrecognised is assumed
   unrecoverable.
 
+- **Never present a decision as a picker.** An interactive multiple-choice
+  list is inaccessible: it has to be navigated rather than read, and the
+  options do not simply arrive in the ear the way prose does. When an agent
+  needs Nadir to choose something, the options go in plain sentences and he
+  types the answer back. This applies to Claude Code's `AskUserQuestion` tool
+  specifically — do not call it. Write the options out instead.
+
 When in doubt about wording, read the sentence out loud.
 
 ## 2. Where the work is
