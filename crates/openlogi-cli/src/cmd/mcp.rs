@@ -164,9 +164,23 @@ async fn handle_message(message: &Value) -> Option<Value> {
     }
     let id = message.get("id").cloned();
     let Some(method) = message.get("method").and_then(Value::as_str) else {
-        // No method + an id is a response frame; this server never issues
-        // requests of its own, so there is nothing to correlate it with.
-        return None;
+        // A *response* frame carries an id together with `result` or `error`,
+        // and never a method. This server issues no requests of its own, so
+        // there is nothing to correlate one with: drop it.
+        if message.get("result").is_some() || message.get("error").is_some() {
+            return None;
+        }
+        // Anything else with no method is a malformed request. If it carries
+        // an id, something is waiting on that id — dropping it silently
+        // leaves a client hanging on a frame it will never get, which is a
+        // worse failure than the mistake that caused it.
+        return id.map(|id| {
+            protocol::error(
+                &id,
+                protocol::INVALID_REQUEST,
+                "a JSON-RPC request must carry a method",
+            )
+        });
     };
     let params = message.get("params").cloned().unwrap_or(Value::Null);
     match id {
@@ -258,6 +272,33 @@ mod tests {
     async fn notifications_are_never_answered() {
         let reply = handle_line(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#).await;
         assert!(reply.is_none(), "notifications must not produce a frame");
+    }
+
+    /// A request carrying an id is a promise that a frame comes back for it.
+    /// Dropping a malformed one leaves the client waiting on an id it will
+    /// never see again — a worse failure than the typo that caused it, and a
+    /// silent one.
+    #[tokio::test]
+    async fn a_request_with_an_id_but_no_method_is_still_answered() {
+        let reply = reply_to(r#"{"jsonrpc":"2.0","id":8}"#).await;
+        assert_eq!(reply["id"], json!(8));
+        assert_eq!(reply["error"]["code"], json!(protocol::INVALID_REQUEST));
+    }
+
+    /// A *response* frame is the one thing with an id and no method that must
+    /// not be answered: answering it would start a loop between two servers
+    /// that each think the other asked something.
+    #[tokio::test]
+    async fn a_response_frame_is_ignored_rather_than_answered() {
+        for frame in [
+            r#"{"jsonrpc":"2.0","id":8,"result":{}}"#,
+            r#"{"jsonrpc":"2.0","id":8,"error":{"code":-1,"message":"x"}}"#,
+        ] {
+            assert!(
+                handle_line(frame).await.is_none(),
+                "a response frame must not be answered: {frame}"
+            );
+        }
     }
 
     #[tokio::test]
