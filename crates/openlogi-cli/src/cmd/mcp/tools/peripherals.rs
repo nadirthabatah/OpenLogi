@@ -66,29 +66,41 @@ pub async fn list_peripherals() -> Result<String, String> {
 }
 
 /// One peripheral, as the model sees it.
+///
+/// Built as a map rather than a `json!` literal that is then reopened: the
+/// fields differ by support kind, and reaching back into a built value to add
+/// them means asserting it is still an object, which is a panic waiting for
+/// whoever edits the literal above it.
 fn describe(found: &Peripheral) -> Value {
-    let mut entry = json!({
-        "name": found.identity.describe(),
-        "vendor_id": format!("{:04x}", found.identity.vendor_id),
-        "product_id": format!("{:04x}", found.identity.product_id),
-        "configurable": found.support.is_configurable(),
-    });
-    let object = entry.as_object_mut().expect("just built as an object");
+    let mut entry = serde_json::Map::new();
+    entry.insert("name".to_owned(), json!(found.identity.describe()));
+    entry.insert(
+        "vendor_id".to_owned(),
+        json!(format!("{:04x}", found.identity.vendor_id)),
+    );
+    entry.insert(
+        "product_id".to_owned(),
+        json!(format!("{:04x}", found.identity.product_id)),
+    );
+    entry.insert(
+        "configurable".to_owned(),
+        json!(found.support.is_configurable()),
+    );
     if let Some(serial) = &found.identity.serial_number {
-        object.insert("serial".to_owned(), json!(serial));
+        entry.insert("serial".to_owned(), json!(serial));
     }
     match &found.support {
         Support::Driver { driver, model } => {
-            object.insert("driver".to_owned(), json!(driver.id()));
-            object.insert("controls".to_owned(), json!(driver.what_it_configures()));
-            object.insert("command".to_owned(), json!(driver.command()));
+            entry.insert("driver".to_owned(), json!(driver.id()));
+            entry.insert("controls".to_owned(), json!(driver.what_it_configures()));
+            entry.insert("command".to_owned(), json!(driver.command()));
             if let Some(model) = model {
-                object.insert("model".to_owned(), json!(model));
+                entry.insert("model".to_owned(), json!(model));
             }
         }
         Support::Receiver(_) => {
-            object.insert("kind".to_owned(), json!("wireless receiver"));
-            object.insert(
+            entry.insert("kind".to_owned(), json!("wireless receiver"));
+            entry.insert(
                 "note".to_owned(),
                 json!(
                     "A receiver, not a peripheral. The devices paired to it appear \
@@ -97,7 +109,7 @@ fn describe(found: &Peripheral) -> Value {
             );
         }
         Support::Unsupported => {
-            object.insert(
+            entry.insert(
                 "note".to_owned(),
                 json!(
                     "Attached, but no driver in this build configures it. It is \
@@ -107,7 +119,7 @@ fn describe(found: &Peripheral) -> Value {
             );
         }
     }
-    entry
+    Value::Object(entry)
 }
 
 #[cfg(test)]
