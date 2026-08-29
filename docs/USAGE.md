@@ -445,6 +445,12 @@ own rather than a published standard's, and a wrong entry would rename a key
 that is not what it claims — or be written back to a board. An unnamed keycode
 renders here as its number, which is honest; a misnamed one would not be.
 
+`doctor` checks that devices can be *written to*, not only opened. This program
+changes settings, so a rule that grants reading and not writing — `MODE="0644"`
+where `0660` was meant — leaves every listing working and every change failing,
+which is the most confusing shape a permissions problem takes. The rules this
+project ships use `TAG+="uaccess"`, which grants both.
+
 ## Portable profiles
 
 `openlogi profile export` saves this machine's setup somewhere you can carry it

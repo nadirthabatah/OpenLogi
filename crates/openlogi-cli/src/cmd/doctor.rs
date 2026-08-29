@@ -91,6 +91,15 @@ pub struct Hidraw {
     pub present: usize,
     /// How many of them this process could open for reading.
     pub openable: usize,
+    /// How many of them this process could open for writing as well.
+    ///
+    /// Separate from [`Self::openable`] because this program *writes*: DPI,
+    /// key images, keycodes, backlight. A rule that grants read but not write
+    /// — `MODE="0644"` rather than `0660`, or an ACL with only `r` — leaves
+    /// every read succeeding and every change failing, which is the most
+    /// confusing shape a permissions problem can take. Checking only reads
+    /// would report all-clear on exactly that machine.
+    pub writable: usize,
     /// USB vendor ids of the nodes that could not be opened.
     ///
     /// Carried so the advice can be a rule someone pastes rather than a
@@ -216,8 +225,21 @@ fn count_hidraw() -> Option<Hidraw> {
         .collect();
 
     let mut openable = 0;
+    let mut writable = 0;
     let mut blocked_vendors: Vec<u16> = Vec::new();
     for node in &nodes {
+        // Opening for write sends nothing to the device; it only asks the
+        // kernel whether this process would be allowed to.
+        if std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(node)
+            .is_ok()
+        {
+            openable += 1;
+            writable += 1;
+            continue;
+        }
         if std::fs::File::open(node).is_ok() {
             openable += 1;
             continue;
@@ -232,6 +254,7 @@ fn count_hidraw() -> Option<Hidraw> {
     Some(Hidraw {
         present: nodes.len(),
         openable,
+        writable,
         blocked_vendors,
     })
 }
@@ -363,6 +386,31 @@ fn linux_access(hidraw: &Hidraw) -> Verdict {
                 counted(hidraw.present, "HID device is", "HID devices are")
             ),
             fix: udev_fix(&hidraw.blocked_vendors),
+        };
+    }
+    // Checked before the read counts below, because a machine where reads work
+    // and writes do not is the one that looks fine and behaves worst: every
+    // listing succeeds, every change fails, and nothing says why.
+    if hidraw.writable < hidraw.openable {
+        return Verdict::Problem {
+            detail: format!(
+                "{} of {} readable HID devices can also be written to. This program \
+                 changes settings on your devices, so reading alone is not enough — \
+                 listings will work and every change will fail.",
+                hidraw.writable, hidraw.openable
+            ),
+            fix: vec![
+                "The udev rule granting access needs to grant writing too: MODE=\"0660\" \
+                 rather than MODE=\"0644\", with your user in the named group."
+                    .to_owned(),
+                "Check what the device allows now: ls -l /dev/hidraw*".to_owned(),
+                "Reload the rules without rebooting: sudo udevadm control --reload-rules \
+                 && sudo udevadm trigger"
+                    .to_owned(),
+                "Then unplug the device and plug it back in — a rule change does not \
+                 reach a device that is already open."
+                    .to_owned(),
+            ],
         };
     }
     if hidraw.openable < hidraw.present {
@@ -672,6 +720,7 @@ mod tests {
             hidraw: Some(Hidraw {
                 present: 4,
                 openable: 4,
+                writable: 4,
                 blocked_vendors: Vec::new(),
             }),
             agent_reachable: true,
@@ -712,6 +761,7 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 4,
             openable: 0,
+            writable: 0,
             blocked_vendors: Vec::new(),
         });
         facts.hid_devices = 0;
@@ -761,6 +811,7 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 2,
             openable: 0,
+            writable: 0,
             // Elgato and a made-up macro pad vendor.
             blocked_vendors: vec![0x0fd9, 0x4653],
         });
@@ -873,6 +924,7 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 2,
             openable: 0,
+            writable: 0,
             blocked_vendors: Vec::new(),
         });
         facts.hid_devices = 0;
@@ -901,6 +953,7 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 4,
             openable: 2,
+            writable: 2,
             blocked_vendors: vec![0x0fd9],
         });
         let checks = diagnose(&facts);
@@ -925,6 +978,7 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 0,
             openable: 0,
+            writable: 0,
             blocked_vendors: Vec::new(),
         });
         let checks = diagnose(&facts);
@@ -1032,6 +1086,7 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 4,
             openable: 0,
+            writable: 0,
             blocked_vendors: Vec::new(),
         });
         facts.hid_devices = 0;
@@ -1054,6 +1109,7 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 4,
             openable: 0,
+            writable: 0,
             blocked_vendors: Vec::new(),
         });
         facts.hid_devices = 0;
@@ -1088,6 +1144,7 @@ mod tests {
                     hidraw: Some(Hidraw {
                         present: 3,
                         openable: 0,
+                        writable: 0,
                         blocked_vendors: vec![0x0fd9],
                     }),
                     hid_devices: 0,
@@ -1101,6 +1158,7 @@ mod tests {
                     hidraw: Some(Hidraw {
                         present: 3,
                         openable: 1,
+                        writable: 1,
                         blocked_vendors: vec![0x046d],
                     }),
                     ..healthy()
@@ -1138,6 +1196,68 @@ mod tests {
         }
     }
 
+    /// The machine that looks fine and behaves worst.
+    ///
+    /// Reads succeed, so every listing works and nothing suggests a
+    /// permissions problem — and every change fails, because this program
+    /// writes. A check that only opened devices for reading would report
+    /// all-clear on exactly this machine, which is the one most in need of
+    /// being told.
+    #[test]
+    fn devices_that_can_be_read_but_not_written_are_a_problem() {
+        let mut facts = healthy();
+        facts.hidraw = Some(Hidraw {
+            present: 3,
+            openable: 3,
+            writable: 1,
+            blocked_vendors: Vec::new(),
+        });
+        let checks = diagnose(&facts);
+        let access = checks
+            .iter()
+            .find(|check| check.name == "Permission to open devices")
+            .expect("the access check is always run");
+        let Verdict::Problem { detail, fix } = &access.verdict else {
+            panic!(
+                "read-only access must be a problem, got {:?}",
+                access.verdict
+            );
+        };
+        assert!(
+            detail.contains("written to"),
+            "the detail must say which half is missing: {detail}"
+        );
+        assert!(
+            fix.iter().any(|step| step.contains("0660")),
+            "the fix must name the mode that grants writing: {fix:?}"
+        );
+        crate::spoken::assert_listenable(&render(&checks, 1), "the read-only verdict");
+        crate::spoken::assert_agrees(&render(&checks, 1), "the read-only verdict");
+    }
+
+    /// And the ordinary machine, where everything readable is writable too,
+    /// must not be told it has a problem it does not have.
+    #[test]
+    fn devices_that_can_be_both_read_and_written_are_fine() {
+        let mut facts = healthy();
+        facts.hidraw = Some(Hidraw {
+            present: 3,
+            openable: 3,
+            writable: 3,
+            blocked_vendors: Vec::new(),
+        });
+        let checks = diagnose(&facts);
+        let access = checks
+            .iter()
+            .find(|check| check.name == "Permission to open devices")
+            .expect("the access check is always run");
+        assert!(
+            matches!(access.verdict, Verdict::Fine(_)),
+            "got {:?}",
+            access.verdict
+        );
+    }
+
     /// A consumer that gets a problem without its steps has half of what it
     /// needs, and no way to know the other half exists.
     #[test]
@@ -1146,6 +1266,7 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 2,
             openable: 0,
+            writable: 0,
             blocked_vendors: vec![0x0fd9],
         });
         facts.hid_devices = 0;
@@ -1191,6 +1312,7 @@ mod tests {
         facts.hidraw = Some(Hidraw {
             present: 4,
             openable: 0,
+            writable: 0,
             blocked_vendors: Vec::new(),
         });
         facts.hid_devices = 0;
@@ -1211,6 +1333,7 @@ mod tests {
                 hidraw: Some(Hidraw {
                     present: 4,
                     openable: 0,
+                    writable: 0,
                     blocked_vendors: Vec::new(),
                 }),
                 hid_devices: 0,
@@ -1221,6 +1344,7 @@ mod tests {
                 hidraw: Some(Hidraw {
                     present: 4,
                     openable: 1,
+                    writable: 1,
                     blocked_vendors: Vec::new(),
                 }),
                 ..healthy()
