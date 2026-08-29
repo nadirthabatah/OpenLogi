@@ -51,6 +51,19 @@ enum LightKnob {
 const LIGHT_BRIGHTNESS: (f32, f32) = (3.0, 100.0);
 const LIGHT_KELVIN: (f32, f32) = (2900.0, 7000.0);
 
+/// A slider, and the value it is currently showing.
+///
+/// The second half is the point. A slider is dragged to where a person let go
+/// of it, and the device then answers with what it actually took — which is
+/// often somewhere else, because a monitor clamps to its own maximum and a Key
+/// Light has a brightness floor. Without remembering what the slider was last
+/// told, there is nothing to compare the device's answer against, and the thumb
+/// stays where the drag ended while the number beside it says something else.
+struct Slot {
+    state: Entity<SliderState>,
+    shown: u16,
+}
+
 pub struct DeskPanel {
     /// Held so the window keeps following the OS light/dark setting; dropping
     /// it strands the window on whichever theme it opened in.
@@ -58,13 +71,37 @@ pub struct DeskPanel {
     model: DeskModel,
     /// One slider per monitor control, keyed by the monitor's handle so two
     /// monitors cannot share a slider's state.
-    display_sliders: BTreeMap<(String, DisplayControl), Entity<SliderState>>,
+    display_sliders: BTreeMap<(String, DisplayControl), Slot>,
     /// The same for lights.
-    light_sliders: BTreeMap<(String, LightKnob), Entity<SliderState>>,
+    light_sliders: BTreeMap<(String, LightKnob), Slot>,
     /// Held for their lifetime, not detached: a slider release that outlives
     /// this panel has nothing left to update.
     subscriptions: Vec<Subscription>,
-    tasks: Vec<Task<()>>,
+    /// The two halves of the current scan. Replaced wholesale on a refresh,
+    /// which cancels whatever the previous one was still waiting for — the
+    /// answers would be dropped by the generation fence anyway, so waiting for
+    /// them is only a slower way to ignore them.
+    scans: Vec<Task<()>>,
+    /// One in-flight write per thing that can be written.
+    ///
+    /// Keyed rather than accumulated for two reasons. It bounds the map by
+    /// what is on screen instead of growing for the life of the window. And
+    /// starting a second write to the same control cancels the first, which is
+    /// what dragging a slider twice should mean: the newer value wins, and the
+    /// older reply is not left to arrive afterwards and put the older number
+    /// back.
+    writes: BTreeMap<WriteKey, Task<()>>,
+}
+
+/// What a write is about, so a newer one can replace it.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum WriteKey {
+    /// One control on one monitor.
+    Display(String, DisplayControl),
+    /// One knob on one light.
+    Light(String, LightKnob),
+    /// A light's power, which is not a knob.
+    LightPower(String),
 }
 
 impl DeskPanel {
@@ -75,7 +112,8 @@ impl DeskPanel {
             display_sliders: BTreeMap::new(),
             light_sliders: BTreeMap::new(),
             subscriptions: Vec::new(),
-            tasks: Vec::new(),
+            scans: Vec::new(),
+            writes: BTreeMap::new(),
         };
         panel.refresh(cx);
         panel
@@ -96,8 +134,10 @@ impl DeskPanel {
         self.light_sliders.clear();
         self.subscriptions.clear();
 
+        // Replacing the vector cancels the previous scan's tasks.
+        self.scans = Vec::with_capacity(2);
         let displays = sender.clone();
-        self.tasks.push(cx.spawn(async move |panel, cx| {
+        self.scans.push(cx.spawn(async move |panel, cx| {
             let (reply, answer) = tokio::sync::oneshot::channel();
             if displays.send(Command::ListDisplays(reply)).is_err() {
                 return;
@@ -138,7 +178,7 @@ impl DeskPanel {
             });
         }));
 
-        self.tasks.push(cx.spawn(async move |panel, cx| {
+        self.scans.push(cx.spawn(async move |panel, cx| {
             let (reply, answer) = tokio::sync::oneshot::channel();
             if sender.send(Command::ListNetworkLights(reply)).is_err() {
                 return;
@@ -162,7 +202,8 @@ impl DeskPanel {
         let Some(sender) = AppState::try_read(cx).map(AppState::ipc_sender) else {
             return;
         };
-        self.tasks.push(cx.spawn(async move |panel, cx| {
+        let key = WriteKey::Display(id.clone(), control);
+        let task = cx.spawn(async move |panel, cx| {
             let (reply, answer) = tokio::sync::oneshot::channel();
             if sender
                 .send(Command::SetDisplay(id.clone(), control, value, reply))
@@ -176,15 +217,23 @@ impl DeskPanel {
                     cx.notify();
                 });
             }
-        }));
+        });
+        // Inserting replaces, and dropping the old task cancels it.
+        self.writes.insert(key, task);
     }
 
     /// Write one light and take back what it then reads.
-    fn set_light(&mut self, id: String, change: NetworkLightChange, cx: &mut Context<Self>) {
+    fn set_light(
+        &mut self,
+        id: String,
+        change: NetworkLightChange,
+        key: WriteKey,
+        cx: &mut Context<Self>,
+    ) {
         let Some(sender) = AppState::try_read(cx).map(AppState::ipc_sender) else {
             return;
         };
-        self.tasks.push(cx.spawn(async move |panel, cx| {
+        let task = cx.spawn(async move |panel, cx| {
             let (reply, answer) = tokio::sync::oneshot::channel();
             if sender
                 .send(Command::SetNetworkLight(id, change, reply))
@@ -198,19 +247,33 @@ impl DeskPanel {
                     cx.notify();
                 });
             }
-        }));
+        });
+        self.writes.insert(key, task);
     }
 
-    /// The slider for one monitor control, made on first sight of it.
+    /// The slider for one monitor control, made on first sight of it and moved
+    /// to match the device whenever the device disagrees with it.
     fn display_slider(
         &mut self,
         id: &str,
         reading: DisplayReading,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Entity<SliderState> {
         let key = (id.to_owned(), reading.control);
-        if let Some(existing) = self.display_sliders.get(&key) {
-            return existing.clone();
+        if let Some(existing) = self.display_sliders.get_mut(&key) {
+            if existing.shown != reading.current {
+                // The monitor took something other than what it was handed —
+                // clamped to its own maximum, or rounded. The thumb follows the
+                // monitor, because the monitor is what is true.
+                existing.shown = reading.current;
+                let state = existing.state.clone();
+                state.update(cx, |slider, cx| {
+                    slider.set_value(f32::from(reading.current), window, cx);
+                });
+                return state;
+            }
+            return existing.state.clone();
         }
         let maximum = f32::from(reading.maximum.max(1));
         let slider = cx.new(|_| {
@@ -238,29 +301,46 @@ impl DeskPanel {
             }
         });
         self.subscriptions.push(subscription);
-        self.display_sliders.insert(key, slider.clone());
+        self.display_sliders.insert(
+            key,
+            Slot {
+                state: slider.clone(),
+                shown: reading.current,
+            },
+        );
         slider
     }
 
-    /// The slider for one light control.
+    /// The slider for one light control, kept in step with the light the same
+    /// way.
     fn light_slider(
         &mut self,
         light: &NetworkLightSummary,
         knob: LightKnob,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Entity<SliderState> {
         let key = (light.id.clone(), knob);
-        if let Some(existing) = self.light_sliders.get(&key) {
-            return existing.clone();
+        let value = match knob {
+            LightKnob::Brightness => light.brightness,
+            LightKnob::Kelvin => light.kelvin,
+        };
+        if let Some(existing) = self.light_sliders.get_mut(&key) {
+            if existing.shown != value {
+                existing.shown = value;
+                let state = existing.state.clone();
+                state.update(cx, |slider, cx| {
+                    slider.set_value(f32::from(value), window, cx);
+                });
+                return state;
+            }
+            return existing.state.clone();
         }
         let (low, high) = match knob {
             LightKnob::Brightness => LIGHT_BRIGHTNESS,
             LightKnob::Kelvin => LIGHT_KELVIN,
         };
-        let current = match knob {
-            LightKnob::Brightness => f32::from(light.brightness),
-            LightKnob::Kelvin => f32::from(light.kelvin),
-        };
+        let current = f32::from(value);
         let step = match knob {
             LightKnob::Brightness => 1.0,
             // The light counts in mireds, so neighbouring Kelvin values map to
@@ -294,11 +374,17 @@ impl DeskPanel {
                         ..NetworkLightChange::default()
                     },
                 };
-                panel.set_light(id.clone(), change, cx);
+                panel.set_light(id.clone(), change, WriteKey::Light(id.clone(), knob), cx);
             }
         });
         self.subscriptions.push(subscription);
-        self.light_sliders.insert(key, slider.clone());
+        self.light_sliders.insert(
+            key,
+            Slot {
+                state: slider.clone(),
+                shown: value,
+            },
+        );
         slider
     }
 
@@ -307,6 +393,7 @@ impl DeskPanel {
         &mut self,
         display: &DisplaySummary,
         pal: Palette,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let readings: Vec<DisplayReading> = self.model.readings(&display.id).to_vec();
@@ -323,7 +410,7 @@ impl DeskPanel {
                 let value = describe_value(*reading);
                 // Input is read, never written — see this module's header.
                 let slider = (reading.control != DisplayControl::Input)
-                    .then(|| self.display_slider(&display.id, *reading, cx));
+                    .then(|| self.display_slider(&display.id, *reading, window, cx));
                 v_flex()
                     .gap_1()
                     .child(
@@ -356,10 +443,11 @@ impl DeskPanel {
         light: &NetworkLightSummary,
         light_index: u64,
         pal: Palette,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let brightness = self.light_slider(light, LightKnob::Brightness, cx);
-        let kelvin = self.light_slider(light, LightKnob::Kelvin, cx);
+        let brightness = self.light_slider(light, LightKnob::Brightness, window, cx);
+        let kelvin = self.light_slider(light, LightKnob::Kelvin, window, cx);
         let id = light.id.clone();
         let on = light.on;
         v_flex()
@@ -389,11 +477,12 @@ impl DeskPanel {
                                 let id = id.clone();
                                 let _ = panel.update(cx, |panel, cx| {
                                     panel.set_light(
-                                        id,
+                                        id.clone(),
                                         NetworkLightChange {
                                             power: Some(!on),
                                             ..NetworkLightChange::default()
                                         },
+                                        WriteKey::LightPower(id),
                                         cx,
                                     );
                                 });
@@ -429,7 +518,7 @@ impl DeskPanel {
 }
 
 impl Render for DeskPanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let pal = theme::palette(cx);
         let displays: Vec<DisplaySummary> = self.model.displays().to_vec();
         let lights: Vec<NetworkLightSummary> = self.model.lights().to_vec();
@@ -438,7 +527,10 @@ impl Render for DeskPanel {
 
         let display_cards: Vec<_> = displays
             .iter()
-            .map(|display| self.display_card(display, pal, cx).into_any_element())
+            .map(|display| {
+                self.display_card(display, pal, window, cx)
+                    .into_any_element()
+            })
             .collect();
         let light_cards: Vec<_> = lights
             .iter()
@@ -447,7 +539,7 @@ impl Render for DeskPanel {
                 // Indexed rather than keyed by address only because
                 // `ElementId` takes an integer here; the address still decides
                 // which light a write reaches.
-                self.light_card(light, index as u64, pal, cx)
+                self.light_card(light, index as u64, pal, window, cx)
                     .into_any_element()
             })
             .collect();
