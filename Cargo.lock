@@ -5374,6 +5374,7 @@ name = "openlogi"
 version = "0.8.1"
 dependencies = [
  "anyhow",
+ "openlogi-catalog",
  "openlogi-cli",
  "serde_json",
  "tokio",

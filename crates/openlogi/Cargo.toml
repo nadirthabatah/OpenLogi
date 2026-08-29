@@ -17,6 +17,7 @@ anyhow = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros"] }
 
 [dev-dependencies]
+openlogi-catalog = { path = "../openlogi-catalog", version = "0.8.1" }
 serde_json = { workspace = true }
 
 [lints]

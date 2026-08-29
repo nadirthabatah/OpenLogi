@@ -398,6 +398,51 @@ fn a_linked_folder_in_the_library_is_reported_rather_than_followed() {
     }
 }
 
+/// Every command the device survey points at must exist and be documented.
+///
+/// `openlogi devices` tells someone which command configures each thing on
+/// their desk — "command: openlogi light" beside a Litra. That is only useful
+/// if the command is real and if there is something to read about it. Both
+/// halves drifted once already: the survey named `openlogi light` while
+/// USAGE.md never mentioned it, so the listing sent people to a command the
+/// guide did not admit existed.
+///
+/// The driver catalogue lives in another crate and the guide is a text file,
+/// so nothing but this connects the three.
+#[test]
+fn every_command_the_survey_names_exists_and_is_documented() {
+    let sandbox = Sandbox::new("survey-commands");
+    let guide = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/USAGE.md"),
+    )
+    .expect("the usage guide is beside the crates");
+
+    let drivers = [
+        openlogi_catalog::Driver::HidPlusPlus,
+        openlogi_catalog::Driver::Litra,
+        openlogi_catalog::Driver::StreamDeck,
+        openlogi_catalog::Driver::Uvc,
+        openlogi_catalog::Driver::Via,
+    ];
+
+    for driver in drivers {
+        let named = driver.command();
+        let subcommand = named
+            .strip_prefix("openlogi ")
+            .unwrap_or_else(|| panic!("{named} does not start with the program's name"));
+
+        // It has to be a real subcommand: --help succeeds only if clap knows it.
+        sandbox.run(&[subcommand, "--help"]).expect_status(0);
+
+        // And the guide has to say something about it.
+        assert!(
+            guide.contains(named),
+            "{named} is what `openlogi devices` tells people to run for a \
+             {driver:?} device, and USAGE.md never mentions it"
+        );
+    }
+}
+
 /// A layouts folder that is really a file must be said out loud, not read as
 /// an empty library.
 ///

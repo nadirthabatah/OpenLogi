@@ -27,6 +27,10 @@ openlogi streamdeck run streaming       # apply it, then act on key presses
 openlogi via                  # QMK/VIA keyboards and macro pads attached
 openlogi via keymap 0         # print layer 0, key by key, with names not numbers
 openlogi via set 0 2 3 F13    # make one key send F13, confirmed by reading it back
+openlogi light list           # standalone lights (Litra) and what each can do
+openlogi light brightness 60  # set a light's brightness
+openlogi backlight status     # keyboard backlight state; `on` and `off` persist it
+openlogi snapshot shot.png    # capture one frame from a webcam
 openlogi mcp                  # serve the agent to an AI assistant over MCP (see below)
 openlogi profile export my-setup # save the whole setup — configuration and layouts
 openlogi profile inspect FILE # show what a profile holds, without applying it
@@ -377,6 +381,24 @@ A test sweeps the rendered output of every command for those patterns. It runs
 over synthesized reports as well as real runs, because output that needs
 hardware to produce cannot be checked by running the program on a machine with
 none — which is every machine this project is developed on.
+
+## Lights, backlight, and snapshots
+
+Three commands inherited from upstream, listed here because `openlogi devices`
+now points at them and a command it names should be one you can read about.
+
+`openlogi light` drives a standalone Logitech light such as a Litra: `list`
+shows each light and the controls it advertises, and `on`, `off`, `brightness`
+and `temperature` change it. Brightness takes either a percentage or native
+lumens; temperature takes Kelvin.
+
+`openlogi backlight` reads or sets a keyboard's backlight over HID++, and `on`
+and `off` are persistent — the keyboard keeps the setting rather than reverting
+when ambient light changes. `--device` picks between several paired keyboards
+by name.
+
+`openlogi snapshot` captures one frame from a webcam to a PNG, which is the
+quickest way to see what a camera setting actually did.
 
 ## QMK and VIA macro pads
 
