@@ -7,7 +7,7 @@
     <img src="design/logo/openroadie-lockup-720.png" width="440" alt="OpenRoadie"/>
 </p>
 
-<p align="center"><strong>⚡️ One local-first app for everything on your desk, written in Rust 🦀<br/>Logitech mice and keyboards over HID++, Elgato Stream Decks, QMK/VIA macro pads, and any UVC webcam — no account, no telemetry</strong></p>
+<p align="center"><strong>⚡️ One local-first app for everything on your desk, written in Rust 🦀<br/>Logitech mice and keyboards over HID++, Elgato Stream Decks, QMK/VIA macro pads, any UVC webcam, monitors over DDC/CI, and Elgato Key Lights — no account, no telemetry</strong></p>
 
 <p align="center">OpenRoadie is a fork of <a href="https://github.com/AprilNEA/OpenLogi">OpenLogi</a> by <a href="https://github.com/AprilNEA">@AprilNEA</a>, which provides the Logitech HID++ core, the GUI, the agent, and the packaging this project builds on.</p>
 
@@ -54,6 +54,19 @@ Things OpenRoadie does that Options+ won't:
 - Live preview that opens the camera only while you watch — leaving it releases the camera entirely and the LED goes off
 - Image controls written straight to the UVC hardware — zoom, focus, exposure, brightness, contrast, saturation, sharpness, white balance, tint, anti-flicker, and low-light compensation, with auto-mode toggles for focus / exposure / white balance — so changes apply in Meet / Zoom / OBS and every other app using the camera
 - One-click profiles: built-in Default / Streaming / Video call plus custom snapshots; settings persist per camera and are written back to the hardware on the next view
+
+**Monitor**
+
+- Any monitor that speaks DDC/CI over its video cable — Dell, LG, Samsung, ASUS, BenQ, Gigabyte and most panels sold as a monitor rather than a TV
+- Brightness, contrast, input source and volume, from the keyboard instead of the four unlabelled buttons on the bezel — which matters most for anyone who cannot read a menu the monitor draws itself
+- The two writes that cannot be undone from the keyboard are refused unless you insist, and the refusal names the physical button you would otherwise have to find
+- A laptop's own screen has no DDC channel and never appears
+
+**Lights**
+
+- Logitech Litra over USB, and Elgato Key Lights over the network, in one command and one list
+- Power, brightness and colour temperature; Kelvin for both families, though an Elgato light actually counts in mireds and runs backwards
+- Key Lights are found by asking the network, so nothing has to be written down when the router changes their address
 
 ¹ Media key actions use D-Bus MPRIS on Linux; a handful of macOS-specific actions have no universal Linux equivalent and are no-ops. Windows maps platform actions to native equivalents where available.
 
