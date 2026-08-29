@@ -129,10 +129,7 @@ fn a_display_that_cannot_be_opened_explains_itself_on_every_operation() {
         None,
         backend::Unreachable::boxed(
             "LG ULTRAFINE".to_owned(),
-            &DisplayError::Access {
-                path: "/dev/i2c-7".to_owned(),
-                reason: "permission denied".to_owned(),
-            },
+            "/dev/i2c-7: permission denied".to_owned(),
         ),
     );
 
@@ -141,9 +138,14 @@ fn a_display_that_cannot_be_opened_explains_itself_on_every_operation() {
         display.set(Feature::Brightness, 50).unwrap_err(),
         display.capabilities().map(|_| ()).unwrap_err(),
     ] {
+        let message = message.to_string();
         assert!(
-            message.to_string().contains("permission denied"),
+            message.contains("permission denied"),
             "every operation says the same why: {message}"
+        );
+        assert!(
+            message.starts_with("LG ULTRAFINE"),
+            "and names the screen, not the bus node, first: {message}"
         );
     }
 }
