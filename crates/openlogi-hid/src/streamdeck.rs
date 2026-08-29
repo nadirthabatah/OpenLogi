@@ -141,21 +141,37 @@ fn identity(attached: &Attached) -> String {
 /// description.
 #[must_use]
 pub fn preferred(collections: &[Attached]) -> Vec<&Attached> {
-    let mut chosen: Vec<&Attached> = Vec::new();
-    for candidate in collections {
+    let described: Vec<(String, bool)> = collections
+        .iter()
+        .map(|attached| (identity(attached), attached.is_preferred_collection()))
+        .collect();
+    choose(&described)
+        .into_iter()
+        .filter_map(|index| collections.get(index))
+        .collect()
+}
+
+/// Which of a set of collections to keep, by index.
+///
+/// The selection rule on its own, over `(identity, sits on a vendor page)`
+/// pairs rather than over open device handles — those cannot be constructed
+/// in a test, and this rule is one of the two things about Stream Deck
+/// support that most needs to be right (see the module docs). Keeping it
+/// separable is what lets it be checked at all.
+///
+/// The first collection seen for an identity is kept, and later replaced only
+/// by a vendor-page one. Order is otherwise preserved, so the result follows
+/// enumeration order rather than an accident of the grouping.
+fn choose(collections: &[(String, bool)]) -> Vec<usize> {
+    let mut chosen: Vec<usize> = Vec::new();
+    for (index, (identity, vendor_page)) in collections.iter().enumerate() {
         match chosen
             .iter_mut()
-            .find(|held| identity(held) == identity(candidate))
+            .find(|held| collections[**held].0 == *identity)
         {
-            // A vendor-page collection replaces a generic one; otherwise the
-            // first seen stands.
-            Some(held)
-                if !held.is_preferred_collection() && candidate.is_preferred_collection() =>
-            {
-                *held = candidate;
-            }
+            Some(held) if !collections[*held].1 && *vendor_page => *held = index,
             Some(_) => {}
-            None => chosen.push(candidate),
+            None => chosen.push(index),
         }
     }
     chosen
@@ -423,6 +439,63 @@ mod tests {
             report[4 + index] = 1;
         }
         report
+    }
+
+    /// Shorthand for a collection description: identity, and whether it sits
+    /// on a vendor-defined usage page.
+    fn described(pairs: &[(&str, bool)]) -> Vec<(String, bool)> {
+        pairs
+            .iter()
+            .map(|(identity, vendor)| ((*identity).to_string(), *vendor))
+            .collect()
+    }
+
+    #[test]
+    fn one_collection_is_kept_as_is() {
+        assert_eq!(super::choose(&described(&[("deck-a", true)])), vec![0]);
+        assert_eq!(super::choose(&described(&[("deck-a", false)])), vec![0]);
+    }
+
+    #[test]
+    fn the_vendor_page_collection_wins_whichever_order_it_arrives_in() {
+        assert_eq!(
+            super::choose(&described(&[("deck-a", false), ("deck-a", true)])),
+            vec![1],
+            "a vendor-page collection replaces a generic one seen first"
+        );
+        assert_eq!(
+            super::choose(&described(&[("deck-a", true), ("deck-a", false)])),
+            vec![0],
+            "and a generic one never displaces a vendor-page collection"
+        );
+    }
+
+    #[test]
+    fn two_physical_devices_both_survive() {
+        let chosen = super::choose(&described(&[
+            ("deck-a", false),
+            ("deck-b", false),
+            ("deck-a", true),
+            ("deck-b", true),
+        ]));
+        assert_eq!(chosen, vec![2, 3], "one vendor-page entry per device");
+    }
+
+    #[test]
+    fn several_generic_collections_for_one_device_collapse_to_the_first() {
+        assert_eq!(
+            super::choose(&described(&[
+                ("deck-a", false),
+                ("deck-a", false),
+                ("deck-a", false),
+            ])),
+            vec![0]
+        );
+    }
+
+    #[test]
+    fn nothing_attached_chooses_nothing() {
+        assert!(super::choose(&[]).is_empty());
     }
 
     #[test]
