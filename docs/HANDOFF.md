@@ -96,8 +96,14 @@ above it can be driven with nothing plugged in. `roadie display` is the CLI,
 `list_displays` / `read_display_settings` / `set_display_setting` are the MCP
 tools, and `roadie devices` includes the screen.
 
-**Still nothing has reached an actual monitor.** The backends differ per
-platform, and the table below is what each one had to be written against:
+**One monitor has now been reached, and it half-answered.** On 2026-08-30 the
+macOS backend ran against Nadir's desk for the first time: the registry walk
+found the panel, the `dlopen`ed private calls behaved, and the EDID read at
+I²C `0x50` named it — an LG TV, which then never acknowledged DDC at `0x37`
+(`IOAVServiceWriteI2C` 0xe0114000, LG TVs speak CEC instead). So the transport
+and identification are verified and the reply checksum seed still is not; that
+needs a desktop monitor on a direct cable. The backends differ per platform,
+and the table below is what each one had to be written against:
 
 | Platform | API | Notes |
 | --- | --- | --- |
@@ -243,15 +249,42 @@ over-long input name cannot produce a match, because no valid name is as long
 as the buffer. That one is documented in the code rather than papered over
 with a test that would not really bite.
 
-## 5. The gap that only Nadir can close
+## 5. The gap that only Nadir can close — and the first sitting
 
-**No code in this fork has ever touched a physical peripheral.** The container
-has no USB. Everything is unit-tested and checked by CI on three platforms,
-and none of that is the same as a device answering.
+The first hardware sitting happened on 2026-08-30, on macOS at Nadir's desk.
+What it verified, for the first time anywhere:
 
-`docs/VERIFYING.md` exists to close it in one sitting: twelve ordered steps,
-nothing destructive, undo commands throughout, in priority order. It is the
-highest-value thing to do the next time hardware and time coincide.
+- **HID++ over a Bolt receiver**: an MX Mechanical and an MX Master 3S
+  enumerate with battery, serials and feature tables, by direct enumeration.
+- **The Stream Deck XL, end to end**: open, brightness, image writes, key
+  decode, and the catalogue's key numbering — the physical top-left key is
+  key 0, horizontal neighbours differ by 1 and vertical by 8, and press and
+  release pair correctly. The visual half (labels upright, unclipped) still
+  needs sighted eyes.
+- **The macOS display transport and EDID identification** — and not the reply
+  checksum seed; see section 3.
+- **Discovery honesty**: with no Elgato light on the network, `roadie light
+  list` and the OS's own multicast browser agree there is nothing, rather
+  than inventing something.
+
+The sitting also found what no test could: **two other programs eat this
+desk's Stream Deck.** Elgato's own app holds it exclusively — opens fail,
+which the open error now explains. Worse, Logitech's device manager
+(`com.logi.cp-dev-mgr`, installed with Logi Options+) holds the deck's
+*input* in seize mode: opens succeed, writes land, and every key report goes
+to Logitech alone, so the deck looks write-only to anything else. No error
+anywhere says so; an independent IOKit listener hearing silence is what gave
+it away, and `launchctl bootout gui/<uid>/com.logi.cp-dev-mgr` is what frees
+it. `streamdeck verify` now names both causes when it sees no key press.
+
+Still needing hardware this desk does not have: a DDC-speaking monitor (the
+checksum seed), an Elgato light (the mired direction, by eye), a Scarlett
+(sections 6.7 through 6.9), and a VIA board. There is no Scarlett and no
+Elgato light on this desk — confirmed by Nadir, not just by scans.
+
+`docs/VERIFYING.md` remains the ordered pass for whatever hardware appears
+next, and this sitting held its shape: every failure it met was either a
+permission, another program holding the device, or a genuine finding.
 
 ## 6. Monitors: what was built, and why it is shaped this way
 
