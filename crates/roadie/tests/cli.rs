@@ -550,10 +550,18 @@ fn a_printed_command_is_one_that_actually_runs() {
     assert_eq!(arguments.first().map(String::as_str), Some("roadie"));
     let rest: Vec<&str> = arguments[1..].iter().map(String::as_str).collect();
 
-    // Status 2 is "no Stream Deck attached", which is the honest answer here.
-    // What must not happen is the argument parser rejecting it.
+    // Status 2 is "no Stream Deck attached", which is the honest answer on a
+    // desk without one. Status 1 is a deck that is attached and would not
+    // open — Elgato's own software holds a deck exclusively the whole time it
+    // runs, and the first desk this ever ran on proved it. What must not
+    // happen is the argument parser rejecting the printed command.
     let run = sandbox.run(&rest);
-    run.expect_status_in(&[0, 2]);
+    run.expect_status_in(&[0, 1, 2]);
+    if run.status() == 1 {
+        // An exit of 1 is only honest here when it is the deck that failed,
+        // not the command line.
+        run.expect_says("failed to open the");
+    }
     assert!(
         !run.said().contains("unexpected argument"),
         "the printed command does not parse:\n{instruction}\n{}",
