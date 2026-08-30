@@ -1123,9 +1123,14 @@ async fn open_preferred(collections: &[Attached]) -> Result<Session> {
     let chosen = preferred
         .first()
         .ok_or_else(|| anyhow!("no Stream Deck collection could be selected"))?;
-    Session::open(chosen)
-        .await
-        .with_context(|| format!("failed to open the {}", chosen.model.name))
+    Session::open(chosen).await.with_context(|| {
+        format!(
+            "failed to open the {}. The commonest cause is another program holding it: \
+             Elgato's own Stream Deck software keeps a deck open the whole time it runs, \
+             so quit that and try again",
+            chosen.model.name
+        )
+    })
 }
 
 /// Parse a six-hex-digit colour.
