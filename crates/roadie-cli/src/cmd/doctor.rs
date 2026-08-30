@@ -634,23 +634,48 @@ fn monitors_reachable(facts: &Facts) -> Check {
                     .as_deref()
                     .unwrap_or("nothing this program could read")
             ),
-            fix: vec![
-                "On Linux the I2C devices belong to the i2c group. Add your user to it, \
-                 then log out and back in."
-                    .to_owned(),
-                "Otherwise the commonest cause by far is DDC/CI switched off in the \
-                 monitor's own menu, where many ship it off."
-                    .to_owned(),
-                "A monitor connected through some docks and KVM switches cannot carry DDC \
-                 at all, whatever the settings say."
-                    .to_owned(),
-            ],
+            fix: monitor_fix_steps(),
         }
     };
     Check {
         name: "Monitors reachable",
         verdict,
     }
+}
+
+/// The ordered steps for a monitor that is seen but does not answer.
+///
+/// The i2c group is real advice on exactly one platform. Every fix list is
+/// read aloud, and the first step heard on a Mac must not be one that cannot
+/// be taken there — so the Linux step exists only where it can be followed,
+/// and the wording of the step after it does not lean on a step that may not
+/// have been said.
+fn monitor_fix_steps() -> Vec<String> {
+    let mut steps = Vec::new();
+    if cfg!(target_os = "linux") {
+        steps.push(
+            "The I2C devices belong to the i2c group. Add your user to it, then log out \
+             and back in."
+                .to_owned(),
+        );
+        steps.push(
+            "Otherwise the commonest cause by far is DDC/CI switched off in the monitor's \
+             own menu, where many ship it off."
+                .to_owned(),
+        );
+    } else {
+        steps.push(
+            "The commonest cause by far is DDC/CI switched off in the monitor's own menu, \
+             where many ship it off."
+                .to_owned(),
+        );
+    }
+    steps.push(
+        "A monitor connected through some docks and KVM switches cannot carry DDC at all, \
+         whatever the settings say."
+            .to_owned(),
+    );
+    steps
 }
 
 /// The agent, which is not required for the CLI but changes what takes effect.
@@ -912,12 +937,29 @@ mod tests {
         assert!(detail.contains("1 of them answer"), "{detail}");
         assert!(detail.contains("i2c group"), "{detail}");
         assert!(
+            fix.iter().any(|step| step.contains("DDC/CI switched off")),
+            "the commonest cause has to be offered everywhere: {fix:?}"
+        );
+    }
+
+    /// Every fix step is read aloud, so each platform's list carries only the
+    /// steps that can be taken there: the i2c group is Linux's fix and Linux's
+    /// alone, and a Mac must not hear it first — or at all.
+    #[test]
+    fn the_monitor_fix_steps_fit_the_platform_they_are_read_on() {
+        let checks = diagnose(&with_monitors(2, 1));
+        let Verdict::Problem { fix, .. } = find(&checks, "Monitors reachable") else {
+            panic!("a monitor that will not answer is a problem worth naming");
+        };
+        assert_eq!(
             fix.iter().any(|step| step.contains("i2c group")),
-            "the fix has to be the group membership: {fix:?}"
+            cfg!(target_os = "linux"),
+            "the i2c group step belongs to Linux and to Linux only: {fix:?}"
         );
         assert!(
-            fix.iter().any(|step| step.contains("DDC/CI switched off")),
-            "and the other commonest cause: {fix:?}"
+            fix.first()
+                .is_some_and(|step| !step.starts_with("Otherwise")),
+            "the first step heard must not lean on one that was not said: {fix:?}"
         );
     }
 
