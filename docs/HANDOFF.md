@@ -460,11 +460,36 @@ read from the driver source and from how USB interface claiming works. Worth
 confirming with `amixer -c` on a machine with a Scarlett attached before
 building on it, which is a one-command check.
 
-### 6.9 After that — this is the part still to do
+### 6.9 The Linux half of Scarlett is names, and they are built
 
-The Scarlett host layer, per the fork above, then its CLI and MCP surfaces.
-Then headsets, MIDI pads, RGB on other brands, and other vendors' mice and
-keyboards.
+`roadie-scarlett::alsa` turns a model plus an input number into the ALSA
+control name the kernel publishes. That is the whole Linux mechanism: no USB,
+no packets, no protocol crate — a host reads and writes names.
+
+They look regular and are not, which is why they are generated from per-model
+facts rather than formatted from a guess. The number in a name is the input as
+a person counts it, from one, but *which* input a control belongs to is a
+property of the model. A **Scarlett Solo 4th Gen has one phantom switch and it
+is on input two.** A 2i2 3rd Gen has one that covers both inputs, so it is
+named for a range — `Line In 1-2` — rather than for an input. An 18i20 3rd Gen
+groups four inputs per switch. And the 4th generation turned "air" from a
+switch into a choice, which changes the last word of the name.
+
+Getting one wrong fails silently: the name matches no control, and the setting
+simply appears not to exist. So there are tests pinning each of those four
+shapes by name, plus two that hold the whole table together — every model names
+as many controls as it claims to have, and no model names two controls the same
+thing. The mutation sweep ran fifteen and killed fifteen.
+
+Still unverified against hardware, and one `amixer -c` with a Scarlett attached
+would settle both this and the fork above.
+
+### 6.10 After that — this is the part still to do
+
+The Scarlett host layers themselves: an ALSA binding on Linux over these names,
+and USB control transfers on macOS and Windows over the packet layer. Then the
+CLI and MCP surfaces. Then headsets, MIDI pads, RGB on other brands, and other
+vendors' mice and keyboards.
 
 ## 7. What a session can do with nobody at the desk
 
