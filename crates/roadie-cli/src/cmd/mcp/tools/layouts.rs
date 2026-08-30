@@ -135,16 +135,11 @@ pub fn set_layout_key(arguments: &Value) -> Result<String, String> {
     let index = index_of(arguments)?;
     let label = optional_text(arguments, "label");
     let image = optional_text(arguments, "image");
-    if label.is_some() && image.is_some() {
-        return Err("a key shows words or a picture, not both; give `label` or `image`".to_owned());
-    }
-    if label.is_none() && image.is_none() && arguments.get("action").is_none() {
-        return Err(
-            "a key needs something: `label`, `image`, or an `action`. A key with none \
-             of those would be an entry that says nothing."
-                .to_owned(),
-        );
-    }
+    check_face(
+        label.as_deref(),
+        image.as_deref(),
+        arguments.get("action").is_some(),
+    )?;
     // Colours checked here so a typo comes back as an answer the model can
     // correct, rather than as a failure when the layout is next applied.
     for name in ["colour", "background"] {
@@ -183,6 +178,28 @@ pub fn set_layout_key(arguments: &Value) -> Result<String, String> {
         "was": describe_key(was.as_ref()),
         "note": note,
     }))
+}
+
+/// The face rule on its own: what a key may show, before anything touches a
+/// file.
+///
+/// Separated from [`set_layout_key`] so the rule can be proven without a
+/// filesystem — the function past the guard writes to the person's real
+/// layout library, and a test that reaches it litters that library with test
+/// data. That happened: the first desk this suite ran on gained a layout
+/// named for a test.
+fn check_face(label: Option<&str>, image: Option<&str>, has_action: bool) -> Result<(), String> {
+    if label.is_some() && image.is_some() {
+        return Err("a key shows words or a picture, not both; give `label` or `image`".to_owned());
+    }
+    if label.is_none() && image.is_none() && !has_action {
+        return Err(
+            "a key needs something: `label`, `image`, or an `action`. A key with none \
+             of those would be an entry that says nothing."
+                .to_owned(),
+        );
+    }
+    Ok(())
 }
 
 /// Run `unset_layout_key`.
@@ -311,7 +328,7 @@ pub async fn apply_layout(arguments: &Value) -> Result<String, String> {
 mod tests {
     use serde_json::json;
 
-    use super::{set_layout_key, tools};
+    use super::{check_face, set_layout_key, tools};
 
     /// Without this steer a model will set thirty-two keys one at a time when
     /// the person said one word.
@@ -410,21 +427,14 @@ mod tests {
     /// The one that must still be allowed: an action with no face. A key that
     /// does something without showing anything is a deliberate choice, and
     /// refusing it would make the guard above too broad.
+    ///
+    /// Asserted against [`check_face`] rather than the whole tool: past the
+    /// guard, `set_layout_key` writes to the person's real layout library,
+    /// and an earlier version of this test *created* a layout there on every
+    /// run — while accepting failure and success alike, which proved nothing.
     #[test]
     fn a_key_with_an_action_and_no_face_is_allowed_through_the_guard() {
-        let outcome = set_layout_key(&json!({
-            "layout": "roadie-test-layout-that-does-not-exist",
-            "key": 0,
-            "action": "Copy",
-        }));
-        // It may still fail on the filesystem — there is no such layout here —
-        // but it must not fail the "nothing to show" check.
-        if let Err(error) = outcome {
-            assert!(
-                !error.contains("would be an entry that says nothing"),
-                "an action-only key was refused as empty: {error}"
-            );
-        }
+        check_face(None, None, true).expect("an action-only key is a deliberate choice");
     }
 
     #[test]
