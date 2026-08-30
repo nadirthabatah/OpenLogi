@@ -1281,6 +1281,11 @@ async fn check_key_press(session: &mut Session, painted: bool) {
             println!("No key press seen in {} seconds.", WATCH.as_secs());
             println!("Either no key was pressed, or this collection does not carry key");
             println!("events — in which case the usage-page choice above is wrong.");
+            println!("A third cause: another program can hold the deck's input while");
+            println!("writes still land, so painting works and presses vanish. Elgato's");
+            println!("own software does this, and so does Logitech's device manager,");
+            println!("which runs whenever Logi Options+ is installed. Quit them and");
+            println!("run this again before reporting a driver problem.");
             return;
         }
     };
