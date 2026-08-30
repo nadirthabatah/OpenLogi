@@ -35,6 +35,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod alsa;
 pub mod config;
 pub mod device;
 pub mod packet;
