@@ -16,6 +16,7 @@ members = [
     "crates/roadie-display",
     "crates/roadie-keylight",
     "crates/roadie-scarlett",
+    "crates/roadie-tourbox",
     "crates/roadie-camera",
     "crates/roadie-permissions",
     "crates/roadie-assets",

@@ -30,6 +30,7 @@ sits beneath both.
 | `crates/roadie-hidpp` | Vendored fork of the `hidpp` protocol crate (**lib name `hidpp`**, 0BSD) |
 | `crates/roadie-device` | The HID++ device layer: enumeration, probing, writes, sessions, pairing. Knows no host — expressed against `HidBackend` |
 | `crates/roadie-hid` | That layer wired to this host: `async-hid` transport, macOS Input Monitoring, the on-disk probe cache |
+| `crates/roadie-tourbox` | TourBox controllers: the one-byte serial event protocol (pure) plus the serial host half behind the `serial` feature |
 | `crates/roadie-assets` | Device-render registry + cached fetch from OpenRoadie asset mirrors |
 | `crates/roadie-cli` | `clap` command tree: `list`, `assets`, `diag` |
 | `crates/roadie-hook` | OS input capture: CGEventTap / evdev+uinput / WH_MOUSE_LL |

@@ -527,6 +527,38 @@ where `0660` was meant — leaves every listing working and every change failing
 which is the most confusing shape a permissions problem takes. The rules this
 project ships use `TAG+="uaccess"`, which grants both.
 
+## TourBox controllers
+
+`roadie tourbox` finds TourBox controllers and says what each button, knob and
+dial sends.
+
+A TourBox is not a HID device, which is the whole reason it needs its own
+command. It presents a USB serial port and streams one byte per event, so none
+of the HID enumeration the rest of this program does will ever see one.
+
+- `roadie tourbox` (or `tourbox list`) — every controller attached, with the
+  port it is on and how many buttons and wheels it has.
+- `roadie tourbox listen` — name each button press and wheel turn as it
+  arrives, out loud. This is how you check a controller against this build
+  without being able to see it: press something and hear what it was.
+  `--quiet-seconds` sets how long it waits before giving up, and `--port`
+  names a serial port for a controller this build cannot recognise on its own.
+
+Two things worth knowing before reporting one as broken:
+
+**The cable decides whether the controller exists at all.** A charge-only
+USB-C cable carries power but no data, so the TourBox lights up and never
+appears to the computer. That was the actual cause the first time this project
+met one, and it is indistinguishable from a dead controller until you swap the
+cable.
+
+**Only the Elite is recognised automatically.** A TourBox Neo reaches the
+computer through a general-purpose serial adapter whose USB identity is shared
+with a great many unrelated devices, so recognising a Neo by its numbers would
+mean claiming every USB-to-serial adapter on the machine was a controller.
+Name its port with `--port` instead. This is the same honesty the survey
+applies elsewhere: a guess that is usually right is still a guess.
+
 ## Portable profiles
 
 `roadie profile export` saves this machine's setup somewhere you can carry it

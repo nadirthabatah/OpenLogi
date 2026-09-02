@@ -4,6 +4,7 @@ use roadie_device_registry::LOGITECH_VENDOR_ID;
 use roadie_device_registry::litra::find_litra;
 use roadie_device_registry::receiver::{ReceiverBrand, find_receiver};
 use roadie_streamdeck::model::identify as identify_deck;
+use roadie_tourbox::model::identify as identify_tourbox;
 use roadie_via::identity::is_via_collection;
 
 use crate::hidpp::is_long_collection;
@@ -32,6 +33,8 @@ pub enum Driver {
     Ddc,
     /// Elgato Key Lights and Ring Lights, over the network.
     KeyLight,
+    /// TourBox controllers, over their USB serial port.
+    TourBox,
 }
 
 impl Driver {
@@ -46,6 +49,7 @@ impl Driver {
             Self::Via => "via",
             Self::Ddc => "ddc",
             Self::KeyLight => "keylight",
+            Self::TourBox => "tourbox",
         }
     }
 
@@ -65,6 +69,7 @@ impl Driver {
             Self::Uvc => "brightness, contrast, exposure, focus, and zoom",
             Self::Via => "what each key sends, across every keymap layer",
             Self::Ddc => "brightness, contrast, input source, and volume",
+            Self::TourBox => "what each button, knob and dial does",
         }
     }
 
@@ -81,6 +86,7 @@ impl Driver {
             Self::Uvc => "roadie camera",
             Self::Via => "roadie via",
             Self::Ddc => "roadie display",
+            Self::TourBox => "roadie tourbox",
         }
     }
 }
@@ -214,6 +220,28 @@ impl Peripheral {
                 model: None,
             },
         }
+    }
+
+    /// Classify a device found on a serial port.
+    ///
+    /// Unlike a camera or a monitor, this one is supported because of *who*
+    /// made it rather than because of what it is. A serial port is a bare
+    /// pipe with no class standard behind it, so the only thing that makes a
+    /// TourBox drivable is that its protocol has been reverse-engineered and
+    /// written down; the identical port on a microcontroller means nothing.
+    /// That is why an unrecognised serial device is [`Support::Unsupported`]
+    /// here rather than a candidate: there is no handshake that would turn a
+    /// maybe into a yes, only a vendor id that already did.
+    #[must_use]
+    pub fn from_serial(identity: Identity) -> Self {
+        let support = match identify_tourbox(identity.vendor_id, identity.product_id) {
+            Some(model) => Support::Driver {
+                driver: Driver::TourBox,
+                model: Some(model.name),
+            },
+            None => Support::Unsupported,
+        };
+        Self { identity, support }
     }
 
     /// Keep whichever verdict says more, when one device was seen twice.
@@ -557,15 +585,64 @@ mod tests {
         assert!(driver.merge(candidate).support.is_configurable());
     }
 
+    /// The identity actually read off the desk's TourBox Elite.
+    #[test]
+    fn a_tourbox_on_a_serial_port_is_configurable() {
+        let peripheral = Peripheral::from_serial(Identity {
+            ids: crate::identity::IdSource::Usb,
+            vendor_id: 0xc251,
+            product_id: 0x2005,
+            product: Some("TourBox Elite".to_owned()),
+            manufacturer: Some("TourBoxTech".to_owned()),
+            serial_number: Some("00000001".to_owned()),
+        });
+        assert_eq!(
+            peripheral.support,
+            Support::Driver {
+                driver: Driver::TourBox,
+                model: Some("TourBox Elite"),
+            }
+        );
+        assert!(peripheral.support.is_configurable());
+    }
+
+    /// A serial port is a bare pipe. Anything on one that is not a known
+    /// TourBox is unsupported, and never a candidate, because there is no
+    /// check that could promote it.
+    #[test]
+    fn an_unknown_serial_device_is_unsupported_rather_than_a_candidate() {
+        let peripheral = Peripheral::from_serial(Identity {
+            ids: crate::identity::IdSource::Usb,
+            vendor_id: 0x2341,
+            product_id: 0x0043,
+            product: Some("Arduino Uno".to_owned()),
+            ..Identity::default()
+        });
+        assert_eq!(peripheral.support, Support::Unsupported);
+        assert!(!peripheral.support.is_configurable());
+    }
+
     #[test]
     fn every_driver_has_a_distinct_id_and_a_command() {
+        // Every variant, not a sample. The list stood at five while the
+        // enum had grown to eight, so the three newest drivers were exempt
+        // from the check that says their command exists. Adding a driver
+        // means adding it here, and the count below is what says so.
         let drivers = [
             Driver::HidPlusPlus,
             Driver::Litra,
             Driver::StreamDeck,
             Driver::Uvc,
             Driver::Via,
+            Driver::Ddc,
+            Driver::KeyLight,
+            Driver::TourBox,
         ];
+        assert_eq!(
+            drivers.len(),
+            8,
+            "a driver was added to the enum without being added here"
+        );
         for (index, driver) in drivers.iter().enumerate() {
             assert!(!driver.what_it_configures().is_empty());
             assert!(driver.command().starts_with("roadie "));

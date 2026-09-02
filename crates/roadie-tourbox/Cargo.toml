@@ -1,0 +1,32 @@
+[package]
+name = "roadie-tourbox"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "TourBox controller support: the one-byte serial event protocol, the control layout of each model, and the haptics setup message"
+keywords = ["tourbox", "macro-pad", "controller", "serial"]
+categories = ["hardware-support"]
+
+[features]
+# The protocol alone, which is what the wasm portability job checks. Unlike
+# `roadie-ddc` and `roadie-display`, the host half is one crate here rather
+# than two: a TourBox's host half is a serial port and no platform code at
+# all, so a feature gate says the same thing at a fraction of the ceremony.
+# The same reasoning `roadie-keylight` is built on.
+default = ["serial"]
+serial = ["dep:serialport"]
+
+[dependencies]
+thiserror = { workspace = true }
+tracing = { workspace = true }
+# Default features pull `libudev` on Linux, which needs the system library at
+# build time and would put a C dependency in the way of `cargo install`.
+# Enumeration without it falls back to reading sysfs, which is all this crate
+# asks of it.
+serialport = { version = "4", default-features = false, optional = true }
+
+[lints]
+workspace = true

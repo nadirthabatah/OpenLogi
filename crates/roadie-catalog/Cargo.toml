@@ -13,6 +13,9 @@ categories = ["hardware-support"]
 [dependencies]
 roadie-device-registry = { path = "../roadie-device-registry", version = "0.8.1" }
 roadie-streamdeck = { path = "../roadie-streamdeck", version = "0.8.1" }
+# Protocol half only: this crate is on the wasm portability list, and the
+# TourBox host half opens serial ports.
+roadie-tourbox = { path = "../roadie-tourbox", version = "0.8.1", default-features = false }
 roadie-via = { path = "../roadie-via", version = "0.8.1" }
 
 [lints]
