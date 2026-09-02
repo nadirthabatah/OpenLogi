@@ -172,7 +172,15 @@ fn the_binary_runs_and_describes_itself() {
     let sandbox = Sandbox::new("help");
     let run = sandbox.run(&["--help"]);
     run.expect_status(0);
-    for command in ["devices", "doctor", "streamdeck", "via", "profile", "mcp"] {
+    for command in [
+        "devices",
+        "doctor",
+        "streamdeck",
+        "tourbox",
+        "via",
+        "profile",
+        "mcp",
+    ] {
         run.expect_says(command);
     }
 }
@@ -246,6 +254,8 @@ fn nothing_this_project_prints_is_hostile_to_a_screen_reader() {
         &["streamdeck"],
         &["streamdeck", "layouts"],
         &["streamdeck", "example", "streaming"],
+        &["tourbox"],
+        &["tourbox", "list"],
         &["via"],
         &["via", "keymap", "0"],
         &["profile", "export", file.to_str().expect("utf-8")],
@@ -417,12 +427,19 @@ fn every_command_the_survey_names_exists_and_is_documented() {
     )
     .expect("the usage guide is beside the crates");
 
+    // Every driver, not a sample. This list stood at five while the enum had
+    // grown to eight, so the three newest drivers were exempt from the check
+    // that their command exists and is documented — which is precisely the
+    // check a new driver most needs.
     let drivers = [
         roadie_catalog::Driver::HidPlusPlus,
         roadie_catalog::Driver::Litra,
         roadie_catalog::Driver::StreamDeck,
         roadie_catalog::Driver::Uvc,
         roadie_catalog::Driver::Via,
+        roadie_catalog::Driver::Ddc,
+        roadie_catalog::Driver::KeyLight,
+        roadie_catalog::Driver::TourBox,
     ];
 
     for driver in drivers {

@@ -70,6 +70,7 @@ pub async fn run(args: DevicesArgs) -> Result<ExitCode> {
             .map(camera_peripheral),
     );
     found.extend(display_peripherals());
+    found.extend(tourbox_peripherals());
     if !args.no_network {
         found.extend(key_light_peripherals(Duration::from_secs(args.wait)));
     }
@@ -107,11 +108,11 @@ pub async fn run(args: DevicesArgs) -> Result<ExitCode> {
 /// could not see that a third had been looked at.
 fn nothing_found(searched_network: bool) -> String {
     let sources = if searched_network {
-        "No HID device, no camera, no monitor and no Elgato light on the network was \
-         reported."
+        "No HID device, no camera, no monitor, no TourBox and no Elgato light on the \
+         network was reported."
     } else {
-        "No HID device, no camera and no monitor was reported, and the network was not \
-         searched because --no-network was given."
+        "No HID device, no camera, no monitor and no TourBox was reported, and the \
+         network was not searched because --no-network was given."
     };
     format!(
         "Nothing found.\n\n\
@@ -219,6 +220,41 @@ fn display_peripherals() -> Vec<Peripheral> {
         .iter()
         .map(display_peripheral)
         .collect()
+}
+
+/// Every TourBox attached, as catalog entries.
+///
+/// A TourBox is on a serial port rather than on HID, so nothing else this
+/// survey looks at would ever see one — which is exactly how a controller
+/// sat on this desk being reported as "detected, not configurable by this
+/// build" and then not reported at all.
+///
+/// Only recognised TourBoxes are listed. The survey deliberately does not
+/// enumerate every serial port on the machine: most of them are not
+/// peripherals, and a list of what is on someone's desk that included their
+/// microcontrollers and their USB-to-serial adapters would be a worse answer
+/// to the question being asked.
+///
+/// A failure to list serial ports is not a failure of the survey, for the
+/// same reason a failure to enumerate displays is not.
+fn tourbox_peripherals() -> Vec<Peripheral> {
+    roadie_tourbox::serial::ports()
+        .unwrap_or_default()
+        .iter()
+        .map(tourbox_peripheral)
+        .collect()
+}
+
+/// Turn a found TourBox into a catalog entry.
+pub fn tourbox_peripheral(port: &roadie_tourbox::serial::Port) -> Peripheral {
+    Peripheral::from_serial(Identity {
+        ids: IdSource::Usb,
+        vendor_id: roadie_tourbox::model::TOURBOX_VENDOR_ID,
+        product_id: port.model.product_id,
+        product: Some(port.model.name.to_owned()),
+        manufacturer: Some("TourBox".to_owned()),
+        serial_number: port.serial_number.clone(),
+    })
 }
 
 /// How a receiver family is named in the listing.

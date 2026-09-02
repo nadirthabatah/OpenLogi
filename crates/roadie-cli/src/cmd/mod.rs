@@ -16,6 +16,7 @@ pub mod mcp;
 pub mod profile;
 pub mod snapshot;
 pub mod streamdeck;
+pub mod tourbox;
 pub mod via;
 
 #[derive(Debug, Subcommand)]
@@ -48,6 +49,9 @@ pub enum Command {
     Light(light::LightCmd),
     /// Drive an Elgato Stream Deck, and check the driver against hardware.
     Streamdeck(streamdeck::StreamDeckArgs),
+    /// Find TourBox controllers, and check what each button, knob and dial
+    /// sends.
+    Tourbox(tourbox::TourBoxArgs),
     /// Read and change what each key sends on a QMK keyboard or macro pad
     /// with VIA enabled.
     Via(via::ViaArgs),
@@ -88,6 +92,12 @@ impl Command {
                     .unwrap_or(streamdeck::StreamDeckCmd::List)
                     .run()
                     .await;
+            }
+            // A serial port is a blocking read, and the listen loop is a
+            // plain poll with a timeout. No async runtime would have
+            // anything to do.
+            Self::Tourbox(args) => {
+                return args.cmd.unwrap_or(tourbox::TourBoxCmd::List).run();
             }
             Self::Via(args) => {
                 return args.cmd.unwrap_or(via::ViaCmd::List).run().await;

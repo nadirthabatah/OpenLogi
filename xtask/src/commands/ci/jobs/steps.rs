@@ -69,8 +69,10 @@ const WASM_PORTABLE_CRATES: [&str; 8] = [
 ///
 /// `roadie-core` qualifies with its `fs` feature off; `roadie-keylight` with
 /// `net` and `discovery` off, which is the HTTP client and the multicast
-/// responder. What is left of each is the part with no host underneath it.
-const WASM_PORTABLE_NO_DEFAULT_CRATES: [&str; 2] = ["roadie-core", "roadie-keylight"];
+/// responder; `roadie-tourbox` with `serial` off, which is the serial port.
+/// What is left of each is the part with no host underneath it.
+const WASM_PORTABLE_NO_DEFAULT_CRATES: [&str; 3] =
+    ["roadie-core", "roadie-keylight", "roadie-tourbox"];
 
 /// Every crate the wasm job checks, however it checks it.
 #[cfg(test)]

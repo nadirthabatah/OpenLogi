@@ -25,6 +25,7 @@ mod monitor;
 mod peripherals;
 mod pointer;
 mod profiles;
+mod tourboxes;
 
 use std::time::Duration;
 
@@ -77,6 +78,7 @@ pub fn catalog() -> Value {
     tools.extend(displays::tools());
     tools.extend(profiles::tools());
     tools.extend(decks::tools());
+    tools.extend(tourboxes::tools());
     tools.extend(keyboards::tools());
     tools.extend(health::tools());
     tools.extend(layouts::tools());
@@ -109,6 +111,8 @@ pub async fn call(params: &Value) -> Result<Value, String> {
         "set_network_light" => keylights::set_network_light(&arguments),
         "watch_input" => monitor::watch_input(&arguments).await,
         "list_cameras" => camera::list_cameras(),
+        "list_tourboxes" => tourboxes::list_tourboxes(),
+        "watch_tourbox" => tourboxes::watch_tourbox(&arguments),
         "list_displays" => displays::list_displays(),
         "read_display_settings" => displays::read_display_settings(&arguments),
         "set_display_setting" => displays::set_display_setting(&arguments),
@@ -205,7 +209,9 @@ mod tests {
     /// The dispatch arms in [`super::call`], as the catalog must advertise
     /// them. Kept here so a tool added to one and not the other fails a test
     /// rather than surfacing as "unknown tool" at run time.
-    const DISPATCHED: [&str; 35] = [
+    const DISPATCHED: [&str; 37] = [
+        "list_tourboxes",
+        "watch_tourbox",
         "list_devices",
         "list_peripherals",
         "reload_config",
