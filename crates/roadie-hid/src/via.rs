@@ -494,6 +494,23 @@ mod tests {
         assert_eq!(session.layers(), 4);
     }
 
+    /// Protocol 12 is what QMK has shipped since its keycode refactor, and it
+    /// is what the boards actually on desks today report — the Kiiboom Cybrix
+    /// 16 that first hit this path spoke 12 and was refused by a build that
+    /// knew only 9.
+    #[tokio::test]
+    async fn a_protocol_12_board_is_accepted() {
+        let replies = vec![
+            reply(CommandId::GetProtocolVersion, &[(1, 0), (2, 12)]),
+            reply(CommandId::GetLayerCount, &[(1, 4)]),
+        ];
+        let session = Session::with_transport(Box::new(Scripted::new(replies)))
+            .await
+            .expect("a protocol 12 handshake succeeds");
+        assert_eq!(session.protocol(), 12);
+        assert_eq!(session.layers(), 4);
+    }
+
     /// Refusing an unknown revision before anything is written is the whole
     /// safety story: VIA payload layouts have changed between revisions, and
     /// addressing one we do not know means writing bytes of unknown meaning

@@ -94,8 +94,8 @@ pub enum ProtocolError {
     /// unknown meaning into a keyboard's keymap.
     #[error(
         "this keyboard speaks VIA protocol {found}, and this build implements \
-         {}. Refusing rather than guessing at a layout that may have changed.",
-        SUPPORTED_PROTOCOL
+         9 and 12. Refusing rather than guessing at a layout that may have \
+         changed."
     )]
     UnsupportedProtocol {
         /// What the keyboard reported.
@@ -103,12 +103,23 @@ pub enum ProtocolError {
     },
 }
 
-/// The VIA protocol revision this crate implements.
+/// The VIA protocol revisions this crate implements.
 ///
-/// Revision 9 is what current QMK ships and what the reference implementation
-/// targets. A device reporting anything else is refused rather than addressed
-/// on the assumption its layouts match.
-pub const SUPPORTED_PROTOCOL: u16 = 9;
+/// Revision 9 is what pre-2022 QMK ships; revision 12 is what QMK has shipped
+/// since its 0.19 keycode refactor and still ships today. Both are safe for
+/// exactly the commands this crate sends: the four ids used here — protocol
+/// version, layer count, and the keycode read and write — kept their numbers
+/// and payload shapes through every revision between 9 and 12. What changed
+/// in between was the lighting commands (replaced by custom-value channels,
+/// neither of which this crate speaks) and the numbering of QMK's quantum
+/// keycodes — and the keycode table here deliberately names only the basic
+/// HID-standard codes, which are identical in both eras, so no name in this
+/// build can mean a different key on one revision than the other.
+///
+/// The transitional revisions 10 and 11 are still refused: they shipped
+/// briefly, no board on this project's desks has ever reported one, and
+/// accepting a revision nothing can verify is guessing with extra steps.
+pub const SUPPORTED_PROTOCOLS: &[u16] = &[9, 12];
 
 /// One request to a VIA device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -256,16 +267,20 @@ impl Response {
 /// [`ProtocolError::UnsupportedProtocol`] for any revision this crate has not
 /// been written against.
 pub const fn check_protocol(found: u16) -> Result<(), ProtocolError> {
-    if found == SUPPORTED_PROTOCOL {
-        Ok(())
-    } else {
-        Err(ProtocolError::UnsupportedProtocol { found })
+    // A `while` rather than `contains`, which is not callable in const fn.
+    let mut index = 0;
+    while index < SUPPORTED_PROTOCOLS.len() {
+        if SUPPORTED_PROTOCOLS[index] == found {
+            return Ok(());
+        }
+        index += 1;
     }
+    Err(ProtocolError::UnsupportedProtocol { found })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Command, CommandId, ProtocolError, Response, SUPPORTED_PROTOCOL, check_protocol};
+    use super::{Command, CommandId, ProtocolError, Response, SUPPORTED_PROTOCOLS, check_protocol};
     use crate::identity::REPORT_LEN;
 
     /// A device's answer, built the way firmware would build it.
@@ -468,17 +483,24 @@ mod tests {
     /// Refusing an unknown revision is the whole safety story for writes: VIA
     /// payload layouts have changed between revisions, and a misread layout
     /// means writing bytes of unknown meaning into someone's keymap.
+    ///
+    /// The boundary is exact on purpose: 9 and 12 are implemented, and the
+    /// transitional 10 and 11 sit *between* them and are still refused — a
+    /// membership check, not a range check, is what this pins.
     #[test]
     fn an_unknown_protocol_revision_is_refused_rather_than_guessed_at() {
-        assert_eq!(check_protocol(SUPPORTED_PROTOCOL), Ok(()));
-        assert_eq!(
-            check_protocol(11),
-            Err(ProtocolError::UnsupportedProtocol { found: 11 })
-        );
-        assert_eq!(
-            check_protocol(0),
-            Err(ProtocolError::UnsupportedProtocol { found: 0 })
-        );
+        for &supported in SUPPORTED_PROTOCOLS {
+            assert_eq!(check_protocol(supported), Ok(()), "protocol {supported}");
+        }
+        assert_eq!(check_protocol(9), Ok(()));
+        assert_eq!(check_protocol(12), Ok(()));
+        for refused in [0, 8, 10, 11, 13, u16::MAX] {
+            assert_eq!(
+                check_protocol(refused),
+                Err(ProtocolError::UnsupportedProtocol { found: refused }),
+                "protocol {refused} must be refused"
+            );
+        }
     }
 
     /// The command numbers are a firmware contract, not ours to renumber.
