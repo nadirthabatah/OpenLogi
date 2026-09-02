@@ -534,10 +534,12 @@ likely to be confused with each other:
 **Expect:** each press named, and each release named separately. Fourteen
 buttons, so twenty-eight button events, plus the wheels.
 
-A turn reads as a run of "turned clockwise" lines followed by one "stopped
-turning clockwise". That last line is a real byte the controller sends, not
-this build inferring anything, and its absence would be as much a finding as
-its presence.
+A turn reads as a run of "turned clockwise" lines. The published drivers
+document one more byte after the last detent, which this build would read
+aloud as "stopped turning clockwise" — and the Elite on this project's desk
+sent none in a 450-event pass on 2026-09-02. So on an Elite, no stop line is
+the expected outcome; a model that does send one will be named, and that
+would be worth reporting as a model difference.
 
 **The one to watch is the knob press.** Two published sources disagree about
 the byte it sends, and this build implements one of them and refuses the other
@@ -554,10 +556,14 @@ neither is a failure:
 transcription error and the report should say which physical control you
 pressed and what it was called.
 
-**If nothing arrives at all but the port opened**, another program is holding
-the controller's input. TourBox Console is the likely one. This is the same
-failure the Stream Deck had on this desk, where Logitech's device manager held
-the deck's input in seize mode and every key report went to it alone with no
+**If nothing arrives at all but the port opened**, check the build before
+blaming anything else: an Elite says nothing until it is sent the unlock
+command, and three sessions of listeners on this project were silent for
+exactly that reason before the handshake was added on 2026-09-02. On a build
+that sends the unlock, another program holding the controller's input is the
+remaining cause — TourBox Console is the likely one. That is the same failure
+the Stream Deck had on this desk, where Logitech's device manager held the
+deck's input in seize mode and every key report went to it alone with no
 error anywhere.
 
 ## What a failure here means

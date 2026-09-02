@@ -109,14 +109,14 @@ It is one crate rather than two, like `roadie-keylight` and unlike
 `serial` feature says the same thing as a sibling crate would, at far less
 ceremony. The protocol half holds the wasm portability claim.
 
-**Three things are hardware-verified and one is not.** On 2026-08-31, against
-a TourBox Elite on this desk: enumeration finds it by USB identity
+**The whole surface is now hardware-verified.** On 2026-08-31, against a
+TourBox Elite on this desk: enumeration finds it by USB identity
 (`c251:2005`, serial `00000001`), `roadie devices` files it as configurable,
-and the port opens with nothing else holding it. What is *not* verified is the
-control codes themselves — no button has yet been pressed with this build
-listening. They are transcribed from published open-source drivers and pinned
-by tests, which proves the code does what the crate claims and cannot prove the
-claims match the device.
+and the port opens with nothing else holding it. On 2026-09-02, the rest: a
+450-event pass with every button pressed, every wheel turned both ways and
+every wheel pressed, decoded without a single protocol error. All fourteen
+buttons and all three wheels answered to their transcribed codes — but only
+after the unlock discovery below, which is the finding of the sitting.
 
 **Cross-checking three drivers was worth more than the mutation sweep.** The
 codes were first transcribed from one project, then compared against two more
@@ -124,14 +124,17 @@ written independently, for different models, in different languages. That is
 not hardware, but it is three witnesses, and it settled one open question and
 found one outright defect that no test could have.
 
-The open question was the knob's press byte. One source records `0x77`, which
-would make the knob the only control setting a turn bit while being pressed.
-Two others record `0x37` — and the first source's own *release* byte is `0xb7`,
-which is `0x37` with the release bit set and therefore inconsistent with its own
-press. So `0x77` is almost certainly a mis-transcription. The build implements
-`0x37` and still **rejects `0x77` by name** rather than quietly accepting both,
-so hardware can overturn it; the test is
-`the_disputed_knob_byte_is_refused_rather_than_guessed_at`.
+The open question was the knob's press byte, and hardware has now settled it.
+One source records `0x77`, which would make the knob the only control setting
+a turn bit while being pressed. Two others record `0x37` — and the first
+source's own *release* byte is `0xb7`, which is `0x37` with the release bit
+set and therefore inconsistent with its own press. The build implements
+`0x37` and **rejects `0x77` by name** rather than quietly accepting both, so
+hardware could overturn it; on 2026-09-02 the Elite's knob was pressed with
+this build listening and decoded cleanly as a knob press, which is only
+possible if it sent `0x37`. The refusal test,
+`the_disputed_knob_byte_is_refused_rather_than_guessed_at`, stays: `0x77`
+remains a byte no known device sends.
 
 The defect was worse and is the reason this exercise earned its keep. **A wheel
 reports the end of a turn**, and this build rejected those bytes as impossible.
@@ -153,16 +156,31 @@ the tests alike, because both were written from the same reading of the same
 source. Only a second reading finds that, and here it took a third to break the
 tie.
 
-**Two findings worth keeping.** macOS publishes every serial device twice, as
-`/dev/cu.NAME` and `/dev/tty.NAME`; listing both reported one controller as
-two, and the `tty.` half is also the wrong one to hand anybody, because opening
-it blocks waiting for a carrier a controller never asserts. And the 94-byte
-setup message that the vendor's software sends on connect configures *haptics*,
-not event reporting — a TourBox streams whether or not anything has ever talked
-to it, which is why reading one needs no handshake and no write access.
+**Two findings worth keeping, and one confident sentence that hardware
+demolished.** macOS publishes every serial device twice, as `/dev/cu.NAME`
+and `/dev/tty.NAME`; listing both reported one controller as two, and the
+`tty.` half is also the wrong one to hand anybody, because opening it blocks
+waiting for a carrier a controller never asserts. The demolished sentence is
+this one, which stood here until 2026-09-02: "a TourBox streams whether or
+not anything has ever talked to it, which is why reading one needs no
+handshake and no write access." That was transcribed from NEO drivers, and
+**an Elite says nothing at all until it is sent an 8-byte unlock command** —
+`event::UNLOCK_MESSAGE`, carried byte-identically by two independent Elite
+drivers, one of which recovered it from a Bluetooth capture. It cost three
+sessions of silent listeners, each explained away by a plausible neighbour
+(a cable, then TourBox Console — which turned out not to be installed at
+all). The Elite answers the unlock with 26 bytes beginning `0x07`, and only
+then streams. `TourBox::open_path` now performs the whole exchange — unlock,
+reply, 94-byte haptics setup — and a device that answers nothing is
+configured anyway, because the models without the requirement never answer.
 
-Still unverified: every model other than the Elite, and the setup message,
-which is written and has never been sent to a device.
+One more Elite fact from the same pass: it sends **no wheel-stop bytes**.
+The `_STOP` family that `TurnPhase::Ended` decodes came from other drivers
+and never once appeared in 450 events; the decoder keeps accepting them,
+because a model that sends them would otherwise fail on every turn, but on
+an Elite their absence is the expected shape of a turn.
+
+Still unverified: every model other than the Elite.
 
 ### Monitors, as of the branch
 
@@ -397,9 +415,10 @@ every button pressed and every wheel turned, which is the only thing that can
 confirm the transcribed bytes and settle the knob dispute. The hardware for it
 is on the desk, so this is the cheapest open verification on the project.
 
-**A third sitting, 2026-09-02, with nobody at the desk.** Nadir attached new
-hardware and asked for everything that could be verified without him. Two of
-the four open hardware gaps closed:
+**A third sitting, 2026-09-02.** It began with nobody at the desk and ended
+with Nadir lending his hands three times — a switch flip and two button
+passes. Three of the four open hardware gaps closed, and the fourth gained
+its hardware:
 
 - **The DDC monitor arrived and the checksum seed is verified** — the RTK
   HG560T34 details are in section 3. Input switching was deliberately not
@@ -417,22 +436,32 @@ the four open hardware gaps closed:
   first VIA hardware verification anywhere: handshake (protocol 12, six
   layers), a full keymap read, and a write of F24 confirmed by read-back and
   then undone. Protocol 9 remains transcription no board has confirmed.
-- **The TourBox still enumerates and its port still opens** — the listener
-  ran and honestly reported nothing pressed, because nobody was there to
-  press. The button pass remains one minute of Nadir's hands.
-- **The Scarlett Solo did not appear at all.** No Focusrite vendor id
-  (`0x1235`) anywhere in the IO registry. A generic "USB AUDIO DEVICE"
-  (`2f6e:4e02`, two in, two out) is attached and is not how any Focusrite
-  presents itself — it is most likely the new monitor's own audio. The
-  2026-08-30 TourBox lesson repeats: a charge-only or faulty USB cable
-  presents as hardware that does not exist, not as a cable that does not
-  work. Sections 6.7 through 6.9 stay hardware-unverified until the Scarlett
-  enumerates — worth checking its cable and power before anything else.
+- **The TourBox went from three sessions of silence to fully verified in one
+  afternoon.** Nadir pressed everything with a listener running and nothing
+  arrived — which finally put evidence against the "streams without a
+  handshake" claim instead of against its neighbours. Two independent Elite
+  drivers supplied the same 8-byte unlock command, the Elite answered it on
+  the first try, and the button pass that followed decoded 450 events with
+  zero errors: all fourteen buttons, all three wheels in both directions,
+  all three wheel presses, and the knob dispute settled as `0x37`. Section 3
+  carries the full story, including the wheel-stop bytes the Elite turns out
+  never to send.
+- **The "Scarlett Solo" resolved into two different devices, and the real
+  Focusrite is a Vocaster Two.** For most of the sitting no Focusrite vendor
+  id (`0x1235`) appeared anywhere in the IO registry; the box Nadir plugged
+  and replugged proved to be a generic "USB AUDIO DEVICE" (`2f6e:4e02`, two
+  in, two out, both descriptor strings just "USB AUDIO DEVICE") — no genuine
+  Focusrite has ever presented that way, so it is a lookalike or a mix-up,
+  and `roadie-scarlett` has nothing to say to it. Then a genuine **Focusrite
+  Vocaster Two** enumerated (`1235:8217`, serial `V2VD42B2703F98`) — a
+  device `roadie-scarlett` already carries by name, product id and config
+  tables. Sections 6.7 through 6.9 finally have hardware to verify against;
+  what stands between them and verification is the macOS host layer of
+  section 6.10, which is now the next build.
 
 Still needing hardware this desk has not shown: an Elgato light (the mired
-direction, by eye), and the Scarlett above. The remaining gaps that need only
-hands, not purchases: the TourBox button pass, and the Stream Deck's visual
-half (sighted eyes).
+direction, by eye). The remaining gap that needs only hands, not purchases:
+the Stream Deck's visual half (sighted eyes).
 
 `docs/VERIFYING.md` remains the ordered pass for whatever hardware appears
 next, and this sitting held its shape: every failure it met was either a
