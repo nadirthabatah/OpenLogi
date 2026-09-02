@@ -82,7 +82,87 @@ Merged, in order:
 
 Logitech HID++ mice and keyboards, Elgato Stream Decks, QMK/VIA keyboards and
 macro pads, UVC webcams, Logitech standalone lights, and — on the branch, not
-yet on `master` — monitors over DDC/CI and Elgato Key Lights over the network.
+yet on `master` — monitors over DDC/CI, Elgato Key Lights over the network, and
+TourBox controllers over their serial port.
+
+### TourBox, as of the branch
+
+`roadie-tourbox` is the fourth device family on this branch and the first that
+is neither HID nor network. A TourBox presents a **USB CDC serial port** and
+streams **one byte per event**: the low six bits name the control, the high two
+say what happened to it. For a button, bit 7 is release. For a wheel, bit 6 is
+direction and bit 7 is "the turn has ended" — so a wheel uses all four
+combinations and a button uses two. No framing, no length, no checksum, no
+sequence number. A byte read is an event and a byte lost is an event lost.
+
+That shape decides the crate. There is nothing to resynchronise to, so a byte
+the build cannot explain is either a control from a model it has never met or a
+corrupt byte, and *nothing in the encoding tells those apart* — hence a typed
+error rather than a nearest-match, because a wrong guess here is a keystroke
+nobody asked for. Buttons and wheels are separate types (`Button` and `Wheel`)
+so that the combinations which really are impossible — a button that claims to
+have turned — cannot be constructed and have to be rejected only at the one
+place bytes come in.
+
+It is one crate rather than two, like `roadie-keylight` and unlike
+`roadie-ddc`: the host half is a serial port with no platform FFI in it, so a
+`serial` feature says the same thing as a sibling crate would, at far less
+ceremony. The protocol half holds the wasm portability claim.
+
+**Three things are hardware-verified and one is not.** On 2026-08-31, against
+a TourBox Elite on this desk: enumeration finds it by USB identity
+(`c251:2005`, serial `00000001`), `roadie devices` files it as configurable,
+and the port opens with nothing else holding it. What is *not* verified is the
+control codes themselves — no button has yet been pressed with this build
+listening. They are transcribed from published open-source drivers and pinned
+by tests, which proves the code does what the crate claims and cannot prove the
+claims match the device.
+
+**Cross-checking three drivers was worth more than the mutation sweep.** The
+codes were first transcribed from one project, then compared against two more
+written independently, for different models, in different languages. That is
+not hardware, but it is three witnesses, and it settled one open question and
+found one outright defect that no test could have.
+
+The open question was the knob's press byte. One source records `0x77`, which
+would make the knob the only control setting a turn bit while being pressed.
+Two others record `0x37` — and the first source's own *release* byte is `0xb7`,
+which is `0x37` with the release bit set and therefore inconsistent with its own
+press. So `0x77` is almost certainly a mis-transcription. The build implements
+`0x37` and still **rejects `0x77` by name** rather than quietly accepting both,
+so hardware can overturn it; the test is
+`the_disputed_knob_byte_is_refused_rather_than_guessed_at`.
+
+The defect was worse and is the reason this exercise earned its keep. **A wheel
+reports the end of a turn**, and this build rejected those bytes as impossible.
+A wheel sends a run of detents and then one more byte carrying the same control
+code and direction with the high bit set — the same bit that means "released" on
+a button, which is consistent rather than coincidental, since both mark the end
+of something held. One driver names them the `_STOP` family; another prints one
+from live hardware. Every turn of every wheel would have ended in a spurious
+error at the moment the hand stopped. The type model was wrong too, and said so
+out loud: it claimed "a wheel turns one way or the other and is never released",
+which is exactly the kind of confident sentence that should be checked against a
+second source. `TurnPhase` now carries it, and a wheel has no impossible
+action at all — both of its high bits are meaningful and independent.
+
+The general lesson, which is the one to carry: **the mutation sweep and the
+cross-check find different things.** The sweep proves the tests bite on the
+behaviour the code claims. It cannot see a claim that is wrong in the code and
+the tests alike, because both were written from the same reading of the same
+source. Only a second reading finds that, and here it took a third to break the
+tie.
+
+**Two findings worth keeping.** macOS publishes every serial device twice, as
+`/dev/cu.NAME` and `/dev/tty.NAME`; listing both reported one controller as
+two, and the `tty.` half is also the wrong one to hand anybody, because opening
+it blocks waiting for a carrier a controller never asserts. And the 94-byte
+setup message that the vendor's software sends on connect configures *haptics*,
+not event reporting — a TourBox streams whether or not anything has ever talked
+to it, which is why reading one needs no handshake and no write access.
+
+Still unverified: every model other than the Elite, and the setup message,
+which is written and has never been sent to a device.
 
 ### Monitors, as of the branch
 
@@ -101,8 +181,17 @@ macOS backend ran against Nadir's desk for the first time: the registry walk
 found the panel, the `dlopen`ed private calls behaved, and the EDID read at
 I²C `0x50` named it — an LG TV, which then never acknowledged DDC at `0x37`
 (`IOAVServiceWriteI2C` 0xe0114000, LG TVs speak CEC instead). So the transport
-and identification are verified and the reply checksum seed still is not; that
-needs a desktop monitor on a direct cable. The backends differ per platform,
+and identification were verified and the reply checksum seed was not; that
+needed a desktop monitor.
+
+**The desktop monitor arrived, and the seed is verified.** On 2026-09-02 an
+RTK HG560T34 on USB-C answered everything: brightness and contrast reads, a
+full capability string (MCCS 2.2, seven switchable inputs), and a brightness
+write that read back correctly and was restored. Replies came back, parsed,
+and passed the checksum — which closes the one gap no mock could. A detail
+worth keeping: macOS listed only the LG TV as an online display at the time,
+and the registry walk still found and drove the HG560T34 — the DDC transport
+does not care whether the window server is drawing to a panel. The backends differ per platform,
 and the table below is what each one had to be written against:
 
 | Platform | API | Notes |
@@ -241,9 +330,26 @@ And `full_description` had never been checked for a network device at all. That
 is a different failure mode from the earlier sweeps — prose ahead of tests —
 and worth naming: **a test can be present, passing, and evidence of nothing.**
 
-Two cautions learned the hard way. `rustfmt` reflows source, so a
+The eighth, over `roadie-tourbox`, ran eighteen and killed eighteen. That is
+the first clean first pass on the project, and it is worth being suspicious of
+rather than pleased about: the crate is small, its logic is one mask and two
+lookups, and the tests were written from the same transcription the code was.
+A sweep cannot find a shared misreading of the source material — only hardware
+can, which is what section 5's outstanding button pass is for.
+
+Three cautions learned the hard way. `rustfmt` reflows source, so a
 pattern-match mutation script silently finds nothing — always report
-"pattern not found" separately from "survived". And distinguish a real gap
+"pattern not found" separately from "survived".
+
+**Restore the file's timestamp too, not just its contents.** `mv backup.bak
+file` puts the bytes back and takes the backup's *older* mtime with them, which
+is older than the artifact cargo built from the mutated source. Cargo then
+judges the build fresh and the next `cargo test` runs **the previous mutant's
+binary against clean source**. This bit exactly once, on the `roadie-tourbox`
+sweep: a test that had passed all day failed immediately after the sweep, with
+the code visibly correct on disk. Read the other way round, the same trap turns
+a stale pass into a reported survivor, which is the more expensive direction.
+`touch` the file after restoring it. And distinguish a real gap
 from an *equivalent* mutant: `roadie-ddc` has one where truncating an
 over-long input name cannot produce a match, because no valid name is as long
 as the buffer. That one is documented in the code rather than papered over
@@ -277,10 +383,56 @@ anywhere says so; an independent IOKit listener hearing silence is what gave
 it away, and `launchctl bootout gui/<uid>/com.logi.cp-dev-mgr` is what frees
 it. `streamdeck verify` now names both causes when it sees no key press.
 
-Still needing hardware this desk does not have: a DDC-speaking monitor (the
-checksum seed), an Elgato light (the mired direction, by eye), a Scarlett
-(sections 6.7 through 6.9), and a VIA board. There is no Scarlett and no
-Elgato light on this desk — confirmed by Nadir, not just by scans.
+**A second sitting, 2026-08-31, on the TourBox.** The controller that the
+previous session recorded as "unenumerated at USB level, likely a cable issue"
+was exactly that: it now enumerates, and it is a TourBox Elite. The cable
+diagnosis was right and is worth remembering, because a charge-only USB-C cable
+presents as a controller that does not exist rather than as a cable that does
+not work — which is why `roadie tourbox` names the cable before anything else
+when it finds nothing.
+
+What that sitting verified is in section 3. What it has **not** verified is the
+control codes: the outstanding step is one pass of `roadie tourbox listen` with
+every button pressed and every wheel turned, which is the only thing that can
+confirm the transcribed bytes and settle the knob dispute. The hardware for it
+is on the desk, so this is the cheapest open verification on the project.
+
+**A third sitting, 2026-09-02, with nobody at the desk.** Nadir attached new
+hardware and asked for everything that could be verified without him. Two of
+the four open hardware gaps closed:
+
+- **The DDC monitor arrived and the checksum seed is verified** — the RTK
+  HG560T34 details are in section 3. Input switching was deliberately not
+  tested: changing the input of a monitor at an unattended desk takes the
+  screen away from whoever comes back to it, and that choice belongs to the
+  person sitting there.
+- **The VIA board arrived, spoke protocol 12, and exposed a gap this build
+  then closed.** A Kiiboom Cybrix 16 (`5343:0080`) answered the handshake and
+  was refused: it speaks VIA protocol 12 and the build implemented only 9.
+  The four commands this build sends are byte-identical from 9 through 12 —
+  what changed in between was the lighting commands (unused here) and the
+  quantum keycode numbering (deliberately not in the name table, which names
+  only the era-stable HID-standard codes) — so 12 was added to the accepted
+  set, with the transitional 10 and 11 still refused by name. After that, the
+  first VIA hardware verification anywhere: handshake (protocol 12, six
+  layers), a full keymap read, and a write of F24 confirmed by read-back and
+  then undone. Protocol 9 remains transcription no board has confirmed.
+- **The TourBox still enumerates and its port still opens** — the listener
+  ran and honestly reported nothing pressed, because nobody was there to
+  press. The button pass remains one minute of Nadir's hands.
+- **The Scarlett Solo did not appear at all.** No Focusrite vendor id
+  (`0x1235`) anywhere in the IO registry. A generic "USB AUDIO DEVICE"
+  (`2f6e:4e02`, two in, two out) is attached and is not how any Focusrite
+  presents itself — it is most likely the new monitor's own audio. The
+  2026-08-30 TourBox lesson repeats: a charge-only or faulty USB cable
+  presents as hardware that does not exist, not as a cable that does not
+  work. Sections 6.7 through 6.9 stay hardware-unverified until the Scarlett
+  enumerates — worth checking its cable and power before anything else.
+
+Still needing hardware this desk has not shown: an Elgato light (the mired
+direction, by eye), and the Scarlett above. The remaining gaps that need only
+hands, not purchases: the TourBox button pass, and the Stream Deck's visual
+half (sighted eyes).
 
 `docs/VERIFYING.md` remains the ordered pass for whatever hardware appears
 next, and this sitting held its shape: every failure it met was either a
@@ -545,16 +697,17 @@ anyone:
 - The `docs/VERIFYING.md` steps for monitors, written ahead of the hardware so
   the first sitting is one ordered pass rather than an exploration.
 
-Needs a panel answering, and nobody else can do it:
+Needed a panel answering, and the 2026-09-02 sitting settled most of it:
 
-- The reply checksum seed. Requests and replies are checksummed differently,
-  and a monitor that disagrees looks exactly like a monitor that is not there.
-- The timing floors, on real panels rather than on the specification's minimum.
+- The reply checksum seed: verified against the RTK HG560T34 — replies come
+  back, parse, and pass the checksum.
+- The timing floors held on one real panel with the default spacing; one
+  panel is a data point, not a distribution.
 - Which input-source values a given monitor accepts. Above `0x12` is vendor
-  territory and USB-C has no standard number at all.
-- Whether each screen on the desk speaks DDC in the first place.
-- Everything already in `docs/VERIFYING.md`, steps 1 through 9, none of which
-  any hardware has ever run.
+  territory and USB-C has no standard number at all — and switching inputs
+  on an unattended desk was deliberately not attempted.
+- Whether each screen on the desk speaks DDC: answered for this desk. The LG
+  TV does not (CEC instead), the HG560T34 does.
 
 ## 8. Brand
 

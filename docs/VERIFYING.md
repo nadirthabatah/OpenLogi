@@ -251,8 +251,8 @@ same way, rather than left waiting.
 
 **If it refuses the protocol revision:** that is the driver being careful
 rather than a fault. VIA payload layouts have changed between revisions and
-this build implements one. Report the number it names; it is exactly what is
-needed to add support.
+this build implements two, 9 and 12. Report the number it names; it is
+exactly what is needed to add support.
 
 ```sh
 ./target/release/roadie via keymap 0
@@ -484,6 +484,81 @@ Without `--device`, expect a refusal that lists both names rather than a guess.
 after the model — the refusal will list the same name twice and the address is
 how you tell them apart. That is worth reporting: it means the name someone
 sees is not the one the app set, and it is a genuine gap.
+
+## 12. TourBox controllers
+
+Only if you have one. This is the first device here reached over a serial port
+rather than HID or the network, and the first whose control codes were
+transcribed from other people's reverse engineering rather than from a
+published specification. That makes this step unusually valuable: it is the
+only thing that can confirm them.
+
+```sh
+./target/release/roadie tourbox list
+```
+
+**Expect:** the model, the serial port it is on, its serial number, and a count
+of buttons and wheels. Exactly one entry per controller.
+
+**If it says two are attached and you have one:** that is a defect worth
+reporting. macOS names every serial device twice and this build drops the
+duplicate; two entries means the rule missed a case.
+
+**If nothing is found:** check the cable before anything else. A charge-only
+USB-C cable carries power but no data, so the controller lights up and never
+reaches the computer at all — indistinguishable from a dead controller until
+you swap it. This was the actual cause the first time this project met one. A
+TourBox Neo will also not be found even when it is working, because it connects
+through a general-purpose serial adapter whose USB identity is shared with many
+unrelated devices; name its port with `--port` instead.
+
+### Pressing every control, which is the whole point of this step
+
+```sh
+./target/release/roadie tourbox listen
+```
+
+Then press every control once, pausing about a second between each, and listen
+to what each one is called. A useful order, because it groups the ones most
+likely to be confused with each other:
+
+1. The three wheels, turned both ways: the **knob**, the **scroll wheel**, the
+   flat **dial**.
+2. The same three pressed inward. Pressing a wheel is a *different control*
+   from turning it and carries its own code, which is the single most likely
+   thing to have been transcribed wrong.
+3. The four-way pad: **up, down, left, right**.
+4. **Tall, short, side, top**.
+5. **C1**, **C2**, and the centre **tour** button.
+
+**Expect:** each press named, and each release named separately. Fourteen
+buttons, so twenty-eight button events, plus the wheels.
+
+A turn reads as a run of "turned clockwise" lines followed by one "stopped
+turning clockwise". That last line is a real byte the controller sends, not
+this build inferring anything, and its absence would be as much a finding as
+its presence.
+
+**The one to watch is the knob press.** Two published sources disagree about
+the byte it sends, and this build implements one of them and refuses the other
+by name rather than guessing between them. So there are two good outcomes and
+neither is a failure:
+
+- It says **knob press** and **knob released**. The transcription was right.
+- It says **something this build does not recognise**, naming a byte. The other
+  source was right, and that sentence is the fix: the byte it names is the
+  correct code, and `the_disputed_knob_byte_is_refused_rather_than_guessed_at`
+  in `roadie-tourbox` is the test to change.
+
+**If a control is named as a different control**, that is a straightforward
+transcription error and the report should say which physical control you
+pressed and what it was called.
+
+**If nothing arrives at all but the port opened**, another program is holding
+the controller's input. TourBox Console is the likely one. This is the same
+failure the Stream Deck had on this desk, where Logitech's device manager held
+the deck's input in seize mode and every key report went to it alone with no
+error anywhere.
 
 ## What a failure here means
 
