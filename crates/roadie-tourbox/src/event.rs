@@ -419,17 +419,31 @@ pub fn decode(byte: u8) -> Result<Event, ProtocolError> {
     Err(ProtocolError::UnknownControl { control, byte })
 }
 
+/// The 8-byte unlock command an Elite requires before it streams anything.
+///
+/// This is the handshake this crate spent three sessions believing did not
+/// exist. The claim that a TourBox "streams whether or not anything has
+/// talked to it" was transcribed from NEO drivers, and the Elite disproved
+/// it on this project's own hardware: with the port open, the modem lines
+/// raised and [`SETUP_MESSAGE`] sent, every button press still produced
+/// silence — until this command went first.
+///
+/// Two independent drivers carry exactly these bytes: jasonrohrer's Elite
+/// driver sends them as its libusb init message, and tuxbox sends them as
+/// its unlock command, recovered separately from a Windows Bluetooth
+/// capture — the same unlock serves both transports. On 2026-09-02 an
+/// Elite on this project's desk answered them over USB serial with a
+/// 26-byte reply beginning `0x07`, the first bytes that device ever sent
+/// this codebase.
+pub const UNLOCK_MESSAGE: [u8; 8] = [0x55, 0x00, 0x07, 0x88, 0x94, 0x00, 0x1a, 0xfe];
+
 /// The 94-byte message that configures haptics, with every control set to
 /// no feedback.
 ///
-/// Sent to the device once, on connect. It is not a handshake: a TourBox
-/// streams events whether or not it has been sent, which is why reading
-/// events needs no write access to the port. The trailing `0xfe` terminates
-/// it and the leading `0xb5` identifies it.
-///
-/// **Never sent to a device.** Written from the published behaviour of an
-/// existing driver, and the one part of this crate with no way to test it
-/// short of hardware.
+/// Sent once, after [`UNLOCK_MESSAGE`]. The trailing `0xfe` terminates it
+/// and the leading `0xb5` identifies it. tuxbox sends these same 94 bytes
+/// as five consecutive writes; jasonrohrer's driver sends them as one, and
+/// one write is what this crate does.
 pub const SETUP_MESSAGE: [u8; 94] = [
     0xb5, 0x00, 0x5d, 0x04, 0x00, 0x05, 0x00, 0x06, 0x00, 0x07, 0x00, 0x08, 0x00, 0x09, 0x00, 0x0b,
     0x00, 0x0c, 0x00, 0x0d, 0x00, 0x0e, 0x00, 0x0f, 0x00, 0x26, 0x00, 0x27, 0x00, 0x28, 0x00, 0x29,

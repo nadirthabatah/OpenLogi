@@ -50,9 +50,16 @@
 //! would have ended in a spurious error at the moment the hand stopped. No
 //! single source stated it; comparing three is what found it.
 //!
-//! Still to settle on hardware: whether the transcription is right at all,
-//! every model other than the Elite, and [`event::SETUP_MESSAGE`], which
-//! configures haptics and has never been sent to a device.
+//! **An Elite says nothing until it is unlocked.** The claim that a TourBox
+//! streams without being spoken to came from NEO drivers and cost three
+//! sessions of silent listeners on real hardware. [`event::UNLOCK_MESSAGE`]
+//! is what wakes an Elite, and on 2026-09-02 the one on this project's desk
+//! answered it over USB serial with a 26-byte reply beginning `0x07` — the
+//! first bytes it ever sent this codebase. [`event::SETUP_MESSAGE`] follows
+//! it to quiet the haptics.
+//!
+//! Still to settle on hardware: whether the control-code transcription is
+//! right at all, and every model other than the Elite.
 //!
 //! Nothing in [`model`] or [`event`] performs I/O.
 
