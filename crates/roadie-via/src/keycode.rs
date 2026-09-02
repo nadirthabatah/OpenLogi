@@ -18,6 +18,14 @@
 //! unnamed keycode renders as its number, which is honest; a misnamed one is
 //! not. Adding them is a matter of checking against firmware, not of guessing
 //! harder.
+//!
+//! That restraint is also what lets one table serve both supported protocol
+//! revisions. QMK's 0.19 keycode refactor — the change that bumped the VIA
+//! protocol from 11 to 12 — renumbered the quantum keycodes and left the
+//! basic HID-standard ones alone, so every name below means the same key on a
+//! protocol 9 board and a protocol 12 board. Whoever adds quantum keycodes
+//! inherits the problem this table has so far declined: their numbers differ
+//! by era, so the table would have to be keyed by protocol revision.
 
 /// Keycode meaning "no key": the position does nothing.
 pub const NONE: u16 = 0x0000;

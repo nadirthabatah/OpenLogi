@@ -13,13 +13,14 @@
 //! # What this is drawn from, and what that means
 //!
 //! The command numbers and payload shapes come from QMK's own
-//! `via_command_id` enum and the reference VIA implementation, not from
-//! observing a device — this project has none of the hardware. That is a
-//! reasonable footing (it is the contract every VIA keyboard is built to) but
-//! it is not verification, and it is recorded here rather than left implied.
-//! Two things in particular are worth checking against a real device before
-//! trusting them: that a given board reports the protocol version this crate
-//! expects, and that its report size matches [`REPORT_LEN`].
+//! `via_command_id` enum and the reference VIA implementation. For a long
+//! time this project had none of the hardware, and that caveat lived here.
+//! On 2026-09-02 a protocol 12 board — a Kiiboom Cybrix 16 — answered this
+//! code for the first time: the handshake, a full keymap read across its
+//! matrix, and a write confirmed by read-back and then undone. That verifies
+//! the framing, the report size, and the four command ids against one real
+//! board on one protocol revision; protocol 9 remains transcription, still
+//! unmet by hardware.
 //!
 //! A wrong keycode written to a keyboard is not a cosmetic bug — it can take a
 //! key away from someone mid-use — so [`Command::SetKeycode`] is deliberately
