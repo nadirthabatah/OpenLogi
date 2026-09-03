@@ -5,9 +5,10 @@ rules. This file is the other half — the state of *this fork's* work, the
 things that cost real time to learn the first time, and what comes next.
 Read it before picking anything up.
 
-Last updated on the `claude/openroadie-handoff-m5hphl` branch, which carries the
-monitor work described in section 6 and is not yet merged. Everything in
-section 3 up to PR #12 is on `master`.
+Last updated after PR #13 merged on 2026-09-03, which brought monitors,
+Elgato lights including the Key Light Neo over USB, TourBox controllers,
+VIA protocol 12, and the Focusrite audio stack onto `master`. Everything
+described below is merged.
 
 ---
 
@@ -77,13 +78,15 @@ Merged, in order:
 | 10 | `roadie-ddc` — DDC/CI, MCCS and EDID as a pure crate |
 | 11 | Repository URLs pointed at the post-rename name |
 | 12 | This handoff |
+| 13 | Monitors over DDC/CI, Elgato lights (network and Neo USB), TourBox, VIA 12, and Focusrite audio |
 
 ### Device categories that work today
 
 Logitech HID++ mice and keyboards, Elgato Stream Decks, QMK/VIA keyboards and
-macro pads, UVC webcams, Logitech standalone lights, and — on the branch, not
-yet on `master` — monitors over DDC/CI, Elgato Key Lights over the network, and
-TourBox controllers over their serial port.
+macro pads, UVC webcams, Logitech standalone lights, monitors over DDC/CI,
+Elgato Key Lights over the network and the Neo over USB, TourBox controllers
+over their serial port, and Focusrite audio interfaces over their vendor USB
+interface.
 
 ### TourBox, as of the branch
 
