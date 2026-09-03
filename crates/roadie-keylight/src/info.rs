@@ -31,6 +31,30 @@ pub struct AccessoryInfo {
     /// What this unit can do. Every light so far says `["lights"]`.
     #[serde(default)]
     pub features: Vec<String>,
+    /// How the light is being powered, and what that limits.
+    ///
+    /// Sent by the Key Light Neo, whose brightness ceiling depends on its
+    /// power source — 400-lumen territory on a computer's USB-A port, full
+    /// output only on a mains supply. Absent on the mains-powered family.
+    #[serde(rename = "power-info")]
+    pub power_info: Option<PowerInfo>,
+}
+
+/// What a light says about its power source.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PowerInfo {
+    /// A firmware-defined mode number; meaning unmapped so far.
+    #[serde(rename = "operationMode")]
+    pub operation_mode: Option<u16>,
+    /// The highest brightness percentage the current power source allows.
+    ///
+    /// A request above it is *refused* by the firmware, not clamped — the
+    /// Neo on this project's desk answered 50 percent with "Invalid
+    /// parameters" while reporting a 40 percent ceiling — so whoever asks
+    /// too much needs this number to know what to ask instead.
+    #[serde(rename = "maximumBrightness")]
+    pub maximum_brightness: Option<u16>,
 }
 
 impl AccessoryInfo {

@@ -601,6 +601,49 @@ wrong one morning. Multicast is how the light stays findable without anyone
 maintaining that — and it is also why a guest network or a VPN can hide a light
 that is working perfectly.
 
+**The Key Light Neo also speaks over USB, and that path is now built and
+hardware-verified (2026-09-03).** It was taken because the desk's Neo could
+not be reached any other way: a brand-new light will not join Wi-Fi without
+Elgato's app, that app exposes nothing to the accessibility system, and the
+whole point of this fork is that the person using it works by ear. USB
+control needs no app, no network, and no setup — plug in a data cable and it
+answers.
+
+Three things about that path are worth keeping:
+
+- **It is the *same* application protocol as Wi-Fi, in a HID envelope.** The
+  Neo answers `GET /elgato/lights` and `PUT /elgato/lights <json>` over USB
+  exactly as the network lights do over HTTP; the only new thing is the
+  512-byte frame that carries those lines (`roadie-keylight::usb`). So the
+  state types, the mired conversion, the clamp logic — all of it — are shared
+  unchanged, and the USB half is only framing plus a session. The framing was
+  transcribed from the one published reverse engineering of the transport and
+  then confirmed byte-for-byte against the light.
+- **Two firmware quirks only hardware could have shown.** The Neo answers with
+  `0x00` where requests carry a `0x03` "message type" marker, so inbound
+  frames are not judged by that byte — validating it refused the actual
+  device on the first try. And a write answers with just the `lights` list,
+  omitting the `numberOfLights` the same firmware includes on a read, so that
+  field now defaults on the way in.
+- **On USB power the Neo *refuses* an over-budget brightness rather than
+  clamping it.** Asked for 90 percent while capped at 40, it answers
+  `{"errors":[{"message":"Invalid parameters"}]}` and changes nothing. The
+  network lights clamp; this one rejects. So the driver reads the light's
+  `power-info.maximumBrightness` after a refusal and puts the actual ceiling
+  in the error — "it allows at most 40 percent; ask for that or less, or move
+  it to a stronger power supply" — because a bare "invalid parameters" gives
+  someone working by ear nothing to act on. The ceiling depends on the power
+  source: about 40 percent on a computer's USB port, full range on a mains
+  supply.
+
+`roadie light` lists and drives it alongside the network lights and the USB
+Litra — one list, one selector, transport said out loud so the same light on
+two paths is two distinguishable entries — and `set_network_light` in the MCP
+server does the same. `roadie devices` files it as configurable. The whole
+pass ran on the desk's Neo on 2026-09-03: on and off, brightness to its
+ceiling, colour temperature across its full 2907–6993 K range, the
+over-budget refusal, and the same set again through the MCP server.
+
 ### 6.7 Scarlett, the protocol half
 
 `roadie-scarlett` is the wire format and the device tables, with no I/O — the

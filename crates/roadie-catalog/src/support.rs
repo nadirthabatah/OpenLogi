@@ -314,6 +314,15 @@ fn classify_hid(identity: &Identity, usage_page: u16, usage_id: u16) -> Support 
         };
     }
 
+    // The one Elgato light with a USB data port. Same driver family as the
+    // network lights — it speaks their protocol in HID framing.
+    if roadie_keylight::usb::is_neo(vendor, product, usage_page, usage_id) {
+        return Support::Driver {
+            driver: Driver::KeyLight,
+            model: Some("Key Light Neo"),
+        };
+    }
+
     if let Some(receiver) = find_receiver(vendor, product) {
         return Support::Receiver(receiver.brand);
     }
@@ -364,6 +373,24 @@ mod tests {
                 model: Some("Stream Deck MK.2"),
             }
         );
+    }
+
+    /// The ids are spelled out rather than imported: the identity is a wire
+    /// contract with the light, not with the crate that names it.
+    #[test]
+    fn a_key_light_neo_on_usb_is_a_key_light() {
+        let found = Peripheral::from_hid(identity(0x0fd9, 0x00a0), 0x000c, 0x0001);
+        assert_eq!(
+            found.support,
+            Support::Driver {
+                driver: Driver::KeyLight,
+                model: Some("Key Light Neo"),
+            }
+        );
+        // The same product on another usage page is some other collection of
+        // the same device, not the control endpoint.
+        let other = Peripheral::from_hid(identity(0x0fd9, 0x00a0), 0xff00, 0x0001);
+        assert_eq!(other.support, Support::Unsupported);
     }
 
     /// The one ordering in this function that is not arbitrary. A Litra

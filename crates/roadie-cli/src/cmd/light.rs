@@ -4,12 +4,14 @@
 //! small hardware-facing surface for validating discovery and report encoding
 //! before exercising the GPUI panel.
 //!
-//! Two families, reached two ways. Logitech's Litra lights are on USB and
-//! speak raw HID; Elgato's Key Lights are on Wi-Fi and speak HTTP. They are
-//! one command rather than two because the question a person asks is "what
-//! lights do I have", and an answer covering only the ones on USB would be
-//! worse for being confidently incomplete.
+//! Two families, reached three ways. Logitech's Litra lights are on USB and
+//! speak raw HID; Elgato's Key Lights are on Wi-Fi and speak HTTP; and the
+//! Key Light Neo is on USB speaking that same protocol in HID framing. They
+//! are one command rather than three because the question a person asks is
+//! "what lights do I have", and an answer covering only some transports
+//! would be worse for being confidently incomplete.
 
+pub(crate) mod neo;
 mod network;
 
 use std::time::Duration;
@@ -112,6 +114,8 @@ enum Lamp<'a> {
     Litra(&'a StandaloneDevice),
     /// An Elgato Key Light, over the network.
     Network(&'a network::Found),
+    /// An Elgato Key Light Neo, over USB.
+    Neo(&'a neo::Found),
 }
 
 impl Lamp<'_> {
@@ -120,6 +124,7 @@ impl Lamp<'_> {
         match self {
             Self::Litra(device) => &device.display_name,
             Self::Network(found) => found.name(),
+            Self::Neo(found) => found.name(),
         }
     }
 }
@@ -132,12 +137,14 @@ impl Lamp<'_> {
 fn select_lamp<'a>(
     litra: &'a [StandaloneDevice],
     network: &'a [network::Found],
+    usb: &'a [neo::Found],
     query: Option<&str>,
 ) -> Result<Lamp<'a>> {
     let all: Vec<Lamp<'a>> = litra
         .iter()
         .map(Lamp::Litra)
         .chain(network.iter().map(Lamp::Network))
+        .chain(usb.iter().map(Lamp::Neo))
         .collect();
 
     let Some(query) = query else {
@@ -163,6 +170,13 @@ fn select_lamp<'a>(
         Lamp::Network(found) => {
             found.name().to_lowercase().contains(&wanted)
                 || found.light.address().to_string().contains(&wanted)
+        }
+        Lamp::Neo(found) => {
+            found.name().to_lowercase().contains(&wanted)
+                || found
+                    .serial_number
+                    .as_deref()
+                    .is_some_and(|serial| serial.to_lowercase().contains(&wanted))
         }
     };
     let mut matched: Vec<Lamp<'a>> = all.into_iter().filter(matching).collect();
@@ -195,14 +209,18 @@ async fn standalone() -> Result<Vec<StandaloneDevice>> {
 async fn list(args: &DeviceArgs) -> Result<()> {
     let devices = standalone().await?;
     let network = args.network();
-    if devices.is_empty() && network.is_empty() {
+    let usb = neo::find().await;
+    if devices.is_empty() && network.is_empty() && usb.is_empty() {
         print!("{}", nothing_found(args.no_network));
         return Ok(());
+    }
+    for found in &usb {
+        print!("{}", neo::describe(found));
     }
     for found in &network {
         print!("{}", network::describe(found));
     }
-    if !network.is_empty() {
+    if !network.is_empty() || !usb.is_empty() {
         print!("{}", network::ranges());
     }
     for device in devices {
@@ -250,18 +268,20 @@ fn nothing_found(no_network: bool) -> String {
                 --no-network was given.\n"
             .to_owned();
     }
-    "No lights found, on USB or on the network. A Litra has to be plugged in and \
-     readable; an Elgato light has to be on the same network as this computer and \
-     answering.\n"
+    "No lights found, on USB or on the network. A Litra or a Key Light Neo has to be \
+     plugged in and readable; any other Elgato light has to be on the same network as \
+     this computer and answering.\n"
         .to_owned()
 }
 
 async fn set_power(args: &DeviceArgs, enabled: bool) -> Result<()> {
     let devices = standalone().await?;
     let network = args.network();
-    match select_lamp(&devices, &network, args.device.as_deref())? {
+    let usb = neo::find().await;
+    match select_lamp(&devices, &network, &usb, args.device.as_deref())? {
         Lamp::Litra(device) => apply(device, LightCommand::Power(enabled)).await,
         Lamp::Network(found) => write_network(found, |light| light.set_on(enabled)),
+        Lamp::Neo(found) => neo::write(found, |light| light.set_on(enabled)).await,
     }
 }
 
@@ -295,17 +315,16 @@ fn write_network(
 async fn set_brightness(args: BrightnessArgs) -> Result<()> {
     let devices = standalone().await?;
     let network = args.device.network();
-    let device = match select_lamp(&devices, &network, args.device.device.as_deref())? {
+    let usb = neo::find().await;
+    let device = match select_lamp(&devices, &network, &usb, args.device.device.as_deref())? {
         Lamp::Litra(device) => device,
         Lamp::Network(found) => {
-            let Some(percent) = args.percent else {
-                return Err(anyhow!(
-                    "{} takes a brightness as a percentage, so pass --percent. Lumens are \
-                     a Litra thing; an Elgato light does not report them.",
-                    found.name()
-                ));
-            };
+            let percent = percent_only(args.percent, found.name())?;
             return write_network(found, |light| light.set_brightness(u16::from(percent)));
+        }
+        Lamp::Neo(found) => {
+            let percent = percent_only(args.percent, found.name())?;
+            return neo::write(found, |light| light.set_brightness(u16::from(percent))).await;
         }
     };
     let caps = device
@@ -333,12 +352,24 @@ async fn set_brightness(args: BrightnessArgs) -> Result<()> {
     apply(device, command).await
 }
 
+/// The percentage, or the sentence explaining why lumens will not do here.
+fn percent_only(percent: Option<u8>, name: &str) -> Result<u8> {
+    percent.ok_or_else(|| {
+        anyhow!(
+            "{name} takes a brightness as a percentage, so pass --percent. Lumens are \
+             a Litra thing; an Elgato light does not report them."
+        )
+    })
+}
+
 async fn set_temperature(args: TemperatureArgs) -> Result<()> {
     let devices = standalone().await?;
     let network = args.device.network();
-    match select_lamp(&devices, &network, args.device.device.as_deref())? {
+    let usb = neo::find().await;
+    match select_lamp(&devices, &network, &usb, args.device.device.as_deref())? {
         Lamp::Litra(device) => apply(device, LightCommand::TemperatureKelvin(args.kelvin)).await,
         Lamp::Network(found) => write_network(found, |light| light.set_kelvin(args.kelvin)),
+        Lamp::Neo(found) => neo::write(found, |light| light.set_kelvin(args.kelvin)).await,
     }
 }
 

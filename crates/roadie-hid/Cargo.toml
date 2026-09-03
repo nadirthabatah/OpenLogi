@@ -26,6 +26,7 @@ atomic-write-file = { workspace = true }
 roadie-device = { version = "0.8.1", path = "../roadie-device" }
 roadie-catalog = { version = "0.8.1", path = "../roadie-catalog" }
 roadie-streamdeck = { version = "0.8.1", path = "../roadie-streamdeck" }
+roadie-keylight = { version = "0.8.1", path = "../roadie-keylight", default-features = false }
 roadie-via = { version = "0.8.1", path = "../roadie-via" }
 
 # Native Win32 HID report writes (windows_hid.rs) — a fallback for async-hid's

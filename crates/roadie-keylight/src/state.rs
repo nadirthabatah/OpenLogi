@@ -196,7 +196,13 @@ impl Light {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Lights {
     /// How many lights the device carries.
-    #[serde(rename = "numberOfLights")]
+    ///
+    /// Defaulted on the way in because the field is not always sent: the
+    /// Key Light Neo on this project's desk answers a USB write with only
+    /// the `lights` list, though the same firmware includes the count when
+    /// read. Writes always send it, and a reply's missing count defaults to
+    /// zero rather than failing the parse — the list itself is the answer.
+    #[serde(rename = "numberOfLights", default)]
     pub number_of_lights: u16,
     /// The lights themselves.
     pub lights: Vec<Light>,
@@ -233,6 +239,48 @@ pub enum LightError {
              a connection problem"
     )]
     NoLights,
+}
+
+/// A refusal, as the firmware phrases one.
+///
+/// The Key Light Neo answers a request it will not honour with this shape
+/// instead of a state — observed on this project's desk when a brightness
+/// beyond its USB power budget was asked for:
+///
+/// ```json
+/// {"errors":[{"message":"Invalid parameters","code":-1}]}
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ErrorReply {
+    /// The refusals, in the firmware's words.
+    pub errors: Vec<DeviceError>,
+}
+
+/// One refusal inside an [`ErrorReply`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceError {
+    /// The firmware's own words for what was wrong.
+    #[serde(default)]
+    pub message: String,
+    /// The firmware's error code, for a bug report.
+    #[serde(default)]
+    pub code: i32,
+}
+
+impl ErrorReply {
+    /// The refusals as one spoken sentence fragment.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        if self.errors.is_empty() {
+            return "an error it did not explain".to_owned();
+        }
+        self.errors
+            .iter()
+            .map(|error| error.message.trim())
+            .filter(|message| !message.is_empty())
+            .collect::<Vec<_>>()
+            .join(", and ")
+    }
 }
 
 #[cfg(test)]
