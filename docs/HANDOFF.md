@@ -390,11 +390,18 @@ What it verified, for the first time anywhere:
   iPhone photograph of a painted test layout, read by a session with working
   eyes: red, green, blue and white landed on the four physical corners
   matching keys 0, 7, 24 and 31, and a label on key 19 sat in the third row,
-  fourth column — upright, unclipped, not mirrored. One caveat stands: the
-  labels on the brightly-filled corner keys were blown out by the camera at
-  full brightness, so text-on-colour rendering is verified only by the same
-  renderer's output on a black key. A single ten-character word wraps
-  mid-word across two lines, which is the only wrap a spaceless word allows.
+  fourth column — upright, unclipped, not mirrored. A second photo at 20
+  percent brightness closed the text-on-colour caveat the first one left:
+  "TOP LEFT" and "BOT LEFT" read in full on their red and blue fills. The
+  right-edge keys appeared to read "IGHT", and that scare is worth its
+  paragraph: the renderer centres each line and refuses any scale whose
+  widest line overflows the key, and dumping the actual rendered buffer
+  showed the full word with margins — the missing R was the curved keycap
+  refracting its own edge away at the camera's oblique angle. The widest
+  line of a label gets the thinnest margin, so it is always the first
+  casualty of a photo taken at an angle; check the buffer before blaming
+  the renderer. A single ten-character word wraps mid-word across two
+  lines, which is the only wrap a spaceless word allows.
 - **The macOS display transport and EDID identification** — and not the reply
   checksum seed; see section 3.
 - **Discovery honesty**: with no Elgato light on the network, `roadie light
