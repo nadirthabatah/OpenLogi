@@ -12,6 +12,7 @@
 //! here as a single match, which keeps the whole surface greppable from one
 //! place.
 
+mod audio;
 mod camera;
 mod decks;
 mod displays;
@@ -74,6 +75,7 @@ pub fn catalog() -> Value {
     tools.extend(pointer::tools());
     tools.extend(lighting::tools());
     tools.extend(keylights::tools());
+    tools.extend(audio::tools());
     tools.extend(monitor::tools());
     tools.extend(displays::tools());
     tools.extend(profiles::tools());
@@ -107,6 +109,9 @@ pub async fn call(params: &Value) -> Result<Value, String> {
         "set_smartshift" => pointer::set_smartshift(&arguments).await,
         "set_lighting" => lighting::set_lighting(&arguments).await,
         "set_light" => lighting::set_light(&arguments).await,
+        "list_audio_interfaces" => audio::list_audio_interfaces(),
+        "set_audio_input" => audio::set_audio_input(&arguments),
+        "set_phantom_power" => audio::set_phantom_power(&arguments),
         "list_network_lights" => keylights::list_network_lights().await,
         "set_network_light" => keylights::set_network_light(&arguments).await,
         "watch_input" => monitor::watch_input(&arguments).await,
@@ -209,7 +214,7 @@ mod tests {
     /// The dispatch arms in [`super::call`], as the catalog must advertise
     /// them. Kept here so a tool added to one and not the other fails a test
     /// rather than surfacing as "unknown tool" at run time.
-    const DISPATCHED: [&str; 37] = [
+    const DISPATCHED: [&str; 40] = [
         "list_tourboxes",
         "watch_tourbox",
         "list_devices",
@@ -221,6 +226,9 @@ mod tests {
         "set_smartshift",
         "set_lighting",
         "set_light",
+        "list_audio_interfaces",
+        "set_audio_input",
+        "set_phantom_power",
         "list_network_lights",
         "set_network_light",
         "watch_input",

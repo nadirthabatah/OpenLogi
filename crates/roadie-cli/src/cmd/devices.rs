@@ -71,6 +71,7 @@ pub async fn run(args: DevicesArgs) -> Result<ExitCode> {
     );
     found.extend(display_peripherals());
     found.extend(tourbox_peripherals());
+    found.extend(focusrite_peripherals());
     if !args.no_network {
         found.extend(key_light_peripherals(Duration::from_secs(args.wait)));
     }
@@ -237,6 +238,32 @@ fn display_peripherals() -> Vec<Peripheral> {
 ///
 /// A failure to list serial ports is not a failure of the survey, for the
 /// same reason a failure to enumerate displays is not.
+/// Every Focusrite interface, as catalog entries.
+///
+/// A Focusrite is not a HID device, so the HID sweep above never sees one —
+/// it has to be enumerated on its own or the survey would promise a complete
+/// list and quietly leave out an audio interface sitting on the desk.
+fn focusrite_peripherals() -> Vec<Peripheral> {
+    roadie_focusrite::attached()
+        .unwrap_or_default()
+        .into_iter()
+        .flatten()
+        .map(|interface| {
+            Peripheral::from_focusrite(
+                Identity {
+                    ids: IdSource::Usb,
+                    vendor_id: roadie_scarlett::device::VENDOR_ID,
+                    product_id: interface.model.product_id,
+                    product: Some(interface.name.to_owned()),
+                    manufacturer: Some("Focusrite".to_owned()),
+                    serial_number: interface.serial_number.clone(),
+                },
+                interface.name,
+            )
+        })
+        .collect()
+}
+
 fn tourbox_peripherals() -> Vec<Peripheral> {
     roadie_tourbox::serial::ports()
         .unwrap_or_default()

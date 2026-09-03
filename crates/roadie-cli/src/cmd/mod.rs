@@ -4,6 +4,7 @@ use anyhow::Result;
 use clap::Subcommand;
 
 pub mod assets;
+pub mod audio;
 pub mod backlight;
 pub mod camera;
 pub mod devices;
@@ -52,6 +53,9 @@ pub enum Command {
     /// Find TourBox controllers, and check what each button, knob and dial
     /// sends.
     Tourbox(tourbox::TourBoxArgs),
+    /// Read and change a Focusrite Scarlett or Vocaster interface: preamp
+    /// gain, mute, and 48 volt phantom power.
+    Audio(audio::AudioArgs),
     /// Read and change what each key sends on a QMK keyboard or macro pad
     /// with VIA enabled.
     Via(via::ViaArgs),
@@ -99,6 +103,9 @@ impl Command {
             Self::Tourbox(args) => {
                 return args.cmd.unwrap_or(tourbox::TourBoxCmd::List).run();
             }
+            // USB control transfers are blocking, and an exchange is two of
+            // them in order. No async runtime would have anything to do.
+            Self::Audio(args) => args.cmd.unwrap_or(audio::AudioCmd::List).run()?,
             Self::Via(args) => {
                 return args.cmd.unwrap_or(via::ViaCmd::List).run().await;
             }

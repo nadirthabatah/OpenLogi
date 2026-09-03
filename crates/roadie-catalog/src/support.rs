@@ -31,6 +31,8 @@ pub enum Driver {
     Via,
     /// Any monitor that speaks DDC/CI over its video cable.
     Ddc,
+    /// Focusrite Scarlett and Vocaster audio interfaces.
+    Focusrite,
     /// Elgato Key Lights and Ring Lights, over the network.
     KeyLight,
     /// TourBox controllers, over their USB serial port.
@@ -49,6 +51,7 @@ impl Driver {
             Self::Via => "via",
             Self::Ddc => "ddc",
             Self::KeyLight => "keylight",
+            Self::Focusrite => "focusrite",
             Self::TourBox => "tourbox",
         }
     }
@@ -70,6 +73,7 @@ impl Driver {
             Self::Via => "what each key sends, across every keymap layer",
             Self::Ddc => "brightness, contrast, input source, and volume",
             Self::TourBox => "what each button, knob and dial does",
+            Self::Focusrite => "preamp gain, mute, and 48 volt phantom power",
         }
     }
 
@@ -87,6 +91,7 @@ impl Driver {
             Self::Via => "roadie via",
             Self::Ddc => "roadie display",
             Self::TourBox => "roadie tourbox",
+            Self::Focusrite => "roadie audio",
         }
     }
 }
@@ -218,6 +223,24 @@ impl Peripheral {
             support: Support::Driver {
                 driver: Driver::KeyLight,
                 model: None,
+            },
+        }
+    }
+
+    /// Classify a Focusrite audio interface.
+    ///
+    /// Supported because of *who* made it and which model it is: the control
+    /// protocol is Focusrite's own, and the address of every setting differs
+    /// per model, so a model with no table in this build is not drivable even
+    /// though the protocol is understood. The caller has already looked the
+    /// model up, so being here means there is a table.
+    #[must_use]
+    pub fn from_focusrite(identity: Identity, model: &'static str) -> Self {
+        Self {
+            identity,
+            support: Support::Driver {
+                driver: Driver::Focusrite,
+                model: Some(model),
             },
         }
     }

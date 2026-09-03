@@ -31,6 +31,8 @@ image = { version = "0.25", default-features = false, features = [
 roadie-camera = { path = "../roadie-camera", version = "0.8.1" }
 roadie-ddc = { path = "../roadie-ddc", version = "0.8.1" }
 roadie-display = { path = "../roadie-display", version = "0.8.1" }
+roadie-focusrite = { path = "../roadie-focusrite", version = "0.8.1" }
+roadie-scarlett = { path = "../roadie-scarlett", version = "0.8.1" }
 roadie-keylight = { path = "../roadie-keylight", version = "0.8.1" }
 # With the serial feature: this is the host that actually opens the port.
 roadie-tourbox = { path = "../roadie-tourbox", version = "0.8.1" }
