@@ -580,6 +580,69 @@ the Stream Deck had on this desk, where Logitech's device manager held the
 deck's input in seize mode and every key report went to it alone with no
 error anywhere.
 
+## 13. Focusrite audio interfaces
+
+Only if you have a Scarlett or a Vocaster. The audio itself needs nothing from
+this: it is standard USB audio and the operating system already handles it.
+What `roadie audio` reaches is everything around it, over a separate control
+channel, and recording is never interrupted by any of it.
+
+```sh
+./target/release/roadie audio status
+```
+
+**Expect:** the model, its firmware version, and one line per input saying the
+preamp gain, whether it is muted, and whether 48 volt phantom power is on.
+
+**If it says the interface is in mass storage mode:** that is how it leaves
+the factory and it is not a fault. It presents a small disk of registration
+files. Everything here works with it on, which was confirmed on a Vocaster
+Two, so nothing needs doing about it.
+
+**If nothing is found:** check the cable carries data rather than only power,
+and check the socket does too. That trap has now hidden three different
+devices on this project's desk.
+
+**If it says it could not claim the control interface:** something else is
+holding it. The audio side is unaffected — this is specifically the control
+channel, and the message says so.
+
+### The reversible writes
+
+```sh
+./target/release/roadie audio gain 1 25
+./target/release/roadie audio mute 1 on
+./target/release/roadie audio mute 1 off
+```
+
+**Expect:** each command to report what the interface reads back afterwards
+rather than echoing the request, and the gain change to name the exact command
+that undoes it.
+
+**Worth checking by ear**, because it is the one thing no test here can
+settle: with a microphone plugged in and monitoring, a gain change should be
+*audible*. A value that stores and reads back correctly proves the address is
+consistent; only hearing it proves the address is the right one.
+
+### The one write that asks first
+
+```sh
+./target/release/roadie audio phantom 1 on
+```
+
+**Expect:** it refuses, and reads out what 48 volt phantom power can damage —
+a ribbon or older passive microphone — then names the exact command with
+`--yes` that goes ahead. Nothing changes until you type that.
+
+That refusal is the whole safety design and it is deliberately narrow.
+Switching phantom power *off* asks nothing, because that is how you make the
+interface safe again. And an assistant driving the MCP server can switch it
+off but **cannot** switch it on at all: it gets the sentence to read to you
+and the command for you to type, because what 48 volts can damage is at the
+end of a cable no software can see.
+
+**Before typing the `--yes` form, unplug anything you are not sure about.**
+
 ## What a failure here means
 
 Failures in steps 0b, 1 and 4 are almost always permissions, not defects —
