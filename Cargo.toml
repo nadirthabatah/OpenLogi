@@ -16,6 +16,7 @@ members = [
     "crates/roadie-display",
     "crates/roadie-keylight",
     "crates/roadie-scarlett",
+    "crates/roadie-focusrite",
     "crates/roadie-tourbox",
     "crates/roadie-camera",
     "crates/roadie-permissions",
@@ -60,6 +61,9 @@ interprocess = { version = "2", features = ["tokio"] }
 # opentelemetry_sdk 0.30 into the graph (GHSA-w9wp-h8wv-79jx).
 tarpc = { version = "0.38", features = ["serde1", "serde-transport", "serde-transport-bincode", "tokio1"] }
 windows-sys = "0.61"
+# Pure-Rust USB, so a Focusrite's vendor control interface is reached with no
+# libusb C dependency and no hand-rolled IOKit FFI on any of the three hosts.
+nusb = "0.1"
 tokio = { version = "1", default-features = false, features = ["rt", "macros", "sync", "time"] }
 futures-lite = "2"
 serde = { version = "1", features = ["derive"] }

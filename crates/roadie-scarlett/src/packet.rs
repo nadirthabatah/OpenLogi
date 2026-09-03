@@ -42,6 +42,42 @@ pub const INIT_1: u32 = 0x0000_0000;
 /// where it is explained.
 pub const INIT_2: u32 = 0x0000_0002;
 
+/// How many payload bytes [`INIT_2`] answers with.
+///
+/// A host has to say in advance how much to fetch, so this is not a detail it
+/// can discover. Confirmed on a Vocaster Two on 2026-09-03: the reply is 100
+/// bytes, sixteen of header and eighty-four of payload.
+pub const INIT_2_RESPONSE_LEN: usize = 84;
+
+/// Where the firmware version sits inside [`INIT_2`]'s answer.
+const FIRMWARE_OFFSET: usize = 8;
+
+/// The firmware version an interface reports in its [`INIT_2`] answer.
+///
+/// Worth having rather than skipping, because [`crate::device::Model`] keeps
+/// more than one table for some models and picks between them by version —
+/// so a host that never reads this would silently address the oldest layout.
+///
+/// Read at payload offset 8 as a little-endian `u32`. Confirmed against a
+/// Vocaster Two, which answered 1749 there while reporting `bcdDevice` 1749
+/// on its USB descriptor — two independent statements of the same number,
+/// which is what makes the offset believable rather than merely plausible.
+///
+/// # Errors
+///
+/// [`ProtocolError::PayloadLength`] if the answer is too short to hold it,
+/// which means the reply was truncated rather than that the device is old.
+pub fn firmware_version(init_2_payload: &[u8]) -> Result<u32, ProtocolError> {
+    init_2_payload
+        .get(FIRMWARE_OFFSET..FIRMWARE_OFFSET + 4)
+        .and_then(|slice| slice.try_into().ok())
+        .map(u32::from_le_bytes)
+        .ok_or(ProtocolError::PayloadLength {
+            expected: FIRMWARE_OFFSET + 4,
+            actual: init_2_payload.len(),
+        })
+}
+
 /// The counter that ties an answer to its question.
 ///
 /// Its own type because it has one rule — it rises by one per request, and it
@@ -547,5 +583,32 @@ mod tests {
     fn the_response_length_a_host_must_ask_for_includes_the_header() {
         assert_eq!(Request::response_len(4), HEADER_LEN + 4);
         assert_eq!(Request::response_len(0), HEADER_LEN);
+    }
+
+    /// The bytes are the ones a Vocaster Two actually sent on 2026-09-03,
+    /// written out rather than computed, so this checks the offset from
+    /// outside the code that reads it.
+    #[test]
+    fn the_firmware_version_is_read_from_the_start_up_answer() {
+        let payload = [
+            0x03, 0x00, 0x00, 0x00, // unknown
+            0x06, 0xc0, 0x60, 0x00, // unknown
+            0xd5, 0x06, 0x00, 0x00, // firmware version, 1749
+            0x00, 0x00, 0x10, 0x00, // unknown
+        ];
+        assert_eq!(firmware_version(&payload), Ok(1749));
+    }
+
+    #[test]
+    fn a_start_up_answer_too_short_to_hold_a_version_is_refused() {
+        // Truncation, not an old device: returning zero here would pick the
+        // oldest table on a device whose version was simply never read.
+        assert_eq!(
+            firmware_version(&[0; 8]),
+            Err(ProtocolError::PayloadLength {
+                expected: 12,
+                actual: 8
+            })
+        );
     }
 }
