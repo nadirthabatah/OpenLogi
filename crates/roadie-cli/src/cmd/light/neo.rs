@@ -125,12 +125,12 @@ pub async fn write(found: &Found, change: impl FnOnce(Light) -> Light) -> anyhow
 
 /// Apply a change and return what the light now holds.
 ///
-/// The half of [`write`] with no output, for the MCP server — the two
+/// The half of [`write()`] with no output, for the MCP server — the two
 /// surfaces share one implementation so they cannot drift apart.
 ///
 /// # Errors
 ///
-/// As [`write`].
+/// As [`write()`].
 pub async fn apply(found: &Found, change: impl FnOnce(Light) -> Light) -> anyhow::Result<Light> {
     let current = found
         .state
