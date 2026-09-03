@@ -459,9 +459,26 @@ its hardware:
   what stands between them and verification is the macOS host layer of
   section 6.10, which is now the next build.
 
-Still needing hardware this desk has not shown: an Elgato light (the mired
-direction, by eye). The remaining gap that needs only hands, not purchases:
-the Stream Deck's visual half (sighted eyes).
+**A fourth sitting, 2026-09-03.** The Key Light Neo and the Vocaster Two both
+went from "seen but undrivable" to fully driven, and both needed hardware to
+finish. The Neo's story is in section 6.6 and the Vocaster's in 6.10. Two
+lessons generalise beyond either:
+
+- **This desk has a USB socket that carries power and no data.** It made a
+  healthy Key Light Neo invisible for a day, and the same trap with a
+  charge-only *cable* hid the TourBox on 2026-08-30. When a device is missing,
+  move it to a port where a known-good device just worked before believing
+  anything else; the symptom is identical to a dead device.
+- **A vendor app being present is not the same as the hardware being
+  reachable.** Elgato's Control Center drives the Neo over USB and exposed
+  nothing to the accessibility system when probed, which is precisely why the
+  USB driver in 6.6 was worth building rather than deferring to the vendor.
+
+Still needing hardware this desk has not shown: nothing on the current list.
+The remaining gaps that need only hands, not purchases: the Stream Deck's
+visual half and the Key Light's mired direction, both of which need sighted
+eyes, and an audible confirmation that a Vocaster gain change is heard rather
+than merely stored.
 
 `docs/VERIFYING.md` remains the ordered pass for whatever hardware appears
 next, and this sitting held its shape: every failure it met was either a
@@ -741,12 +758,83 @@ thing. The mutation sweep ran fifteen and killed fifteen.
 Still unverified against hardware, and one `amixer -c` with a Scarlett attached
 would settle both this and the fork above.
 
-### 6.10 After that — this is the part still to do
+### 6.10 The USB host layer, which is built and hardware-verified
 
-The Scarlett host layers themselves: an ALSA binding on Linux over these names,
-and USB control transfers on macOS and Windows over the packet layer. Then the
-CLI and MCP surfaces. Then headsets, MIDI pads, RGB on other brands, and other
-vendors' mice and keyboards.
+`roadie-focusrite` is the host half — the same split as `roadie-ddc` and
+`roadie-display`, and for the same reason: `roadie-scarlett` is on the
+*unconditional* wasm portability list, so anything that opens a handle has to
+live in a sibling crate or the claim quietly dies. It is `nusb` rather than
+hand-rolled IOKit: pure Rust, no libusb, one implementation for all three
+hosts, and no `unsafe` anywhere in this crate.
+
+**Section 6.8's central guess is now confirmed on hardware.** A Focusrite
+presents several USB interfaces at once, and on 2026-09-03 a Vocaster Two on
+this desk showed exactly the predicted shape: interfaces 0 to 2 are USB audio
+class and belong to `usbaudiod`; **interface 3 is vendor-specific, class 255,
+and has no exclusive owner at all.** Claiming it needs no privileges, nothing
+is force-detached, and the audio side never notices — so reading and writing
+settings while recording is safe by construction rather than by luck. The
+interface number is discovered from the descriptors rather than assumed,
+because nothing promises the next model puts it at 3.
+
+Four things the hardware settled that no amount of reading could:
+
+- **The whole protocol layer is right.** The start-up handshake completes, the
+  sequence check holds, and the documented start-up quirk is real — the
+  request carrying sequence 1 really is answered with sequence 0. Reads return
+  sane values, a write lands, reads back, and restores, and the neighbouring
+  input is untouched across all of it.
+- **The firmware version is at payload offset 8 of the second start-up
+  answer.** The Vocaster reported 1749 there while its USB descriptor reported
+  `bcdDevice` 1749 — two independent statements of the same number, which is
+  what makes the offset believable rather than merely plausible. That number
+  chooses the table, so a host that skipped it would silently address the
+  oldest layout.
+- **This unit's firmware is *older* than its table's threshold** — 1749 against
+  the 1769 in `device.rs` — and `table_for` falls back to the oldest table,
+  which is the only one the Vocaster has. Everything reads and writes
+  correctly on it. Worth naming because the source those thresholds came from
+  may mean "minimum supported" rather than "table applies from", and this
+  device is evidence the distinction has not bitten yet rather than evidence
+  it does not exist.
+- **Mass Storage mode does not gate the control channel.** The interface ships
+  presenting a small FAT disk of registration files, and this one still is —
+  yet every read and every write worked with it on. That is worth recording
+  because the Linux driver's behaviour suggests otherwise, and it means
+  nobody has to be talked through turning it off before anything works.
+  `roadie audio status` says it is on and says plainly that nothing needs
+  doing about it.
+
+**The gate in front of 48 volts survived contact with a real front end.** The
+CLI refuses `phantom N on`, speaks the sentence, and names the exact command
+with `--yes` — options in prose to type back, never a picker. The MCP surface
+goes further and **refuses to switch phantom power on at all**, answering with
+the sentence to read aloud and the command for a person to type: what it can
+damage is at the end of a cable no software can see, and an assistant passing
+a confirmation flag is not a person deciding, it is the flag being passed.
+Switching it *off* is ungated everywhere, because that is how somebody makes
+the interface safe again.
+
+The mock is worth its length. It answers *addresses* rather than scripted
+replies and applies a buffered write the way the firmware does — value and
+index into the scratch area, then the activation moves it — so a read after a
+write returns what the write actually did. Writing it that way immediately
+paid: the first version stored the scratch bytes and stopped, every read-back
+returned the old value, and the failing test was the mock's shortcut rather
+than the code's bug. A fixture that had simply asserted the scratch contents
+would have passed and proved nothing.
+
+### 6.11 After that — this is the part still to do
+
+The Linux half: an ALSA binding over the names `roadie_scarlett::alsa`
+already generates. The USB path here compiles and runs on Linux too and its
+failure mode is an error rather than a disturbance, so it is a fallback
+rather than a trap — but `snd-usb-audio` publishing these same settings as
+ordinary mixer controls remains the better road there, and 6.8's reasoning
+about it is still unverified against a running kernel.
+
+Then headsets, MIDI pads, RGB on other brands, and other vendors' mice and
+keyboards.
 
 ## 7. What a session can do with nobody at the desk
 
