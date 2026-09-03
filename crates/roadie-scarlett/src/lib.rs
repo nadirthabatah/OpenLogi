@@ -45,6 +45,9 @@ pub mod transaction;
 
 pub use config::{ConfigItem, ConfigSet, Descriptor};
 pub use device::{Model, VENDOR_ID, find};
-pub use packet::{Packet, ProtocolError, Request, Response, Sequence};
+pub use packet::{
+    INIT_1, INIT_2, INIT_2_RESPONSE_LEN, Packet, ProtocolError, Request, Response, Sequence,
+    firmware_version,
+};
 pub use risk::{Acknowledged, Risk};
 pub use transaction::{Plan, PlanError, plan_write};
