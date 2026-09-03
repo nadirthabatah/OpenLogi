@@ -386,8 +386,15 @@ What it verified, for the first time anywhere:
 - **The Stream Deck XL, end to end**: open, brightness, image writes, key
   decode, and the catalogue's key numbering — the physical top-left key is
   key 0, horizontal neighbours differ by 1 and vertical by 8, and press and
-  release pair correctly. The visual half (labels upright, unclipped) still
-  needs sighted eyes.
+  release pair correctly. The visual half was closed on 2026-09-03 by an
+  iPhone photograph of a painted test layout, read by a session with working
+  eyes: red, green, blue and white landed on the four physical corners
+  matching keys 0, 7, 24 and 31, and a label on key 19 sat in the third row,
+  fourth column — upright, unclipped, not mirrored. One caveat stands: the
+  labels on the brightly-filled corner keys were blown out by the camera at
+  full brightness, so text-on-colour rendering is verified only by the same
+  renderer's output on a black key. A single ten-character word wraps
+  mid-word across two lines, which is the only wrap a spaceless word allows.
 - **The macOS display transport and EDID identification** — and not the reply
   checksum seed; see section 3.
 - **Discovery honesty**: with no Elgato light on the network, `roadie light
@@ -477,11 +484,20 @@ lessons generalise beyond either:
   nothing to the accessibility system when probed, which is precisely why the
   USB driver in 6.6 was worth building rather than deferring to the vendor.
 
+**A fifth sitting, later on 2026-09-03, closed the Stream Deck's visual
+half.** A test layout was painted — a distinct colour on each physical corner
+key and a label on key 19 — and Nadir photographed the deck from overhead and
+sent the picture. The photo confirmed the key numbering visually (each colour
+on its intended corner) and the label rendering (upright, unclipped, correctly
+placed). Details are in section 5's Stream Deck entry. The same sitting left
+one Stream Deck item open: `streamdeck verify` heard no key presses, and the
+first suspect is the known one — `com.logi.cp-dev-mgr` seizing the deck's
+input (section 5) — not the driver; rule that out before touching code.
+
 Still needing hardware this desk has not shown: nothing on the current list.
-The remaining gaps that need only hands, not purchases: the Stream Deck's
-visual half and the Key Light's mired direction, both of which need sighted
-eyes, and an audible confirmation that a Vocaster gain change is heard rather
-than merely stored.
+The remaining gaps that need only hands, not purchases: the Key Light's mired
+direction, which needs sighted eyes, and an audible confirmation that a
+Vocaster gain change is heard rather than merely stored.
 
 `docs/VERIFYING.md` remains the ordered pass for whatever hardware appears
 next, and this sitting held its shape: every failure it met was either a
