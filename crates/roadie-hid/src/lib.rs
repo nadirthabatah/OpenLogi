@@ -16,6 +16,7 @@
 
 mod transport;
 
+pub mod elgato_light;
 pub mod host;
 pub mod permissions;
 pub mod probe_cache;

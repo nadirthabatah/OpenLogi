@@ -22,7 +22,7 @@ fn found(name: &str, last_octet: u8) -> KeyLight {
 fn one_light_needs_no_naming() {
     let lights = [found("Key Light Left", 40)];
     assert_eq!(
-        choose(&lights, None).expect("the only light").name(),
+        choose(&lights, &[], None).expect("the only light").name(),
         "Key Light Left"
     );
 }
@@ -32,7 +32,7 @@ fn several_lights_will_not_be_guessed_between() {
     // On a desk with a key and a fill light, picking the wrong one is
     // immediately visible to everyone except the person who asked.
     let lights = [found("Key Light Left", 40), found("Key Light Right", 41)];
-    let error = choose(&lights, None).expect_err("two lights and no choice made");
+    let error = choose(&lights, &[], None).expect_err("two lights and no choice made");
     assert!(error.contains("list_network_lights"), "{error}");
 }
 
@@ -40,11 +40,13 @@ fn several_lights_will_not_be_guessed_between() {
 fn a_light_can_be_named_or_addressed() {
     let lights = [found("Key Light Left", 40), found("Fill", 41)];
     assert_eq!(
-        choose(&lights, Some(&json!("fill"))).expect("one").name(),
+        choose(&lights, &[], Some(&json!("fill")))
+            .expect("one")
+            .name(),
         "Fill"
     );
     assert_eq!(
-        choose(&lights, Some(&json!("192.168.1.40")))
+        choose(&lights, &[], Some(&json!("192.168.1.40")))
             .expect("one")
             .name(),
         "Key Light Left"
@@ -54,9 +56,48 @@ fn a_light_can_be_named_or_addressed() {
 #[test]
 fn an_ambiguous_name_lists_the_candidates() {
     let lights = [found("Key Light Left", 40), found("Key Light Right", 41)];
-    let error = choose(&lights, Some(&json!("key light"))).expect_err("two match");
+    let error = choose(&lights, &[], Some(&json!("key light"))).expect_err("two match");
     assert!(error.contains("Key Light Left"), "{error}");
     assert!(error.contains("Key Light Right"), "{error}");
+}
+
+fn usb(name: &str, serial: &str) -> crate::cmd::light::neo::Found {
+    crate::cmd::light::neo::Found {
+        name: name.into(),
+        serial_number: Some(serial.into()),
+        state: Ok(light()),
+    }
+}
+
+#[test]
+fn a_usb_light_is_chosen_like_any_other() {
+    let on_usb = [usb("Elgato Key Light Neo", "AB8KB55210UKXU")];
+    assert_eq!(
+        choose(&[], &on_usb, None).expect("the only light").name(),
+        "Elgato Key Light Neo"
+    );
+    // One per transport is two lights, and the choice is not guessed.
+    let lights = [found("Key Light Left", 40)];
+    let error = choose(&lights, &on_usb, None).expect_err("two lights and no choice made");
+    assert!(error.contains("2 lights"), "{error}");
+}
+
+#[test]
+fn a_usb_light_can_be_picked_by_serial_and_an_ambiguity_names_transports() {
+    let on_usb = [usb("Elgato Key Light Neo", "AB8KB55210UKXU")];
+    assert_eq!(
+        choose(&[], &on_usb, Some(&json!("ab8kb")))
+            .expect("one match")
+            .name(),
+        "Elgato Key Light Neo"
+    );
+    // The same light reachable both ways is disambiguated by transport,
+    // which the error has to say or the caller cannot choose.
+    let lights = [found("Elgato Key Light Neo", 40)];
+    let error =
+        choose(&lights, &on_usb, Some(&json!("neo"))).expect_err("one per transport matches");
+    assert!(error.contains("on the network"), "{error}");
+    assert!(error.contains("on USB"), "{error}");
 }
 
 #[test]

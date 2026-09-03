@@ -418,22 +418,36 @@ bezel can recover.
 
 ## 11. Elgato Key Lights
 
-Only if you have one. These are the first devices here that are reached over
-Wi-Fi rather than a cable, and that changes what can go wrong: the light has to
-be powered on, on the same network as this computer, and the network has to
-carry multicast — which some guest networks and some VPNs deliberately do not.
+Only if you have one. A Key Light Neo can be reached two ways — plugged in
+over a USB data cable, or over Wi-Fi — and every other light in the family is
+Wi-Fi only. The USB path is the simpler one to verify and the one that needs
+nothing set up: plug the Neo into a data cable (not a charge-only one) and it
+answers, no app and no network involved. The Wi-Fi path adds what can go
+wrong on a network: the light has to be powered on, on the same network as
+this computer, and the network has to carry multicast — which some guest
+networks and some VPNs deliberately do not.
 
 ```sh
 ./target/release/roadie light list
 ```
 
-**Expect:** each light named as you named it in Elgato's app, with whether it
-is on, its brightness as a percentage, and its colour temperature in kelvin.
+**Expect:** each light named — a Neo on USB says "on USB" so it is not
+confused with the same light on Wi-Fi — with whether it is on, its brightness
+as a percentage, and its colour temperature in kelvin.
 
-**If nothing is found and the light is on:** the most likely cause is multicast
-rather than the light. Try again on the same Wi-Fi with any VPN off. A light on
-a different subnet from this computer will not be found and cannot be, which is
-a property of multicast rather than a defect here.
+**If nothing is found and the light is on:** for a Neo on USB, check the cable
+is a data cable and the port carries data — the same trap the TourBox fell
+into, where a charge-only cable or a power-only socket makes the light invisible
+rather than merely uncontrolled. For a Wi-Fi light, the most likely cause is
+multicast rather than the light: try again on the same Wi-Fi with any VPN off.
+A light on a different subnet from this computer will not be found and cannot
+be, which is a property of multicast rather than a defect here.
+
+**On a Neo over USB, brightness above what its power source allows is
+refused, not clamped.** Plugged into a computer's USB port it caps around 40
+percent, and asking for more answers with the ceiling named rather than a bare
+error — that is the firmware's own behaviour, and the sentence tells you the
+number to ask for instead. A mains supply lifts the ceiling.
 
 **If a light is found and then says it did not answer:** that is the useful
 half working. Discovery and reachability are separate questions and a light

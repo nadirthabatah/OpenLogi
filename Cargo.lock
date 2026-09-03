@@ -6586,6 +6586,7 @@ name = "roadie-catalog"
 version = "0.8.1"
 dependencies = [
  "roadie-device-registry",
+ "roadie-keylight",
  "roadie-streamdeck",
  "roadie-tourbox",
  "roadie-via",
@@ -6749,6 +6750,7 @@ dependencies = [
  "roadie-core",
  "roadie-device",
  "roadie-hidpp",
+ "roadie-keylight",
  "roadie-streamdeck",
  "roadie-via",
  "serde",
