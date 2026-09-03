@@ -489,10 +489,17 @@ half.** A test layout was painted — a distinct colour on each physical corner
 key and a label on key 19 — and Nadir photographed the deck from overhead and
 sent the picture. The photo confirmed the key numbering visually (each colour
 on its intended corner) and the label rendering (upright, unclipped, correctly
-placed). Details are in section 5's Stream Deck entry. The same sitting left
-one Stream Deck item open: `streamdeck verify` heard no key presses, and the
-first suspect is the known one — `com.logi.cp-dev-mgr` seizing the deck's
-input (section 5) — not the driver; rule that out before touching code.
+placed). Details are in section 5's Stream Deck entry. The sitting had one
+scare, and it resolved exactly as section 5 predicts: `streamdeck verify`
+heard no key presses, the session's first guess blamed the HID usage page,
+and the actual cause was the documented one — `com.logi.cp-dev-mgr` holding
+the deck's input in seize mode. One `launchctl bootout` later, a full pass
+arrived clean: all four corners decoded as keys 0, 7, 24 and 31 on the
+correct rows and columns, five middle keys decoded in sequence, and every
+press paired with its release. The Stream Deck XL is now verified end to
+end — display, numbering, labels, and input. The bootout does not survive a
+reboot: Logitech's manager returns with Logi Options+, and freeing the deck
+permanently is a decision about that software, not about this driver.
 
 Still needing hardware this desk has not shown: nothing on the current list.
 The remaining gaps that need only hands, not purchases: the Key Light's mired
