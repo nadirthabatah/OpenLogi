@@ -244,6 +244,20 @@ Its prerequisites on a fresh container: `libxkbcommon-dev`,
 `gcc-mingw-w64-x86-64`, and the `x86_64-pc-windows-gnu` and
 `wasm32-unknown-unknown` targets.
 
+**A stale `target/release/roadie` impersonates a cross-surface bug.** On
+2026-09-03 the binary on disk was four days old, predating the Neo USB
+driver that had merged that morning. The symptoms were exactly the shape
+section 4 teaches you to read as drift between the three surfaces:
+`roadie light list` reported no lights at all, while `roadie devices` saw
+the Neo, named it, and filed it under "detected, not configurable by this
+build" — one surface confidently contradicting another about the same
+attached device, with the handoff insisting the path was verified. Nothing
+was wrong with the code. `ls -la target/release/roadie` against
+`git log -1` settles it in one command, and it is worth spending that
+command *before* reading any driver source, because a stale binary and a
+genuine drift defect present identically. Verify hardware with a binary you
+watched compile.
+
 **Never push while a run is in progress on the same branch.** CI sets
 `concurrency: cancel-in-progress: true`, keyed on the ref. Fourteen commits
 once went unverified this way while the last completed run was fourteen
@@ -508,10 +522,21 @@ end — display, numbering, labels, and input. The bootout does not survive a
 reboot: Logitech's manager returns with Logi Options+, and freeing the deck
 permanently is a decision about that software, not about this driver.
 
+**The Key Light's mired direction is verified, later on 2026-09-03.** It was
+the last gap that needed an observer rather than a test. The pass was an A/B
+at fixed brightness with temperature as the only variable: 2907 K, the
+warmest the Neo accepts, then 6993 K, the coolest. Nadir reported the light
+warm at the first and cold at the second, in that order — which is the
+observation that rules out an inverted conversion, since inverting it would
+have made the warmest *request* produce the coldest light. Endpoints alone
+could still pass over a non-monotonic middle, so a sweep of eight midrange
+values followed: every one round-tripped within 12 K of what was asked and
+the sequence rose monotonically, against a 24 K worst case the
+round-to-nearest is designed for. Direction and magnitude both hold.
+
 Still needing hardware this desk has not shown: nothing on the current list.
-The remaining gaps that need only hands, not purchases: the Key Light's mired
-direction, which needs sighted eyes, and an audible confirmation that a
-Vocaster gain change is heard rather than merely stored.
+The one remaining gap that needs only hands, not purchases: an audible
+confirmation that a Vocaster gain change is heard rather than merely stored.
 
 `docs/VERIFYING.md` remains the ordered pass for whatever hardware appears
 next, and this sitting held its shape: every failure it met was either a
