@@ -535,8 +535,9 @@ the sequence rose monotonically, against a 24 K worst case the
 round-to-nearest is designed for. Direction and magnitude both hold.
 
 Still needing hardware this desk has not shown: nothing on the current list.
-The one remaining gap that needs only hands, not purchases: an audible
-confirmation that a Vocaster gain change is heard rather than merely stored.
+The one gap that needed only hands, not purchases — an audible confirmation
+that a Vocaster gain change is heard rather than merely stored — closed on
+2026-09-04. The pass is recorded at the end of section 6.10.
 
 `docs/VERIFYING.md` remains the ordered pass for whatever hardware appears
 next, and this sitting held its shape: every failure it met was either a
@@ -881,6 +882,19 @@ paid: the first version stored the scratch bytes and stopped, every read-back
 returned the old value, and the failing test was the mock's shortcut rather
 than the code's bug. A fixture that had simply asserted the scratch contents
 would have passed and proved nothing.
+
+**The gain is heard, not merely stored — verified 2026-09-04.** Every check
+before this one ended at the device's own read-back: write 20, read 20, and
+trust that the analog path followed. The pass that closes it was the Key
+Light's A/B transposed to ears: with Nadir speaking into the microphone and
+monitoring on the Vocaster itself, input 1 dropped from its resting gain of
+70 to 20, held twelve seconds, then returned to 70 — each write confirmed by
+read-back at the moment it landed. Nadir reported the voice quieter and then
+back to full loudness, in that order, which rules out the one failure a
+read-back cannot see: a value that lands in the settings store and never
+reaches the preamp. The interface stayed in mass storage mode throughout,
+consistent with everything above, and ended the test exactly in its
+discovered state.
 
 ### 6.11 After that — this is the part still to do
 
