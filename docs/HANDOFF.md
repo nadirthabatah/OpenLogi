@@ -896,7 +896,86 @@ reaches the preamp. The interface stayed in mass storage mode throughout,
 consistent with everything above, and ended the test exactly in its
 discovered state.
 
-### 6.11 After that — this is the part still to do
+### 6.11 The panel caught up with the desk, 2026-09-04
+
+Until this change the desk panel drew two of the six families the app can
+drive. Monitors and Key Lights had wire types, agent handlers and cards;
+Stream Decks, Focusrite interfaces, TourBox controllers and VIA boards were
+reachable only from the command line and the MCP tools. That is a violation
+of the standing three-surface rule rather than a missing feature: a device the
+GUI cannot see is a device whose GUI path has never been exercised, and the
+project's own record is that the surfaces disagree silently when one of them
+is never run.
+
+Protocol v32 appends six on-demand methods for the four families, and the
+panel grew a card apiece. Four decisions in it are worth keeping:
+
+- **Gain is two buttons, not a slider.** A slider needs a maximum and these
+  interfaces do not report one. A monitor answers every read with its own
+  ceiling beside the value, which is exactly what makes the monitor sliders
+  honest; a Focusrite answers with a byte. This desk's Vocaster was probed to
+  settle it and it stores and reads back **every value to 255** without
+  complaint, so any ceiling drawn here would have been invented. Two named
+  steps and a number also read aloud unambiguously, where a dragged thumb
+  does not.
+- **Stream Deck brightness is three actions, not a position.** The protocol
+  has a brightness write and no matching read, so a slider would open at a
+  number nobody measured. Full, Dim and Off are things you *did*; none of them
+  claims to be a thing the deck *is*. `StreamDeckChange` carries the same
+  argument, because the wire is where a future caller will look for it.
+- **The phantom-power gate crosses the socket as a question, not a token.**
+  The GUI sends the change unacknowledged, the agent refuses and returns the
+  sentence, and only an explicit second press carries `phantom_acknowledged`.
+  The `Acknowledged` proof is still built at the call site from the risk that
+  write actually carries — it never rides the wire — so a confirmation for one
+  input still cannot authorise the next. Verified on hardware: the refusal
+  came back with its words and the interface stayed off.
+- **The panel scrolls now.** Six families do not fit any window worth opening,
+  and the previous layout had no scroll container — the cards below the fold
+  simply could not be reached. Found by screenshotting the running app, which
+  is the only thing that would have found it.
+
+TourBox and VIA cards are identity only, and say so. A TourBox stores no
+settings; enumerating it is also all the agent does, because *opening* one
+writes an unlock and a haptics setup to a device somebody may be using — far
+too much to do because a panel was opened. VIA keymap read and write were
+deliberately left off the wire: VIA reports no matrix size, so a keymap read
+is a blind scan costing a USB round trip per position, which is a different
+shape of call and worth designing against a board rather than ahead of one.
+
+**Verified on this desk, 2026-09-04.** All four families answered through the
+real agent: Stream Deck XL (32 keys, opened), Vocaster Two (firmware 1749,
+inputs at gain 70 and 9), TourBox Elite (14 buttons, 3 wheels), and the
+Kiiboom Cybrix 16 speaking VIA protocol 12 with 6 layers. Writes were driven
+end to end — gain 70 to 65 and back with read-back, phantom power refused with
+the device unchanged, a 101 percent brightness refused before it reached the
+deck, and the deck dimmed and restored.
+
+**The press itself is covered by `#[gpui::test]`, not by hand.** Driving the
+running window from outside turned out to be a dead end worth writing down:
+synthetic `CGEvent` clicks reach the window as *hover* — the button highlights
+— and never fire the handler, and `AXPress` reports success and does nothing
+either. Neither is a defect, and the proof is that the Refresh button, which
+predates all of this, ignores them exactly the same way. What does work is
+GPUI's own test harness, which is what `.claude/rules/gui.md` asks for anyway:
+two tests drive the real panel through focus and Enter and assert on the
+command the agent would have received. Both were mutation-checked rather than
+trusted — severing the click handler, and making the gain step a no-op, each
+fail their test. The second test pins the safety property no agent-side test
+can see: the panel's first press on phantom power carries **no**
+acknowledgement, so the refusal is always reached and the warning always gets
+read. A toggle that acknowledged on somebody's behalf would switch 48 volts on
+with nobody having seen a word about it, and every test on the agent side
+would still pass.
+
+Worth knowing for the next sitting: the desk panel's own integration test
+serves the mock on the `dev` profile, so a dev agent left running from a
+hardware session **takes that socket** and the test then asserts scripted
+values against real hardware. It fails loudly rather than silently, but the
+failure names the wrong thing — kill the dev agent before reading it as a
+regression.
+
+### 6.12 After that — this is the part still to do
 
 The Linux half: an ALSA binding over the names `roadie_scarlett::alsa`
 already generates. The USB path here compiles and runs on Linux too and its
