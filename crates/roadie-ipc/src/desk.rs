@@ -207,6 +207,270 @@ impl std::fmt::Display for NetworkLightFailure {
     }
 }
 
+/// One Stream Deck attached over USB.
+///
+/// Carries `reachable` for the same reason the monitor and light summaries do,
+/// though the failure it records is a different one: a Stream Deck is almost
+/// always *listed* — enumeration only reads HID descriptors — and then refuses
+/// to open, because another program already holds it exclusively. Elgato's own
+/// Stream Deck app does that, and so does Logitech's device manager. Saying
+/// "found it, could not open it, here is what the transport said" is the only
+/// version of that a person can act on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StreamDeckSummary {
+    /// Serial number where the device gives one, which survives a replug.
+    pub id: String,
+    /// What the operating system calls it.
+    pub name: String,
+    /// The model name off the box, from the registry.
+    pub model: String,
+    /// How many keys it has.
+    pub keys: u16,
+    /// How many rotary dials, which only the Stream Deck Plus has.
+    pub dials: u8,
+    /// Whether it could actually be opened.
+    pub reachable: bool,
+    /// Why it could not, when it could not.
+    pub unreachable_reason: Option<String>,
+}
+
+/// A change to a Stream Deck.
+///
+/// # Why no brightness is reported back
+///
+/// A Stream Deck cannot be asked what its brightness is — the protocol has a
+/// write and no matching read. So unlike every other write on this wire, the
+/// answer to setting it cannot be what the device then reads; it is only
+/// confirmation that the write was accepted. The panel that drives this owns
+/// the number it last sent and must not pretend it is a read-back.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StreamDeckChange {
+    /// Screen brightness as a percentage, which the device takes from 0 to 100.
+    pub brightness_percent: Option<u8>,
+    /// Clear every key back to blank, the way it looks at power-on.
+    pub reset: bool,
+}
+
+impl StreamDeckChange {
+    /// Whether this asks for anything at all.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.brightness_percent.is_none() && !self.reset
+    }
+}
+
+/// Why a Stream Deck request could not be answered.
+///
+/// **Append-only.**
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StreamDeckFailure {
+    /// No deck with that serial — unplugged since the list was made.
+    NotFound,
+    /// It is there and would not open, with what the transport said.
+    Unreachable(String),
+    /// The value was outside what the device takes.
+    Refused(String),
+    /// The change asked for nothing.
+    NothingToDo,
+}
+
+impl std::fmt::Display for StreamDeckFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => f.write_str(
+                "that Stream Deck is no longer attached. Searching again will find it if it \
+                 came back.",
+            ),
+            Self::Unreachable(why) | Self::Refused(why) => f.write_str(why),
+            Self::NothingToDo => f.write_str("that would not change anything."),
+        }
+    }
+}
+
+/// One audio interface, with what every input on it is doing.
+///
+/// The whole snapshot rather than a handle to ask further questions through,
+/// because the device answers it in one pass and a list assembled from several
+/// round trips can disagree with itself halfway down.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioInterfaceSummary {
+    /// Serial number, which is what survives a replug.
+    pub id: String,
+    /// The model name off the box.
+    pub name: String,
+    /// The firmware version it reported, which selects its settings table.
+    pub firmware: u32,
+    /// Whether it is still presenting its registration disk, where the model
+    /// has that switch. Not a fault and not a thing to fix — everything works
+    /// with it on — but worth showing, because people expect it to matter.
+    pub mass_storage: Option<bool>,
+    /// One entry per input, counted the way the box labels them.
+    pub inputs: Vec<AudioInputSettings>,
+    /// Whether it answered.
+    pub reachable: bool,
+    /// Why it did not, when it did not.
+    pub unreachable_reason: Option<String>,
+}
+
+/// What one input on an interface is doing.
+///
+/// Every setting is optional because models differ in which they have, and a
+/// `None` says this input has no such control rather than that the read
+/// failed — the same distinction [`DisplaySettings`] draws by omitting a
+/// control the monitor does not implement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioInputSettings {
+    /// Which input, counted from one the way the box labels them.
+    pub input: u16,
+    /// Preamp gain, in the interface's own units.
+    ///
+    /// Deliberately without a maximum beside it, unlike [`DisplayReading`]:
+    /// a monitor reports its own ceiling and these interfaces do not. This
+    /// desk's Vocaster stores and reads back every byte to 255 without
+    /// complaint, so any ceiling shown here would be invented — and a slider
+    /// drawn against an invented maximum is confidently wrong at both ends.
+    pub gain: Option<u8>,
+    /// Whether the input is muted.
+    pub muted: Option<bool>,
+    /// Whether 48 volt phantom power is on for it.
+    pub phantom: Option<bool>,
+}
+
+/// A change to one input, with everything not being changed left out.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioInputChange {
+    /// New preamp gain.
+    pub gain: Option<u8>,
+    /// Mute or unmute.
+    pub muted: Option<bool>,
+    /// Switch 48 volt phantom power on or off.
+    pub phantom: Option<bool>,
+    /// Whether whoever asked was shown what switching phantom power **on**
+    /// costs, and accepted it.
+    ///
+    /// A separate flag rather than a token, because the proof that carries the
+    /// risk cannot cross a wire: it is built at the call site from the risk
+    /// itself, precisely so a flag passed from far away cannot conjure one.
+    /// What crosses here is the answer to a question; the agent re-derives the
+    /// risk for *this* input and builds the acknowledgement beside the write.
+    /// Ignored for every other field, and ignored for switching phantom off —
+    /// that direction is how somebody makes the interface safe again.
+    pub phantom_acknowledged: bool,
+}
+
+impl AudioInputChange {
+    /// Whether this asks for anything at all.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.gain.is_none() && self.muted.is_none() && self.phantom.is_none()
+    }
+}
+
+/// Why an audio-interface request could not be answered.
+///
+/// **Append-only.**
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AudioFailure {
+    /// No interface with that serial — unplugged since the list was made.
+    NotFound,
+    /// It is there and did not answer, with what the transport said.
+    Unreachable(String),
+    /// The change asked for nothing.
+    NothingToDo,
+    /// Phantom power was asked for without the warning being accepted, and
+    /// this is the warning, written to be read aloud.
+    NeedsAcknowledgement(String),
+    /// The write was refused, with the reason to show.
+    Refused(String),
+}
+
+impl std::fmt::Display for AudioFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => f.write_str(
+                "that audio interface is no longer attached. Searching again will find it if \
+                 it came back.",
+            ),
+            Self::Unreachable(why) | Self::NeedsAcknowledgement(why) | Self::Refused(why) => {
+                f.write_str(why)
+            }
+            Self::NothingToDo => f.write_str("that would not change anything."),
+        }
+    }
+}
+
+/// One controller — a TourBox — on a serial port.
+///
+/// It has no settings to read or write: the device streams what its buttons
+/// and wheels do, and what those *mean* is this app's config rather than
+/// anything stored on the device. So this is identity only, and the panel that
+/// shows it says so rather than offering knobs that would do nothing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ControllerSummary {
+    /// The serial port it is on, which is how it is addressed.
+    pub id: String,
+    /// The model name off the box.
+    pub name: String,
+    /// How many buttons it has.
+    pub buttons: u16,
+    /// How many wheels, knobs and dials.
+    pub wheels: u16,
+    /// Whether it can produce haptic feedback.
+    pub haptics: bool,
+    /// Serial number where it gives one.
+    pub serial_number: Option<String>,
+}
+
+/// One VIA-speaking macro pad or keyboard.
+///
+/// These boards are self-describing — there is no model table behind this,
+/// because VIA firmware answers for itself how many layers it has and what
+/// every key does.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MacroPadSummary {
+    /// Serial number where the board gives one, else its USB identity.
+    pub id: String,
+    /// What the operating system calls it.
+    pub name: String,
+    /// USB vendor identifier.
+    pub vendor_id: u16,
+    /// USB product identifier.
+    pub product_id: u16,
+    /// Which VIA protocol revision it speaks.
+    pub protocol: u16,
+    /// How many keymap layers it carries.
+    pub layers: u8,
+    /// Whether it answered its handshake.
+    pub reachable: bool,
+    /// Why it did not, when it did not.
+    pub unreachable_reason: Option<String>,
+}
+
+/// Why a macro-pad request could not be answered.
+///
+/// **Append-only.**
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MacroPadFailure {
+    /// No board with that identity — unplugged since the list was made.
+    NotFound,
+    /// It is there and would not answer, with what the transport said.
+    Unreachable(String),
+    /// The write was refused, with the reason to show.
+    Refused(String),
+}
+
+impl std::fmt::Display for MacroPadFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => f.write_str(
+                "that keyboard is no longer attached. Searching again will find it if it came \
+                 back.",
+            ),
+            Self::Unreachable(why) | Self::Refused(why) => f.write_str(why),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -271,5 +535,99 @@ mod tests {
     fn a_light_that_went_away_blames_the_lease_rather_than_the_light() {
         let said = NetworkLightFailure::NotFound.to_string();
         assert!(said.contains("DHCP"), "{said}");
+    }
+
+    #[test]
+    fn a_stream_deck_reset_is_a_change_even_though_it_carries_no_value() {
+        // `reset` is the one field that means something by being true rather
+        // than by holding a number, so an emptiness check written only against
+        // the Options would call a reset request empty and refuse it.
+        assert!(StreamDeckChange::default().is_empty());
+        assert!(
+            !StreamDeckChange {
+                reset: true,
+                ..StreamDeckChange::default()
+            }
+            .is_empty()
+        );
+        assert!(
+            !StreamDeckChange {
+                brightness_percent: Some(0),
+                ..StreamDeckChange::default()
+            }
+            .is_empty(),
+            "switching the screens off is a change like any other"
+        );
+    }
+
+    #[test]
+    fn acknowledging_phantom_power_is_not_by_itself_a_change() {
+        // The flag answers a question about a write; it is not a write. A
+        // change carrying nothing but the acknowledgement must still be
+        // refused as empty, or a stray confirmation would look like work.
+        assert!(
+            AudioInputChange {
+                phantom_acknowledged: true,
+                ..AudioInputChange::default()
+            }
+            .is_empty()
+        );
+        assert!(
+            !AudioInputChange {
+                phantom: Some(false),
+                ..AudioInputChange::default()
+            }
+            .is_empty(),
+            "switching phantom power off is a change like any other"
+        );
+    }
+
+    #[test]
+    fn an_unmuted_input_with_no_gain_control_is_not_the_same_as_gain_zero() {
+        // `None` says this model has no such control; zero says it has one and
+        // it is turned all the way down. A panel that drew them the same would
+        // show a dead slider on an input that never had one.
+        let settings = AudioInputSettings {
+            input: 2,
+            gain: None,
+            muted: Some(false),
+            phantom: None,
+        };
+        assert!(settings.gain.is_none());
+        assert_eq!(settings.muted, Some(false));
+    }
+
+    #[test]
+    fn the_phantom_warning_is_what_the_refusal_says() {
+        // The sentence has to survive the wire intact: it is the whole reason
+        // the refusal exists, and a caller that had to invent its own wording
+        // would drift from what the command line reads out.
+        let said = AudioFailure::NeedsAcknowledgement(
+            "This switches 48 volt phantom power on for input pair 1.".to_owned(),
+        )
+        .to_string();
+        assert!(said.contains("48 volt"), "{said}");
+    }
+
+    #[test]
+    fn a_board_that_did_not_answer_its_handshake_is_still_listed() {
+        // Same rule as the light and the deck: a board on the usage page that
+        // then would not speak VIA is a thing a person can act on, and its
+        // silent absence from the list is not.
+        let quiet = MacroPadSummary {
+            id: "5343:0080".to_owned(),
+            name: "SmartCloud".to_owned(),
+            vendor_id: 0x5343,
+            product_id: 0x0080,
+            protocol: 0,
+            layers: 0,
+            reachable: false,
+            unreachable_reason: Some("did not answer as a VIA device".to_owned()),
+        };
+        assert!(!quiet.reachable);
+        assert_eq!(
+            quiet.protocol, 0,
+            "nothing was learned, so nothing is shown"
+        );
     }
 }

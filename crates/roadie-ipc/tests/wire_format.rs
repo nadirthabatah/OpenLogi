@@ -31,8 +31,10 @@ use std::fmt::Write;
 
 use bincode::Options;
 use roadie_ipc::desk::{
-    DisplayControl, DisplayFailure, DisplayReading, DisplaySummary, NetworkLightChange,
-    NetworkLightFailure, NetworkLightSummary,
+    AudioFailure, AudioInputChange, AudioInputSettings, AudioInterfaceSummary, ControllerSummary,
+    DisplayControl, DisplayFailure, DisplayReading, DisplaySummary, MacroPadFailure,
+    MacroPadSummary, NetworkLightChange, NetworkLightFailure, NetworkLightSummary,
+    StreamDeckChange, StreamDeckFailure, StreamDeckSummary,
 };
 
 use roadie_core::app::ForegroundApp;
@@ -106,7 +108,7 @@ fn representative_smartshift_status() -> SmartShiftStatus {
 /// that makes that visible in the same diff.
 #[test]
 fn protocol_version_is_pinned() {
-    assert_eq!(PROTOCOL_VERSION, 31);
+    assert_eq!(PROTOCOL_VERSION, 32);
 }
 
 #[test]
@@ -682,4 +684,153 @@ fn network_light_failure_variants_are_positional() {
     assert_wire(&NetworkLightFailure::NotFound, "00");
     assert_wire(&NetworkLightFailure::Unreachable("no".into()), "01026e6f");
     assert_wire(&NetworkLightFailure::NothingToDo, "02");
+}
+
+/// The rest of the desk, added in v32.
+///
+/// Same argument as the monitor and light goldens above: every one of these
+/// enums encodes a declaration index, and every one of these structs encodes
+/// its fields positionally with no names to disambiguate them.
+#[test]
+fn stream_deck_wire_types() {
+    assert_wire(
+        &StreamDeckSummary {
+            id: "CL11L2A08430".into(),
+            name: "Stream Deck XL".into(),
+            model: "Stream Deck XL".into(),
+            keys: 32,
+            dials: 0,
+            reachable: true,
+            unreachable_reason: None,
+        },
+        "0c434c31314c324130383433300e53747265616d204465636b20584c0e53747265616d204465636b20584c20000100",
+    );
+    assert_wire(&StreamDeckChange::default(), "0000");
+    assert_wire(
+        &StreamDeckChange {
+            brightness_percent: Some(30),
+            reset: true,
+        },
+        "011e01",
+    );
+    assert_wire(&StreamDeckFailure::NotFound, "00");
+    assert_wire(&StreamDeckFailure::Unreachable("no".into()), "01026e6f");
+    assert_wire(&StreamDeckFailure::Refused("no".into()), "02026e6f");
+    assert_wire(&StreamDeckFailure::NothingToDo, "03");
+}
+
+#[test]
+fn audio_interface_wire_types() {
+    assert_wire(
+        &AudioInputSettings {
+            input: 1,
+            gain: Some(70),
+            muted: Some(false),
+            phantom: None,
+        },
+        "010146010000",
+    );
+    assert_wire(
+        &AudioInterfaceSummary {
+            id: "V2VD42B2703F98".into(),
+            name: "Vocaster Two".into(),
+            firmware: 1749,
+            mass_storage: Some(true),
+            inputs: vec![AudioInputSettings {
+                input: 1,
+                gain: Some(70),
+                muted: Some(false),
+                phantom: Some(false),
+            }],
+            reachable: true,
+            unreachable_reason: None,
+        },
+        "0e56325644343242323730334639380c566f6361737465722054776ffbd506010101010146010001000100",
+    );
+    assert_wire(&AudioInputChange::default(), "00000000");
+    assert_wire(
+        &AudioInputChange {
+            gain: Some(70),
+            muted: Some(true),
+            phantom: Some(true),
+            phantom_acknowledged: true,
+        },
+        "01460101010101",
+    );
+    assert_wire(&AudioFailure::NotFound, "00");
+    assert_wire(&AudioFailure::Unreachable("no".into()), "01026e6f");
+    assert_wire(&AudioFailure::NothingToDo, "02");
+    assert_wire(&AudioFailure::NeedsAcknowledgement("no".into()), "03026e6f");
+    assert_wire(&AudioFailure::Refused("no".into()), "04026e6f");
+}
+
+#[test]
+fn controller_and_macro_pad_wire_types() {
+    assert_wire(
+        &ControllerSummary {
+            id: "/dev/cu.usbmodem000000011".into(),
+            name: "TourBox Elite".into(),
+            buttons: 14,
+            wheels: 3,
+            haptics: true,
+            serial_number: Some("00000001".into()),
+        },
+        "192f6465762f63752e7573626d6f64656d3030303030303031310d546f7572426f7820456c6974650e030101083030303030303031",
+    );
+    assert_wire(
+        &MacroPadSummary {
+            id: "5343:0080".into(),
+            name: "SmartCloud".into(),
+            vendor_id: 0x5343,
+            product_id: 0x0080,
+            protocol: 12,
+            layers: 6,
+            reachable: true,
+            unreachable_reason: None,
+        },
+        "09353334333a303038300a536d617274436c6f7564fb4353800c060100",
+    );
+    assert_wire(&MacroPadFailure::NotFound, "00");
+    assert_wire(&MacroPadFailure::Unreachable("no".into()), "01026e6f");
+    assert_wire(&MacroPadFailure::Refused("no".into()), "02026e6f");
+}
+
+/// The desk methods' own positions, which nothing pinned before v32.
+///
+/// [`request_variant_order`] stopped at `declare_client`, so the five methods
+/// v30 and v31 appended were carried only by the trait's declaration order —
+/// exactly the thing this file exists to nail down. Pinning them here closes
+/// that gap in the same change that adds eight more behind them.
+#[test]
+fn desk_request_variants_are_positional() {
+    assert_wire(&AgentRequest::ListDisplays {}, "1a");
+    assert_wire(
+        &AgentRequest::SetNetworkLight {
+            id: "a".into(),
+            change: NetworkLightChange::default(),
+        },
+        "1e0161000000",
+    );
+    assert_wire(&AgentRequest::ListStreamDecks {}, "1f");
+    assert_wire(
+        &AgentRequest::SetStreamDeck {
+            id: "a".into(),
+            change: StreamDeckChange {
+                brightness_percent: Some(30),
+                reset: false,
+            },
+        },
+        "200161011e00",
+    );
+    assert_wire(&AgentRequest::ListAudioInterfaces {}, "21");
+    assert_wire(
+        &AgentRequest::SetAudioInput {
+            id: "a".into(),
+            input: 1,
+            change: AudioInputChange::default(),
+        },
+        "2201610100000000",
+    );
+    assert_wire(&AgentRequest::ListControllers {}, "23");
+    assert_wire(&AgentRequest::ListMacroPads {}, "24");
 }

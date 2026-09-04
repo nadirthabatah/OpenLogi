@@ -22,8 +22,10 @@ use roadie_core::hid::{
 };
 
 use crate::desk::{
-    DisplayControl, DisplayFailure, DisplayReading, DisplaySettings, DisplaySummary,
-    NetworkLightChange, NetworkLightFailure, NetworkLightSummary,
+    AudioFailure, AudioInputChange, AudioInterfaceSummary, ControllerSummary, DisplayControl,
+    DisplayFailure, DisplayReading, DisplaySettings, DisplaySummary, MacroPadSummary,
+    NetworkLightChange, NetworkLightFailure, NetworkLightSummary, StreamDeckChange,
+    StreamDeckFailure, StreamDeckSummary,
 };
 use serde::{Deserialize, Serialize};
 pub use succession::Identity;
@@ -72,7 +74,12 @@ pub use succession::Identity;
 /// v31: `NetworkLightSummary` carries whether the light answered, so one that
 ///      announced itself and then went quiet is listed as unreachable rather
 ///      than dropped — matching both the monitor summary and the command line.
-pub const PROTOCOL_VERSION: u32 = 31;
+/// v32: the rest of the desk — Stream Decks, Focusrite audio interfaces,
+///      TourBox controllers and VIA keyboards — appended as six on-demand
+///      methods. Same argument as v30: every one of them costs a USB or serial
+///      round trip, so they are asked for when a panel opens rather than
+///      folded into [`Agent::observe`].
+pub const PROTOCOL_VERSION: u32 = 32;
 
 /// Environment variable through which the agent hands a supervised helper the
 /// run token it will serve, so the helper knows which agent it belongs to
@@ -606,4 +613,49 @@ pub trait Agent {
         id: String,
         change: NetworkLightChange,
     ) -> Result<NetworkLightSummary, NetworkLightFailure>;
+    /// Every Stream Deck attached, and whether each one could be opened.
+    ///
+    /// Opening is the interesting half: these are almost always enumerable and
+    /// frequently held exclusively by another program, so the list is worth
+    /// nothing without the answer to "and did it let us in".
+    async fn list_stream_decks() -> Vec<StreamDeckSummary>;
+    /// Change one Stream Deck, answering with what it then looks like.
+    ///
+    /// The answer cannot carry a brightness read-back — the protocol has no
+    /// read for it. See [`StreamDeckChange`].
+    async fn set_stream_deck(
+        id: String,
+        change: StreamDeckChange,
+    ) -> Result<StreamDeckSummary, StreamDeckFailure>;
+    /// Every Focusrite audio interface attached, with a full snapshot of each.
+    ///
+    /// The snapshot comes with the list because the device answers it in one
+    /// pass, so splitting it into a second call would buy nothing and could
+    /// return a list that disagrees with itself.
+    async fn list_audio_interfaces() -> Vec<AudioInterfaceSummary>;
+    /// Change one input on one interface, answering with the whole interface
+    /// as it then reads.
+    ///
+    /// The whole interface rather than the one input, because these settings
+    /// are not independent: phantom power is switched per *pair*, so changing
+    /// it on one input changes what its neighbour reports.
+    async fn set_audio_input(
+        id: String,
+        input: u16,
+        change: AudioInputChange,
+    ) -> Result<AudioInterfaceSummary, AudioFailure>;
+    /// Every TourBox controller on a serial port.
+    ///
+    /// Identity only — see [`ControllerSummary`] for why there is nothing to
+    /// read or write here.
+    async fn list_controllers() -> Vec<ControllerSummary>;
+    /// Every VIA-speaking keyboard or macro pad attached, with what its
+    /// handshake said about it.
+    ///
+    /// Reading or rebinding a keymap is deliberately not here yet. VIA reports
+    /// no matrix size, so a keymap read is a blind scan costing one USB round
+    /// trip per position — a different shape of call from these, and one worth
+    /// designing against a board rather than in advance of one. The wire is
+    /// append-only, so it costs nothing to add later.
+    async fn list_macro_pads() -> Vec<MacroPadSummary>;
 }
