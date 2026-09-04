@@ -227,7 +227,7 @@ fn device_menu_items(cx: &App) -> Vec<MenuItem> {
         // a monitor and a Key Light are not paired peripherals: they are found
         // over a video cable and over the network, and neither appears in the
         // inventory that list is built from.
-        MenuItem::action(tr!("Monitors and Lights…"), OpenDesk),
+        MenuItem::action(tr!("The Desk…"), OpenDesk),
         MenuItem::separator(),
     ];
 

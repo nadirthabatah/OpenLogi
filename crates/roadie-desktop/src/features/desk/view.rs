@@ -1,10 +1,12 @@
-//! The monitors-and-lights panel.
+//! The desk panel: everything on the desk that is not a HID++ peripheral.
 //!
 //! A thin drawing of [`DeskModel`]. Everything that decides what appears here
-//! lives in that module, where it can be tested; this file is layout, the
-//! slider entities, and the calls to the agent.
+//! lives in that module, where it can be tested; these files are layout, the
+//! slider entities, and the calls to the agent. One child module per family,
+//! because a monitor, a light, a Stream Deck, a preamp and a controller have
+//! almost nothing in common but this window.
 //!
-//! Two controls the command line offers are deliberately missing.
+//! Some controls the command line offers are deliberately missing.
 //!
 //! **Power** and **saving to the monitor's own memory** are absent for the
 //! reason the wire types give: a monitor powered off over DDC may stop
@@ -17,39 +19,41 @@
 //! and the way back is the same panel you can no longer see. So the current
 //! input is shown and not offered — reading it is the useful half, and it is
 //! the half that cannot go wrong.
+//!
+//! **Mass storage mode** on an audio interface is shown and not offered: it
+//! only takes effect after the interface is power-cycled, and a switch whose
+//! result appears at the next unplug is a switch that looks broken.
+
+mod audio;
+mod decks;
+mod displays;
+mod lights;
+mod peripherals;
 
 use std::collections::BTreeMap;
 
 use gpui::{
-    App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
-    Subscription, Task, Window, div, prelude::FluentBuilder as _,
+    App, Context, Entity, IntoElement, ParentElement, Render, Styled, Subscription, Task, Window,
+    div, prelude::FluentBuilder as _,
 };
 use gpui_component::{
-    Disableable as _, Selectable as _, h_flex,
-    slider::{Slider, SliderEvent, SliderState},
-    v_flex,
+    Disableable as _, h_flex, scroll::ScrollableElement as _, slider::SliderState, v_flex,
 };
 use roadie_ipc::desk::{
-    DisplayControl, DisplayReading, DisplaySummary, NetworkLightChange, NetworkLightSummary,
+    AudioInterfaceSummary, ControllerSummary, DisplayControl, DisplaySummary, MacroPadSummary,
+    NetworkLightSummary, StreamDeckSummary,
 };
 
-use super::model::{DeskModel, describe_value};
-use crate::services::ipc::Command;
+use tokio::sync::mpsc;
+
+use super::model::DeskModel;
+use crate::services::ipc::{Command, DeskCommand};
 use crate::state::AppState;
-use crate::ui::components::{Toggle, control_button};
+use crate::ui::components::control_button;
 use crate::ui::theme::{self, Palette, Typography as _};
 use crate::windows::AuxWindow;
 
-/// A light's two continuous controls, for keying its sliders apart.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum LightKnob {
-    Brightness,
-    Kelvin,
-}
-
-/// What a Key Light accepts, which is the light's own range rather than ours.
-const LIGHT_BRIGHTNESS: (f32, f32) = (3.0, 100.0);
-const LIGHT_KELVIN: (f32, f32) = (2900.0, 7000.0);
+pub(super) use lights::LightKnob;
 
 /// A slider, and the value it is currently showing.
 ///
@@ -77,10 +81,10 @@ pub struct DeskPanel {
     /// Held for their lifetime, not detached: a slider release that outlives
     /// this panel has nothing left to update.
     subscriptions: Vec<Subscription>,
-    /// The two halves of the current scan. Replaced wholesale on a refresh,
-    /// which cancels whatever the previous one was still waiting for — the
-    /// answers would be dropped by the generation fence anyway, so waiting for
-    /// them is only a slower way to ignore them.
+    /// The scans making up the current refresh. Replaced wholesale on a
+    /// refresh, which cancels whatever the previous one was still waiting for —
+    /// the answers would be dropped by the generation fence anyway, so waiting
+    /// for them is only a slower way to ignore them.
     scans: Vec<Task<()>>,
     /// One in-flight write per thing that can be written.
     ///
@@ -91,6 +95,18 @@ pub struct DeskPanel {
     /// older reply is not left to arrive afterwards and put the older number
     /// back.
     writes: BTreeMap<WriteKey, Task<()>>,
+    /// Phantom-power warnings waiting to be accepted, by interface and input.
+    ///
+    /// The sentence comes from the agent rather than from here, so the words
+    /// somebody reads before switching 48 volts on are the same words the
+    /// command line reads out — written once, beside the code that knows what
+    /// the risk is.
+    pending_phantom: BTreeMap<(String, u16), String>,
+    /// What the last write to a device said, when it refused.
+    ///
+    /// Kept per device so a refusal stays next to the thing that refused,
+    /// rather than in one banner that cannot say which row it belongs to.
+    failures: BTreeMap<String, String>,
 }
 
 /// What a write is about, so a newer one can replace it.
@@ -102,6 +118,11 @@ enum WriteKey {
     Light(String, LightKnob),
     /// A light's power, which is not a knob.
     LightPower(String),
+    /// A Stream Deck, which has one write at a time and no separate controls:
+    /// its brightness and its reset both go through the same call.
+    Deck(String),
+    /// One input on one audio interface.
+    AudioInput(String, u16),
 }
 
 impl DeskPanel {
@@ -114,6 +135,8 @@ impl DeskPanel {
             subscriptions: Vec::new(),
             scans: Vec::new(),
             writes: BTreeMap::new(),
+            pending_phantom: BTreeMap::new(),
+            failures: BTreeMap::new(),
         };
         panel.refresh(cx);
         panel
@@ -121,9 +144,10 @@ impl DeskPanel {
 
     /// Ask the agent what is on the desk.
     ///
-    /// Both halves are asked for at once and answer independently, so a house
-    /// with monitors and no lights does not wait the full multicast window
-    /// before showing its monitors.
+    /// Every family is asked for at once and answers independently, so a desk
+    /// with a Stream Deck and no lights does not wait the full multicast
+    /// window before showing the deck. The monitor scan is the one that runs
+    /// on after its list, because each monitor's readings are a second call.
     fn refresh(&mut self, cx: &mut Context<Self>) {
         let Some(sender) = AppState::try_read(cx).map(AppState::ipc_sender) else {
             return;
@@ -133,13 +157,94 @@ impl DeskPanel {
         self.display_sliders.clear();
         self.light_sliders.clear();
         self.subscriptions.clear();
+        // A warning nobody answered belongs to the desk as it was; after a
+        // rescan the input it named may not be there any more.
+        self.pending_phantom.clear();
+        self.failures.clear();
 
         // Replacing the vector cancels the previous scan's tasks.
-        self.scans = Vec::with_capacity(2);
-        let displays = sender.clone();
-        self.scans.push(cx.spawn(async move |panel, cx| {
+        self.scans = vec![
+            Self::scan_displays(sender.clone(), generation, cx),
+            Self::scan(
+                sender.clone(),
+                generation,
+                DeskCommand::ListNetworkLights,
+                DeskModel::accept_lights,
+                cx,
+            ),
+            Self::scan(
+                sender.clone(),
+                generation,
+                DeskCommand::ListStreamDecks,
+                DeskModel::accept_decks,
+                cx,
+            ),
+            Self::scan(
+                sender.clone(),
+                generation,
+                DeskCommand::ListAudioInterfaces,
+                DeskModel::accept_interfaces,
+                cx,
+            ),
+            Self::scan(
+                sender.clone(),
+                generation,
+                DeskCommand::ListControllers,
+                DeskModel::accept_controllers,
+                cx,
+            ),
+            Self::scan(
+                sender,
+                generation,
+                DeskCommand::ListMacroPads,
+                DeskModel::accept_pads,
+                cx,
+            ),
+        ];
+    }
+
+    /// Ask for one list and hand it to the model.
+    ///
+    /// Every family but the monitors is exactly this: one call, one answer,
+    /// one fenced hand-off. Writing it once means a family cannot quietly skip
+    /// the generation fence, which is the bug this shape exists to prevent.
+    fn scan<T: Send + 'static>(
+        sender: mpsc::UnboundedSender<Command>,
+        generation: u64,
+        make: impl FnOnce(tokio::sync::oneshot::Sender<T>) -> DeskCommand + Send + 'static,
+        accept: impl FnOnce(&mut DeskModel, u64, T) -> bool + Send + 'static,
+        cx: &mut Context<Self>,
+    ) -> Task<()> {
+        cx.spawn(async move |panel, cx| {
             let (reply, answer) = tokio::sync::oneshot::channel();
-            if displays.send(Command::ListDisplays(reply)).is_err() {
+            if sender.send(Command::Desk(make(reply))).is_err() {
+                return;
+            }
+            let Ok(found) = answer.await else { return };
+            let _ = panel.update(cx, |panel, cx| {
+                accept(&mut panel.model, generation, found);
+                cx.notify();
+            });
+        })
+    }
+
+    /// The monitors, which are the one family that needs a second call.
+    ///
+    /// Each monitor's readings are their own DDC exchange, so the list arrives
+    /// first and the values fill in behind it — and this is also the scan that
+    /// ends the spinner, because it is the one that is still working after the
+    /// others have answered.
+    fn scan_displays(
+        sender: mpsc::UnboundedSender<Command>,
+        generation: u64,
+        cx: &mut Context<Self>,
+    ) -> Task<()> {
+        cx.spawn(async move |panel, cx| {
+            let (reply, answer) = tokio::sync::oneshot::channel();
+            if sender
+                .send(Command::Desk(DeskCommand::ListDisplays(reply)))
+                .is_err()
+            {
                 return;
             }
             let Ok(found) = answer.await else { return };
@@ -162,7 +267,10 @@ impl DeskPanel {
             // the rest would spend a DDC timeout each to say so twice.
             for id in ids {
                 let (reply, answer) = tokio::sync::oneshot::channel();
-                if displays.send(Command::ReadDisplay(id, reply)).is_err() {
+                if sender
+                    .send(Command::Desk(DeskCommand::ReadDisplay(id, reply)))
+                    .is_err()
+                {
                     return;
                 }
                 if let Ok(Ok(settings)) = answer.await {
@@ -176,399 +284,141 @@ impl DeskPanel {
                 panel.model.finish_scan(generation);
                 cx.notify();
             });
-        }));
-
-        self.scans.push(cx.spawn(async move |panel, cx| {
-            let (reply, answer) = tokio::sync::oneshot::channel();
-            if sender.send(Command::ListNetworkLights(reply)).is_err() {
-                return;
-            }
-            let Ok(found) = answer.await else { return };
-            let _ = panel.update(cx, |panel, cx| {
-                panel.model.accept_lights(generation, found);
-                cx.notify();
-            });
-        }));
+        })
     }
 
-    /// Write one monitor control and take back what the monitor then reads.
-    fn set_display(
-        &mut self,
-        id: String,
-        control: DisplayControl,
-        value: u16,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(sender) = AppState::try_read(cx).map(AppState::ipc_sender) else {
-            return;
-        };
-        let key = WriteKey::Display(id.clone(), control);
-        let task = cx.spawn(async move |panel, cx| {
-            let (reply, answer) = tokio::sync::oneshot::channel();
-            if sender
-                .send(Command::SetDisplay(id.clone(), control, value, reply))
-                .is_err()
-            {
-                return;
-            }
-            if let Ok(Ok(reading)) = answer.await {
-                let _ = panel.update(cx, |panel, cx| {
-                    panel.model.apply_reading(&id, reading);
-                    cx.notify();
-                });
-            }
-        });
-        // Inserting replaces, and dropping the old task cancels it.
-        self.writes.insert(key, task);
+    /// The card every family draws itself inside.
+    fn card(pal: Palette) -> gpui::Div {
+        v_flex().gap_2().p_3().rounded_md().bg(pal.panel)
     }
 
-    /// Write one light and take back what it then reads.
-    fn set_light(
-        &mut self,
-        id: String,
-        change: NetworkLightChange,
-        key: WriteKey,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(sender) = AppState::try_read(cx).map(AppState::ipc_sender) else {
-            return;
-        };
-        let task = cx.spawn(async move |panel, cx| {
-            let (reply, answer) = tokio::sync::oneshot::channel();
-            if sender
-                .send(Command::SetNetworkLight(id, change, reply))
-                .is_err()
-            {
-                return;
-            }
-            if let Ok(Ok(updated)) = answer.await {
-                let _ = panel.update(cx, |panel, cx| {
-                    panel.model.apply_light(updated);
-                    cx.notify();
-                });
-            }
-        });
-        self.writes.insert(key, task);
+    /// A device's name, with whatever it last refused underneath.
+    fn card_heading(&self, id: &str, name: &str, _pal: Palette) -> impl IntoElement {
+        v_flex()
+            .gap_1()
+            .child(div().text_body().child(name.to_owned()))
+            .when_some(self.failures.get(id).cloned(), |heading, why| {
+                heading.child(div().text_caption().text_color(warning_colour()).child(why))
+            })
     }
 
-    /// The slider for one monitor control, made on first sight of it and moved
-    /// to match the device whenever the device disagrees with it.
-    fn display_slider(
-        &mut self,
-        id: &str,
-        reading: DisplayReading,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Entity<SliderState> {
-        let key = (id.to_owned(), reading.control);
-        if let Some(existing) = self.display_sliders.get_mut(&key) {
-            if existing.shown != reading.current {
-                // The monitor took something other than what it was handed —
-                // clamped to its own maximum, or rounded. The thumb follows the
-                // monitor, because the monitor is what is true.
-                existing.shown = reading.current;
-                let state = existing.state.clone();
-                state.update(cx, |slider, cx| {
-                    slider.set_value(f32::from(reading.current), window, cx);
-                });
-                return state;
-            }
-            return existing.state.clone();
-        }
-        let maximum = f32::from(reading.maximum.max(1));
-        let slider = cx.new(|_| {
-            SliderState::new()
-                .min(0.0)
-                .max(maximum)
-                .step(1.0)
-                .default_value(f32::from(reading.current))
-        });
-        let handle = id.to_owned();
-        let control = reading.control;
-        let subscription = cx.subscribe(&slider, move |panel, _slider, event: &SliderEvent, cx| {
-            // Release, not change: a monitor answers a DDC write in tens of
-            // milliseconds, and writing on every pixel of a drag would queue
-            // hundreds of exchanges behind a person's thumb.
-            if let SliderEvent::Release(value) = event {
-                let asked = value.start().round().clamp(0.0, f32::from(u16::MAX));
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    clippy::cast_sign_loss,
-                    reason = "clamped to u16's range on the line above"
-                )]
-                let asked = asked as u16;
-                panel.set_display(handle.clone(), control, asked, cx);
-            }
-        });
-        self.subscriptions.push(subscription);
-        self.display_sliders.insert(
-            key,
-            Slot {
-                state: slider.clone(),
-                shown: reading.current,
-            },
-        );
-        slider
+    /// One caption row: what the control is, and what it currently reads.
+    fn reading_row(label: String, value: String, pal: Palette) -> impl IntoElement {
+        h_flex()
+            .justify_between()
+            .child(div().text_caption().child(label))
+            .child(div().text_caption().text_color(pal.text_muted).child(value))
     }
+}
 
-    /// The slider for one light control, kept in step with the light the same
-    /// way.
-    fn light_slider(
+impl DeskPanel {
+    /// Every family that found something, each under its own heading.
+    fn sections(
         &mut self,
-        light: &NetworkLightSummary,
-        knob: LightKnob,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Entity<SliderState> {
-        let key = (light.id.clone(), knob);
-        let value = match knob {
-            LightKnob::Brightness => light.brightness,
-            LightKnob::Kelvin => light.kelvin,
-        };
-        if let Some(existing) = self.light_sliders.get_mut(&key) {
-            if existing.shown != value {
-                existing.shown = value;
-                let state = existing.state.clone();
-                state.update(cx, |slider, cx| {
-                    slider.set_value(f32::from(value), window, cx);
-                });
-                return state;
-            }
-            return existing.state.clone();
-        }
-        let (low, high) = match knob {
-            LightKnob::Brightness => LIGHT_BRIGHTNESS,
-            LightKnob::Kelvin => LIGHT_KELVIN,
-        };
-        let current = f32::from(value);
-        let step = match knob {
-            LightKnob::Brightness => 1.0,
-            // The light counts in mireds, so neighbouring Kelvin values map to
-            // the same one. Stepping in fifties keeps every stop distinct.
-            LightKnob::Kelvin => 50.0,
-        };
-        let slider = cx.new(|_| {
-            SliderState::new()
-                .min(low)
-                .max(high)
-                .step(step)
-                .default_value(current.clamp(low, high))
-        });
-        let id = light.id.clone();
-        let subscription = cx.subscribe(&slider, move |panel, _slider, event: &SliderEvent, cx| {
-            if let SliderEvent::Release(value) = event {
-                let asked = value.start().round().clamp(0.0, f32::from(u16::MAX));
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    clippy::cast_sign_loss,
-                    reason = "clamped to u16's range on the line above"
-                )]
-                let asked = asked as u16;
-                let change = match knob {
-                    LightKnob::Brightness => NetworkLightChange {
-                        brightness_percent: Some(asked),
-                        ..NetworkLightChange::default()
-                    },
-                    LightKnob::Kelvin => NetworkLightChange {
-                        kelvin: Some(asked),
-                        ..NetworkLightChange::default()
-                    },
-                };
-                panel.set_light(id.clone(), change, WriteKey::Light(id.clone(), knob), cx);
-            }
-        });
-        self.subscriptions.push(subscription);
-        self.light_sliders.insert(
-            key,
-            Slot {
-                state: slider.clone(),
-                shown: value,
-            },
-        );
-        slider
-    }
-
-    /// One monitor: its name, then its controls or the reason it has none.
-    fn display_card(
-        &mut self,
-        display: &DisplaySummary,
         pal: Palette,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let readings: Vec<DisplayReading> = self.model.readings(&display.id).to_vec();
-        let reason = display.unreachable_reason.clone();
-        let rows: Vec<_> = readings
-            .iter()
-            .map(|reading| {
-                let label = match reading.control {
-                    DisplayControl::Brightness => tr!("Brightness"),
-                    DisplayControl::Contrast => tr!("Contrast"),
-                    DisplayControl::Volume => tr!("Volume"),
-                    DisplayControl::Input => tr!("Input"),
-                };
-                let value = describe_value(*reading);
-                // Input is read, never written — see this module's header.
-                let slider = (reading.control != DisplayControl::Input)
-                    .then(|| self.display_slider(&display.id, *reading, window, cx));
-                v_flex()
-                    .gap_1()
-                    .child(
-                        h_flex()
-                            .justify_between()
-                            .child(div().text_caption().child(label))
-                            .child(div().text_caption().text_color(pal.text_muted).child(value)),
-                    )
-                    .when_some(slider, |row, state| {
-                        row.child(Slider::new(&state).horizontal())
+    ) -> Vec<gpui::AnyElement> {
+        let displays: Vec<DisplaySummary> = self.model.displays().to_vec();
+        let lights: Vec<NetworkLightSummary> = self.model.lights().to_vec();
+        let decks: Vec<StreamDeckSummary> = self.model.decks().to_vec();
+        let interfaces: Vec<AudioInterfaceSummary> = self.model.interfaces().to_vec();
+        let controllers: Vec<ControllerSummary> = self.model.controllers().to_vec();
+        let pads: Vec<MacroPadSummary> = self.model.pads().to_vec();
+
+        // Built as (heading, cards) so a family with nothing found contributes
+        // nothing at all — no heading standing over an empty space.
+        let sections: Vec<(gpui::SharedString, Vec<gpui::AnyElement>)> = vec![
+            (
+                tr!("Monitors"),
+                displays
+                    .iter()
+                    .map(|display| {
+                        self.display_card(display, pal, window, cx)
+                            .into_any_element()
                     })
+                    .collect(),
+            ),
+            (
+                tr!("Lights"),
+                lights
+                    .iter()
+                    .enumerate()
+                    .map(|(index, light)| {
+                        // Indexed rather than keyed by address only because
+                        // `ElementId` takes an integer here; the address still
+                        // decides which light a write reaches.
+                        self.light_card(light, index as u64, pal, window, cx)
+                            .into_any_element()
+                    })
+                    .collect(),
+            ),
+            (
+                tr!("Stream Decks"),
+                decks
+                    .iter()
+                    .enumerate()
+                    .map(|(index, deck)| {
+                        self.deck_card(deck, index as u64, pal, cx)
+                            .into_any_element()
+                    })
+                    .collect(),
+            ),
+            (
+                tr!("Audio interfaces"),
+                interfaces
+                    .iter()
+                    .enumerate()
+                    .map(|(index, interface)| {
+                        self.audio_card(interface, index as u64, pal, cx)
+                            .into_any_element()
+                    })
+                    .collect(),
+            ),
+            (
+                tr!("Controllers"),
+                controllers
+                    .iter()
+                    .map(|controller| Self::controller_card(controller, pal).into_any_element())
+                    .collect(),
+            ),
+            (
+                tr!("Keyboards and macro pads"),
+                pads.iter()
+                    .map(|pad| Self::pad_card(pad, pal).into_any_element())
+                    .collect(),
+            ),
+        ];
+        sections
+            .into_iter()
+            .filter(|(_, cards)| !cards.is_empty())
+            .flat_map(|(heading, cards)| {
+                std::iter::once(div().text_body().child(heading).into_any_element()).chain(cards)
             })
-            .collect();
-
-        v_flex()
-            .gap_2()
-            .p_3()
-            .rounded_md()
-            .bg(pal.panel)
-            .child(div().text_body().child(display.name.clone()))
-            .when_some(reason, |card, why| {
-                card.child(div().text_caption().text_color(pal.text_muted).child(why))
-            })
-            .children(rows)
-    }
-
-    /// One light: on/off, brightness, colour temperature.
-    fn light_card(
-        &mut self,
-        light: &NetworkLightSummary,
-        light_index: u64,
-        pal: Palette,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        // A light that would not say what it is doing gets its name and the
-        // reason, and no controls at all: every number on it would be a zero
-        // standing in for "not known", and a slider sitting at zero reads as a
-        // light turned all the way down rather than one that is not answering.
-        if !light.reachable {
-            return v_flex()
-                .gap_2()
-                .p_3()
-                .rounded_md()
-                .bg(pal.panel)
-                .child(div().text_body().child(light.name.clone()))
-                .when_some(light.unreachable_reason.clone(), |card, why| {
-                    card.child(div().text_caption().text_color(pal.text_muted).child(why))
-                })
-                .into_any_element();
-        }
-        let brightness = self.light_slider(light, LightKnob::Brightness, window, cx);
-        let kelvin = self.light_slider(light, LightKnob::Kelvin, window, cx);
-        let id = light.id.clone();
-        let on = light.on;
-        v_flex()
-            .gap_2()
-            .p_3()
-            .rounded_md()
-            .bg(pal.panel)
-            .child(
-                h_flex()
-                    .justify_between()
-                    .child(div().text_body().child(light.name.clone()))
-                    .child(
-                        Toggle::new(gpui::ElementId::NamedInteger(
-                            "desk-light".into(),
-                            light_index,
-                        ))
-                        .label(if on { tr!("On") } else { tr!("Off") })
-                        .selected(on)
-                        .on_change({
-                            // `Toggle::on_change` hands back an `App`, not
-                            // this panel's context, so the panel is
-                            // reached weakly: if it has gone, the write
-                            // has nothing left to report to and is
-                            // dropped rather than resurrecting it.
-                            let panel = cx.entity().downgrade();
-                            move |_checked: &bool, _window: &mut Window, cx: &mut App| {
-                                let id = id.clone();
-                                let _ = panel.update(cx, |panel, cx| {
-                                    panel.set_light(
-                                        id.clone(),
-                                        NetworkLightChange {
-                                            power: Some(!on),
-                                            ..NetworkLightChange::default()
-                                        },
-                                        WriteKey::LightPower(id),
-                                        cx,
-                                    );
-                                });
-                            }
-                        }),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .justify_between()
-                    .child(div().text_caption().child(tr!("Brightness")))
-                    .child(
-                        div()
-                            .text_caption()
-                            .text_color(pal.text_muted)
-                            .child(format!("{}%", light.brightness)),
-                    ),
-            )
-            .child(Slider::new(&brightness).horizontal())
-            .child(
-                h_flex()
-                    .justify_between()
-                    .child(div().text_caption().child(tr!("Colour temperature")))
-                    .child(
-                        div()
-                            .text_caption()
-                            .text_color(pal.text_muted)
-                            .child(format!("{} K", light.kelvin)),
-                    ),
-            )
-            .child(Slider::new(&kelvin).horizontal())
-            .into_any_element()
+            .collect()
     }
 }
 
 impl Render for DeskPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let pal = theme::palette(cx);
-        let displays: Vec<DisplaySummary> = self.model.displays().to_vec();
-        let lights: Vec<NetworkLightSummary> = self.model.lights().to_vec();
         let scanning = self.model.is_scanning();
         let empty = self.model.is_empty();
+        let sections = self.sections(pal, window, cx);
 
-        let display_cards: Vec<_> = displays
-            .iter()
-            .map(|display| {
-                self.display_card(display, pal, window, cx)
-                    .into_any_element()
-            })
-            .collect();
-        let light_cards: Vec<_> = lights
-            .iter()
-            .enumerate()
-            .map(|(index, light)| {
-                // Indexed rather than keyed by address only because
-                // `ElementId` takes an integer here; the address still decides
-                // which light a write reaches.
-                self.light_card(light, index as u64, pal, window, cx)
-                    .into_any_element()
-            })
-            .collect();
-
+        // The heading and its Refresh stay put; everything below scrolls. Six
+        // families of hardware do not fit any window worth opening, and before
+        // this the cards below the fold simply could not be reached — the panel
+        // drew a TourBox nobody could scroll to.
         v_flex()
-            .gap_4()
-            .p_4()
+            .size_full()
             .child(
                 h_flex()
+                    .flex_none()
                     .justify_between()
                     .items_center()
-                    .child(div().text_body().child(tr!("Monitors")))
+                    .p_4()
+                    .child(div().text_body().child(tr!("The desk")))
                     .child(
                         control_button("desk-refresh")
                             .label(tr!("Refresh"))
@@ -579,27 +429,33 @@ impl Render for DeskPanel {
                             })),
                     ),
             )
-            .when(scanning, |column| {
-                column.child(
-                    div()
-                        .text_caption()
-                        .text_color(pal.text_muted)
-                        .child(tr!("Looking for monitors and lights…")),
-                )
-            })
-            .when(empty, |column| {
-                column.child(
-                    div()
-                        .text_caption()
-                        .text_color(pal.text_muted)
-                        .child(tr!("No monitors or lights were found.")),
-                )
-            })
-            .children(display_cards)
-            .when(!lights.is_empty(), |column| {
-                column.child(div().text_body().child(tr!("Lights")))
-            })
-            .children(light_cards)
+            .child(
+                v_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .w_full()
+                    .gap_4()
+                    .px_4()
+                    .pb_4()
+                    .overflow_y_scrollbar()
+                    .when(scanning, |column| {
+                        column.child(
+                            div()
+                                .text_caption()
+                                .text_color(pal.text_muted)
+                                .child(tr!("Looking for everything on the desk…")),
+                        )
+                    })
+                    .when(empty, |column| {
+                        column.child(
+                            div()
+                                .text_caption()
+                                .text_color(pal.text_muted)
+                                .child(tr!("Nothing on the desk was found.")),
+                        )
+                    })
+                    .children(sections),
+            )
     }
 }
 
@@ -609,10 +465,22 @@ impl AuxWindow for DeskPanel {
     }
 }
 
+/// The colour for something that was refused, or that is about to cost
+/// something.
+///
+/// The palette has no `danger` of its own — its fields are surfaces and text
+/// weights — so this borrows the red the status dots already use rather than
+/// introducing a second red that could drift from it. Colour is never the only
+/// carrier here: every warning it paints is a sentence that says the same
+/// thing, which is what a screen reader gets.
+fn warning_colour() -> gpui::Rgba {
+    gpui::rgb(theme::STATUS_DISABLED)
+}
+
 /// The window's native title — one definition for opening and for the
 /// live-language retitle, so the two cannot drift.
 pub(crate) fn window_title() -> gpui::SharedString {
-    tr!("Monitors and lights")
+    tr!("The desk")
 }
 
 /// Open the panel, or focus it if it is already up.
