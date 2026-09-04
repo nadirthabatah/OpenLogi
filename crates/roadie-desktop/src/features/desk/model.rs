@@ -10,7 +10,8 @@ use std::collections::BTreeMap;
 
 use roadie_ddc::InputSource;
 use roadie_ipc::desk::{
-    DisplayControl, DisplayReading, DisplaySettings, DisplaySummary, NetworkLightSummary,
+    AudioInterfaceSummary, ControllerSummary, DisplayControl, DisplayReading, DisplaySettings,
+    DisplaySummary, MacroPadSummary, NetworkLightSummary, StreamDeckSummary,
 };
 
 /// The panel's whole state.
@@ -22,6 +23,14 @@ pub struct DeskModel {
     readings: BTreeMap<String, Vec<DisplayReading>>,
     /// Lights on the network.
     lights: Vec<NetworkLightSummary>,
+    /// Stream Decks on USB.
+    decks: Vec<StreamDeckSummary>,
+    /// Audio interfaces, each carrying its own inputs.
+    interfaces: Vec<AudioInterfaceSummary>,
+    /// TourBox controllers on serial ports.
+    controllers: Vec<ControllerSummary>,
+    /// VIA keyboards and macro pads.
+    pads: Vec<MacroPadSummary>,
     /// Whether a scan is in flight.
     scanning: bool,
     /// Which scan. Answers stamped with an older one are dropped.
@@ -68,6 +77,75 @@ impl DeskModel {
         }
         self.lights = found;
         true
+    }
+
+    /// Take the Stream Decks from a scan, if it is still the current one.
+    pub fn accept_decks(&mut self, generation: u64, found: Vec<StreamDeckSummary>) -> bool {
+        if generation != self.generation {
+            return false;
+        }
+        self.decks = found;
+        true
+    }
+
+    /// Take the audio interfaces from a scan, if it is still the current one.
+    pub fn accept_interfaces(
+        &mut self,
+        generation: u64,
+        found: Vec<AudioInterfaceSummary>,
+    ) -> bool {
+        if generation != self.generation {
+            return false;
+        }
+        self.interfaces = found;
+        true
+    }
+
+    /// Take the controllers from a scan, if it is still the current one.
+    pub fn accept_controllers(&mut self, generation: u64, found: Vec<ControllerSummary>) -> bool {
+        if generation != self.generation {
+            return false;
+        }
+        self.controllers = found;
+        true
+    }
+
+    /// Take the macro pads from a scan, if it is still the current one.
+    pub fn accept_pads(&mut self, generation: u64, found: Vec<MacroPadSummary>) -> bool {
+        if generation != self.generation {
+            return false;
+        }
+        self.pads = found;
+        true
+    }
+
+    /// Store a Stream Deck's state after a write.
+    ///
+    /// Carries no settings — a deck cannot be asked what its brightness is —
+    /// so what this actually refreshes is whether the deck is still reachable,
+    /// which a write is the most reliable evidence of there is.
+    pub fn accept_deck(&mut self, updated: StreamDeckSummary) {
+        match self.decks.iter_mut().find(|deck| deck.id == updated.id) {
+            Some(existing) => *existing = updated,
+            None => self.decks.push(updated),
+        }
+    }
+
+    /// Store an audio interface's state after a write.
+    ///
+    /// Not fenced by generation, for the same reason [`Self::apply_reading`] is
+    /// not: a write is something a person just did to a device in front of
+    /// them, and dropping its result because a rescan started in between would
+    /// leave the panel showing the old value after the interface had moved.
+    pub fn apply_interface(&mut self, updated: AudioInterfaceSummary) {
+        match self
+            .interfaces
+            .iter_mut()
+            .find(|interface| interface.id == updated.id)
+        {
+            Some(existing) => *existing = updated,
+            None => self.interfaces.push(updated),
+        }
     }
 
     /// Mark the scan finished.
@@ -131,15 +209,59 @@ impl DeskModel {
         &self.lights
     }
 
+    /// The Stream Decks.
+    #[must_use]
+    pub fn decks(&self) -> &[StreamDeckSummary] {
+        &self.decks
+    }
+
+    /// The audio interfaces.
+    #[must_use]
+    pub fn interfaces(&self) -> &[AudioInterfaceSummary] {
+        &self.interfaces
+    }
+
+    /// The controllers.
+    #[must_use]
+    pub fn controllers(&self) -> &[ControllerSummary] {
+        &self.controllers
+    }
+
+    /// The macro pads.
+    #[must_use]
+    pub fn pads(&self) -> &[MacroPadSummary] {
+        &self.pads
+    }
+
     /// Whether the panel found nothing at all, with no scan running.
     ///
     /// Its own question because the empty state has to say something useful,
-    /// and "no monitors and no lights" is a different sentence from either
-    /// half alone.
+    /// and it has to account for every family: a desk with only a TourBox on
+    /// it is not an empty desk, and a panel that said so would be telling
+    /// somebody their hardware is missing while drawing it underneath.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        !self.scanning && self.displays.is_empty() && self.lights.is_empty()
+        !self.scanning
+            && self.displays.is_empty()
+            && self.lights.is_empty()
+            && self.decks.is_empty()
+            && self.interfaces.is_empty()
+            && self.controllers.is_empty()
+            && self.pads.is_empty()
     }
+}
+
+/// How one input's gain should read to a person.
+///
+/// A bare number, because that is all these interfaces give. Unlike a monitor,
+/// which reports its own maximum alongside every value, a Focusrite answers
+/// with a byte and nothing to scale it against — this desk's Vocaster stores
+/// and reads back every value to 255 without complaint. So a percentage here
+/// would be computed against a ceiling nobody stated, which is exactly the
+/// invented maximum [`describe_value`] exists to avoid for monitors.
+#[must_use]
+pub fn describe_gain(gain: Option<u8>) -> String {
+    gain.map_or_else(|| "—".to_owned(), |value| value.to_string())
 }
 
 /// How one control's value should read to a person.
@@ -195,6 +317,31 @@ mod tests {
             control,
             current,
             maximum,
+        }
+    }
+
+    fn deck(id: &str) -> StreamDeckSummary {
+        StreamDeckSummary {
+            id: id.to_owned(),
+            name: "Stream Deck XL".to_owned(),
+            model: "Stream Deck XL".to_owned(),
+            keys: 32,
+            dials: 0,
+            reachable: true,
+            unreachable_reason: None,
+        }
+    }
+
+    fn pad(id: &str) -> MacroPadSummary {
+        MacroPadSummary {
+            id: id.to_owned(),
+            name: "SmartCloud".to_owned(),
+            vendor_id: 0x5343,
+            product_id: 0x0080,
+            protocol: 12,
+            layers: 6,
+            reachable: true,
+            unreachable_reason: None,
         }
     }
 
@@ -333,6 +480,97 @@ mod tests {
         // have not got.
         assert_eq!(describe_input(0x1B), "input 0x1b");
         assert_eq!(describe_input(999), "input 0x3e7");
+    }
+
+    fn interface(id: &str, gain: u8) -> AudioInterfaceSummary {
+        AudioInterfaceSummary {
+            id: id.to_owned(),
+            name: "Vocaster Two".to_owned(),
+            firmware: 1749,
+            mass_storage: Some(true),
+            inputs: vec![roadie_ipc::desk::AudioInputSettings {
+                input: 1,
+                gain: Some(gain),
+                muted: Some(false),
+                phantom: Some(false),
+            }],
+            reachable: true,
+            unreachable_reason: None,
+        }
+    }
+
+    fn controller(id: &str) -> ControllerSummary {
+        ControllerSummary {
+            id: id.to_owned(),
+            name: "TourBox Elite".to_owned(),
+            buttons: 14,
+            wheels: 3,
+            haptics: true,
+            serial_number: None,
+        }
+    }
+
+    #[test]
+    fn an_interface_is_replaced_rather_than_duplicated_by_a_write() {
+        let mut model = DeskModel::default();
+        let scan = model.begin_scan();
+        model.accept_interfaces(scan, vec![interface("a", 70)]);
+        model.apply_interface(interface("a", 42));
+        assert_eq!(model.interfaces().len(), 1, "the write added a second row");
+        assert_eq!(model.interfaces()[0].inputs[0].gain, Some(42));
+    }
+
+    #[test]
+    fn a_write_to_an_interface_lands_even_when_a_rescan_started_behind_it() {
+        // Same rule as a monitor write, and for the same reason: somebody just
+        // turned a knob on a box in front of them.
+        let mut model = DeskModel::default();
+        let scan = model.begin_scan();
+        model.accept_interfaces(scan, vec![interface("a", 70)]);
+        model.begin_scan();
+        model.apply_interface(interface("a", 42));
+        assert_eq!(model.interfaces()[0].inputs[0].gain, Some(42));
+    }
+
+    #[test]
+    fn a_superseded_scan_cannot_deliver_any_of_the_new_families() {
+        // Every family goes through the same fence. A per-family accessor that
+        // forgot it would let the slower of two scans win for that family
+        // alone, which is worse than either answer: the panel would be half
+        // one scan and half the other.
+        let mut model = DeskModel::default();
+        let first = model.begin_scan();
+        let second = model.begin_scan();
+        assert!(!model.accept_decks(first, vec![deck("old")]));
+        assert!(!model.accept_interfaces(first, vec![interface("old", 70)]));
+        assert!(!model.accept_controllers(first, vec![controller("old")]));
+        assert!(!model.accept_pads(first, vec![pad("old")]));
+        assert!(model.decks().is_empty());
+        assert!(model.interfaces().is_empty());
+        assert!(model.controllers().is_empty());
+        assert!(model.pads().is_empty());
+        assert!(model.accept_decks(second, vec![deck("new")]));
+        assert_eq!(model.decks()[0].id, "new");
+    }
+
+    #[test]
+    fn a_desk_with_only_a_controller_on_it_is_not_an_empty_desk() {
+        // The empty state would otherwise tell somebody nothing was found
+        // while drawing their TourBox underneath the sentence.
+        let mut model = DeskModel::default();
+        let scan = model.begin_scan();
+        model.accept_controllers(scan, vec![controller("/dev/cu.usbmodem1")]);
+        model.finish_scan(scan);
+        assert!(!model.is_empty());
+    }
+
+    #[test]
+    fn a_gain_the_interface_does_not_have_reads_as_absent_rather_than_zero() {
+        // Zero is a real gain — all the way down. An input with no gain
+        // control at all is a different thing and must not look like it.
+        assert_eq!(describe_gain(Some(0)), "0");
+        assert_eq!(describe_gain(None), "—");
+        assert_eq!(describe_gain(Some(70)), "70");
     }
 
     #[test]

@@ -54,8 +54,10 @@ use roadie_hid::{
     SmartShiftStatus, TunableTorque, WriteError,
 };
 use roadie_ipc::desk::{
+    AudioFailure, AudioInputChange, AudioInputSettings, AudioInterfaceSummary, ControllerSummary,
     DisplayControl, DisplayFailure, DisplayReading, DisplaySettings, DisplaySummary,
-    NetworkLightChange, NetworkLightFailure, NetworkLightSummary,
+    MacroPadSummary, NetworkLightChange, NetworkLightFailure, NetworkLightSummary,
+    StreamDeckChange, StreamDeckFailure, StreamDeckSummary,
 };
 use roadie_ipc::transport;
 use roadie_ipc::{
@@ -725,6 +727,12 @@ fn agent_status() -> AgentStatus {
 /// The one mock monitor that answers. The other is scripted silent.
 const MOCK_DISPLAY: &str = "i2c-7";
 
+/// The scripted Stream Deck that opens. Its twin in the list does not.
+const MOCK_DECK: &str = "CL11L2A08430";
+
+/// The scripted audio interface.
+const MOCK_AUDIO: &str = "V2VD42B2703F98";
+
 /// What the scripted monitor reads before anything is changed.
 ///
 /// The maxima differ per control on purpose — brightness at 100 and contrast
@@ -796,6 +804,37 @@ fn mock_lights() -> Vec<NetworkLightSummary> {
     ]
 }
 
+/// The scripted audio interface: one Vocaster Two, two inputs.
+///
+/// Input 2 has no phantom power and no gain of its own, because these boxes
+/// really are asymmetric — and a panel only ever seen against an interface
+/// whose inputs all carry every control is a panel that has never had to draw
+/// the absent ones.
+fn mock_audio_interfaces() -> Vec<AudioInterfaceSummary> {
+    vec![AudioInterfaceSummary {
+        id: MOCK_AUDIO.to_owned(),
+        name: "Vocaster Two".to_owned(),
+        firmware: 1749,
+        mass_storage: Some(true),
+        inputs: vec![
+            AudioInputSettings {
+                input: 1,
+                gain: Some(70),
+                muted: Some(false),
+                phantom: Some(false),
+            },
+            AudioInputSettings {
+                input: 2,
+                gain: Some(9),
+                muted: Some(false),
+                phantom: None,
+            },
+        ],
+        reachable: true,
+        unreachable_reason: None,
+    }]
+}
+
 #[derive(Clone)]
 struct MockAgent {
     state: Arc<Mutex<State>>,
@@ -805,6 +844,9 @@ struct MockAgent {
     displays: Arc<Mutex<Vec<DisplayReading>>>,
     /// The scripted lights, likewise.
     lights: Arc<Mutex<Vec<NetworkLightSummary>>>,
+    /// The scripted audio interface, likewise — gain, mute and phantom power
+    /// all stick, so the panel is developed against something that remembers.
+    audio: Arc<Mutex<Vec<AudioInterfaceSummary>>>,
     /// The last [`Observation`] handed out, so `observe` can stamp a new
     /// generation when the rendered state differs from it.
     served: Arc<Mutex<Observation>>,
@@ -820,6 +862,7 @@ impl MockAgent {
             state: Arc::new(Mutex::new(state)),
             displays: Arc::new(Mutex::new(mock_display_readings())),
             lights: Arc::new(Mutex::new(mock_lights())),
+            audio: Arc::new(Mutex::new(mock_audio_interfaces())),
             served: Arc::new(Mutex::new(served)),
         }
     }
@@ -954,6 +997,156 @@ impl Agent for MockAgent {
             light.kelvin = kelvin.clamp(2900, 7000);
         }
         Ok(light.clone())
+    }
+
+    async fn list_stream_decks(self, _: Context) -> Vec<StreamDeckSummary> {
+        // One that opened and one that did not, on purpose. A deck held
+        // exclusively by Elgato's own app is the single most common state a
+        // real one is found in, and a panel developed only against decks that
+        // open has never drawn it.
+        vec![
+            StreamDeckSummary {
+                id: MOCK_DECK.to_owned(),
+                name: "Stream Deck XL".to_owned(),
+                model: "Stream Deck XL".to_owned(),
+                keys: 32,
+                dials: 0,
+                reachable: true,
+                unreachable_reason: None,
+            },
+            StreamDeckSummary {
+                id: "AL39K1A02116".to_owned(),
+                name: "Stream Deck Plus".to_owned(),
+                model: "Stream Deck Plus".to_owned(),
+                keys: 8,
+                dials: 4,
+                reachable: false,
+                unreachable_reason: Some(
+                    "another program already has this device open. Quitting Elgato's Stream \
+                     Deck app frees it."
+                        .to_owned(),
+                ),
+            },
+        ]
+    }
+
+    async fn set_stream_deck(
+        self,
+        _: Context,
+        id: String,
+        change: StreamDeckChange,
+    ) -> Result<StreamDeckSummary, StreamDeckFailure> {
+        if change.is_empty() {
+            return Err(StreamDeckFailure::NothingToDo);
+        }
+        if change
+            .brightness_percent
+            .is_some_and(|percent| percent > 100)
+        {
+            return Err(StreamDeckFailure::Refused(
+                "brightness is a percentage; above 100 the hardware's behaviour is undefined."
+                    .to_owned(),
+            ));
+        }
+        if id != MOCK_DECK {
+            return Err(StreamDeckFailure::Unreachable(
+                "another program already has this device open".to_owned(),
+            ));
+        }
+        // Nothing is stored: a Stream Deck cannot be asked what its brightness
+        // is, so there is no state here to remember and the mock says so by
+        // having none.
+        Ok(StreamDeckSummary {
+            id,
+            name: "Stream Deck XL".to_owned(),
+            model: "Stream Deck XL".to_owned(),
+            keys: 32,
+            dials: 0,
+            reachable: true,
+            unreachable_reason: None,
+        })
+    }
+
+    async fn list_audio_interfaces(self, _: Context) -> Vec<AudioInterfaceSummary> {
+        self.audio.lock().await.clone()
+    }
+
+    async fn set_audio_input(
+        self,
+        _: Context,
+        id: String,
+        input: u16,
+        change: AudioInputChange,
+    ) -> Result<AudioInterfaceSummary, AudioFailure> {
+        if change.is_empty() {
+            return Err(AudioFailure::NothingToDo);
+        }
+        if change.phantom == Some(true) && !change.phantom_acknowledged {
+            // The same sentence the real one sends, because the panel that
+            // shows it is developed here.
+            return Err(AudioFailure::NeedsAcknowledgement(format!(
+                "This switches 48 volt phantom power on for input pair {input}. A condenser \
+                 microphone needs it, but a ribbon microphone can be damaged by it, and so can \
+                 some older passive microphones. Unplug anything you are not sure about before \
+                 switching this on."
+            )));
+        }
+        let mut interfaces = self.audio.lock().await;
+        let interface = interfaces
+            .iter_mut()
+            .find(|interface| interface.id == id)
+            .ok_or(AudioFailure::NotFound)?;
+        let settings = interface
+            .inputs
+            .iter_mut()
+            .find(|settings| settings.input == input)
+            .ok_or(AudioFailure::NotFound)?;
+        // A control the scripted model does not have refuses the write rather
+        // than growing one, which is what the real interface does.
+        if let Some(value) = change.gain {
+            let gain = settings.gain.as_mut().ok_or_else(|| {
+                AudioFailure::Refused("this input has no gain control".to_owned())
+            })?;
+            *gain = value;
+        }
+        if let Some(muted) = change.muted {
+            let switch = settings
+                .muted
+                .as_mut()
+                .ok_or_else(|| AudioFailure::Refused("this input has no mute switch".to_owned()))?;
+            *switch = muted;
+        }
+        if let Some(on) = change.phantom {
+            let switch = settings.phantom.as_mut().ok_or_else(|| {
+                AudioFailure::Refused("this input has no phantom power".to_owned())
+            })?;
+            *switch = on;
+        }
+        Ok(interface.clone())
+    }
+
+    async fn list_controllers(self, _: Context) -> Vec<ControllerSummary> {
+        vec![ControllerSummary {
+            id: "/dev/cu.usbmodem000000011".to_owned(),
+            name: "TourBox Elite".to_owned(),
+            buttons: 14,
+            wheels: 3,
+            haptics: true,
+            serial_number: Some("00000001".to_owned()),
+        }]
+    }
+
+    async fn list_macro_pads(self, _: Context) -> Vec<MacroPadSummary> {
+        vec![MacroPadSummary {
+            id: "5343:0080".to_owned(),
+            name: "SmartCloud".to_owned(),
+            vendor_id: 0x5343,
+            product_id: 0x0080,
+            protocol: 12,
+            layers: 6,
+            reachable: true,
+            unreachable_reason: None,
+        }]
     }
 
     async fn protocol_version(self, _: Context) -> u32 {

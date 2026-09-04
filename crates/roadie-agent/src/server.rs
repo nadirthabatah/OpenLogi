@@ -23,8 +23,10 @@ use roadie_hid::{
     SmartShiftStatus, WriteError,
 };
 use roadie_ipc::desk::{
-    DisplayControl, DisplayFailure, DisplayReading, DisplaySettings, DisplaySummary,
-    NetworkLightChange, NetworkLightFailure, NetworkLightSummary,
+    AudioFailure, AudioInputChange, AudioInterfaceSummary, ControllerSummary, DisplayControl,
+    DisplayFailure, DisplayReading, DisplaySettings, DisplaySummary, MacroPadSummary,
+    NetworkLightChange, NetworkLightFailure, NetworkLightSummary, StreamDeckChange,
+    StreamDeckFailure, StreamDeckSummary,
 };
 use roadie_ipc::transport;
 use roadie_ipc::{
@@ -317,6 +319,41 @@ impl Agent for AgentServer {
         change: NetworkLightChange,
     ) -> Result<NetworkLightSummary, NetworkLightFailure> {
         crate::desk::set_network_light(id, change).await
+    }
+
+    async fn list_stream_decks(self, _: Context) -> Vec<StreamDeckSummary> {
+        crate::desk::list_stream_decks().await
+    }
+
+    async fn set_stream_deck(
+        self,
+        _: Context,
+        id: String,
+        change: StreamDeckChange,
+    ) -> Result<StreamDeckSummary, StreamDeckFailure> {
+        crate::desk::set_stream_deck(id, change).await
+    }
+
+    async fn list_audio_interfaces(self, _: Context) -> Vec<AudioInterfaceSummary> {
+        crate::desk::list_audio_interfaces().await
+    }
+
+    async fn set_audio_input(
+        self,
+        _: Context,
+        id: String,
+        input: u16,
+        change: AudioInputChange,
+    ) -> Result<AudioInterfaceSummary, AudioFailure> {
+        crate::desk::set_audio_input(id, input, change).await
+    }
+
+    async fn list_controllers(self, _: Context) -> Vec<ControllerSummary> {
+        crate::desk::list_controllers().await
+    }
+
+    async fn list_macro_pads(self, _: Context) -> Vec<MacroPadSummary> {
+        crate::desk::list_macro_pads().await
     }
 
     async fn declare_client(self, _: Context, kind: ClientKind) {

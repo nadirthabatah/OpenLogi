@@ -1,4 +1,4 @@
-//! The five desk methods, exercised over the real socket against the mock.
+//! The eleven desk methods, exercised over the real socket against the mock.
 //!
 //! Everything else about them is unit-tested: the wire encoding has golden
 //! bytes, the agent's conversions have their own tests, and the panel's
@@ -42,7 +42,7 @@
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
-use roadie_ipc::desk::{DisplayControl, NetworkLightChange};
+use roadie_ipc::desk::{AudioInputChange, DisplayControl, NetworkLightChange, StreamDeckChange};
 use roadie_ipc::{AgentClient, PROTOCOL_VERSION};
 use tarpc::context;
 
@@ -138,6 +138,9 @@ async fn exercise_the_desk_methods() {
     let client = connect_to_mock().await;
     exercise_monitors(&client).await;
     exercise_lights(&client).await;
+    exercise_stream_decks(&client).await;
+    exercise_audio_interfaces(&client).await;
+    exercise_controllers_and_pads(&client).await;
 }
 
 async fn exercise_monitors(client: &AgentClient) {
@@ -297,4 +300,195 @@ async fn exercise_lights(client: &AgentClient) {
         .await
         .expect("set_network_light")
         .expect_err("no light at that address");
+}
+
+async fn exercise_stream_decks(client: &AgentClient) {
+    let ctx = context::current;
+    let decks = client
+        .list_stream_decks(ctx())
+        .await
+        .expect("list_stream_decks");
+    assert_eq!(decks.len(), 2, "the mock scripts two decks");
+
+    // Held exclusively by another program is the commonest state a real deck
+    // is found in, and the reason it is listed rather than dropped: "quit the
+    // Elgato app" is something a person can act on, and a missing row is not.
+    let held = decks
+        .iter()
+        .find(|deck| !deck.reachable)
+        .expect("one deck will not open");
+    assert!(
+        held.unreachable_reason
+            .as_deref()
+            .is_some_and(|why| why.contains("already has this device open")),
+        "it says why: {held:?}"
+    );
+
+    let open = decks
+        .iter()
+        .find(|deck| deck.reachable)
+        .expect("one deck opens");
+    assert_eq!(open.keys, 32, "an XL has 32 keys");
+
+    client
+        .set_stream_deck(
+            ctx(),
+            open.id.clone(),
+            StreamDeckChange {
+                brightness_percent: Some(30),
+                reset: false,
+            },
+        )
+        .await
+        .expect("set_stream_deck")
+        .expect("the open deck takes a brightness");
+
+    // Above 100 the hardware's behaviour is undefined, so it never gets there.
+    client
+        .set_stream_deck(
+            ctx(),
+            open.id.clone(),
+            StreamDeckChange {
+                brightness_percent: Some(101),
+                reset: false,
+            },
+        )
+        .await
+        .expect("set_stream_deck")
+        .expect_err("101 percent is not a brightness");
+
+    client
+        .set_stream_deck(ctx(), open.id.clone(), StreamDeckChange::default())
+        .await
+        .expect("set_stream_deck")
+        .expect_err("a change with nothing in it");
+}
+
+async fn exercise_audio_interfaces(client: &AgentClient) {
+    let ctx = context::current;
+    let interfaces = client
+        .list_audio_interfaces(ctx())
+        .await
+        .expect("list_audio_interfaces");
+    let interface = interfaces.first().expect("the mock scripts one interface");
+    assert_eq!(interface.inputs.len(), 2, "a Vocaster Two has two inputs");
+
+    // The second input deliberately has no phantom power, so the panel has to
+    // draw an input whose controls are not all present.
+    let bare = interface
+        .inputs
+        .iter()
+        .find(|settings| settings.phantom.is_none())
+        .expect("one input has no phantom power");
+    assert!(bare.gain.is_some(), "it still has gain: {bare:?}");
+
+    // A write answers with the whole interface, because phantom power is
+    // switched per pair and changing one input changes what its neighbour says.
+    let after = client
+        .set_audio_input(
+            ctx(),
+            interface.id.clone(),
+            1,
+            AudioInputChange {
+                gain: Some(42),
+                ..AudioInputChange::default()
+            },
+        )
+        .await
+        .expect("set_audio_input")
+        .expect("the interface takes a gain");
+    let first = after
+        .inputs
+        .iter()
+        .find(|settings| settings.input == 1)
+        .expect("input one is still there");
+    assert_eq!(first.gain, Some(42), "the write stuck");
+
+    // Switching phantom power on without having been told what it costs is
+    // refused, and the refusal carries the sentence to read out. This is the
+    // whole safety design, and the wire is where it has to survive.
+    let refused = client
+        .set_audio_input(
+            ctx(),
+            interface.id.clone(),
+            1,
+            AudioInputChange {
+                phantom: Some(true),
+                ..AudioInputChange::default()
+            },
+        )
+        .await
+        .expect("set_audio_input")
+        .expect_err("phantom power on without acknowledgement");
+    assert!(
+        refused.to_string().contains("ribbon"),
+        "the refusal says what it can damage: {refused}"
+    );
+
+    // Acknowledged, it goes through.
+    let lit = client
+        .set_audio_input(
+            ctx(),
+            interface.id.clone(),
+            1,
+            AudioInputChange {
+                phantom: Some(true),
+                phantom_acknowledged: true,
+                ..AudioInputChange::default()
+            },
+        )
+        .await
+        .expect("set_audio_input")
+        .expect("acknowledged phantom power");
+    assert_eq!(
+        lit.inputs
+            .iter()
+            .find(|settings| settings.input == 1)
+            .and_then(|settings| settings.phantom),
+        Some(true)
+    );
+
+    // Switching it off asks nothing: that is how somebody makes the interface
+    // safe again, and a confirmation in front of it would be an obstacle
+    // before the safe direction.
+    client
+        .set_audio_input(
+            ctx(),
+            interface.id.clone(),
+            1,
+            AudioInputChange {
+                phantom: Some(false),
+                ..AudioInputChange::default()
+            },
+        )
+        .await
+        .expect("set_audio_input")
+        .expect("switching phantom power off needs no acknowledgement");
+}
+
+async fn exercise_controllers_and_pads(client: &AgentClient) {
+    let ctx = context::current;
+
+    // Identity only, and deliberately so: a TourBox stores no settings, so
+    // there is no matching setter to exercise here.
+    let controllers = client
+        .list_controllers(ctx())
+        .await
+        .expect("list_controllers");
+    let tourbox = controllers
+        .first()
+        .expect("the mock scripts one controller");
+    assert!(tourbox.buttons > 0, "it has buttons: {tourbox:?}");
+    assert!(!tourbox.id.is_empty(), "and a port to reach it on");
+
+    let pads = client
+        .list_macro_pads(ctx())
+        .await
+        .expect("list_macro_pads");
+    let pad = pads.first().expect("the mock scripts one board");
+    assert!(pad.reachable, "the scripted board answers: {pad:?}");
+    assert!(
+        pad.layers > 0,
+        "a board that answered says how many layers it has: {pad:?}"
+    );
 }

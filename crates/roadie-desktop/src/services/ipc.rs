@@ -32,8 +32,10 @@ use roadie_core::hid::{
     DeviceRoute, Dpi, DpiInfo, LightCommand, ReceiverSelector, SmartShiftStatus, WriteError,
 };
 use roadie_ipc::desk::{
-    DisplayControl, DisplayFailure, DisplayReading, DisplaySettings, DisplaySummary,
-    NetworkLightChange, NetworkLightFailure, NetworkLightSummary,
+    AudioFailure, AudioInputChange, AudioInterfaceSummary, ControllerSummary, DisplayControl,
+    DisplayFailure, DisplayReading, DisplaySettings, DisplaySummary, MacroPadSummary,
+    NetworkLightChange, NetworkLightFailure, NetworkLightSummary, StreamDeckChange,
+    StreamDeckFailure, StreamDeckSummary,
 };
 use roadie_ipc::{
     AgentClient, AgentSnapshot, ClientKind, ConfigReloadError, Generation, OBSERVE_HOLD,
@@ -133,10 +135,22 @@ pub enum Command {
     /// auto-disables it once polls stop.
     #[cfg(all(target_os = "macos", debug_assertions))]
     PollEventMonitor(oneshot::Sender<Vec<roadie_ipc::MonitorEvent>>),
-    /// Monitors and Elgato lights. Every one carries a reply channel because
-    /// none of them is fire-and-forget: a panel showing a device's state has
-    /// nothing to show until the device answers, and both writes report what
-    /// the device took rather than what it was asked for.
+    /// Everything on the desk that is not a HID++ peripheral.
+    ///
+    /// Grouped rather than flattened here because these are one surface: they
+    /// share a deadline, they are all on-demand rather than observed, and they
+    /// all belong to one panel. Keeping them behind one variant also keeps
+    /// [`handle`] a readable dispatch over the rest.
+    Desk(DeskCommand),
+}
+
+/// One request about the desk.
+///
+/// Every one carries a reply channel, because none of them is
+/// fire-and-forget: a panel showing a device's state has nothing to show until
+/// the device answers, and every write reports what the device took rather
+/// than what it was asked for.
+pub enum DeskCommand {
     ListDisplays(oneshot::Sender<Vec<DisplaySummary>>),
     ReadDisplay(
         String,
@@ -154,6 +168,21 @@ pub enum Command {
         NetworkLightChange,
         oneshot::Sender<Result<NetworkLightSummary, NetworkLightFailure>>,
     ),
+    ListStreamDecks(oneshot::Sender<Vec<StreamDeckSummary>>),
+    SetStreamDeck(
+        String,
+        StreamDeckChange,
+        oneshot::Sender<Result<StreamDeckSummary, StreamDeckFailure>>,
+    ),
+    ListAudioInterfaces(oneshot::Sender<Vec<AudioInterfaceSummary>>),
+    SetAudioInput(
+        String,
+        u16,
+        AudioInputChange,
+        oneshot::Sender<Result<AudioInterfaceSummary, AudioFailure>>,
+    ),
+    ListControllers(oneshot::Sender<Vec<ControllerSummary>>),
+    ListMacroPads(oneshot::Sender<Vec<MacroPadSummary>>),
 }
 
 /// How long to let a desk command run before giving up on it.
@@ -633,26 +662,64 @@ async fn handle(
         Command::PollEventMonitor(reply) => {
             let _ = reply.send(rpc_result(client.poll_event_monitor(ctx).await)?);
         }
-        Command::ListDisplays(reply) => {
+        Command::Desk(desk) => handle_desk(client, desk).await?,
+    }
+    Ok(())
+}
+
+/// One desk request, answered.
+///
+/// Split from [`handle`] so each stays a readable dispatch, and because these
+/// share a property the rest do not: every one is on-demand and every one runs
+/// on [`desk_context`]'s longer deadline.
+async fn handle_desk(client: &AgentClient, cmd: DeskCommand) -> Result<(), ()> {
+    match cmd {
+        DeskCommand::ListDisplays(reply) => {
             let _ = reply.send(rpc_result(client.list_displays(desk_context()).await)?);
         }
-        Command::ReadDisplay(id, reply) => {
+        DeskCommand::ReadDisplay(id, reply) => {
             let _ = reply.send(rpc_result(client.read_display(desk_context(), id).await)?);
         }
-        Command::SetDisplay(id, control, value, reply) => {
+        DeskCommand::SetDisplay(id, control, value, reply) => {
             let _ = reply.send(rpc_result(
                 client.set_display(desk_context(), id, control, value).await,
             )?);
         }
-        Command::ListNetworkLights(reply) => {
+        DeskCommand::ListNetworkLights(reply) => {
             let _ = reply.send(rpc_result(
                 client.list_network_lights(desk_context()).await,
             )?);
         }
-        Command::SetNetworkLight(id, change, reply) => {
+        DeskCommand::SetNetworkLight(id, change, reply) => {
             let _ = reply.send(rpc_result(
                 client.set_network_light(desk_context(), id, change).await,
             )?);
+        }
+        DeskCommand::ListStreamDecks(reply) => {
+            let _ = reply.send(rpc_result(client.list_stream_decks(desk_context()).await)?);
+        }
+        DeskCommand::SetStreamDeck(id, change, reply) => {
+            let _ = reply.send(rpc_result(
+                client.set_stream_deck(desk_context(), id, change).await,
+            )?);
+        }
+        DeskCommand::ListAudioInterfaces(reply) => {
+            let _ = reply.send(rpc_result(
+                client.list_audio_interfaces(desk_context()).await,
+            )?);
+        }
+        DeskCommand::SetAudioInput(id, input, change, reply) => {
+            let _ = reply.send(rpc_result(
+                client
+                    .set_audio_input(desk_context(), id, input, change)
+                    .await,
+            )?);
+        }
+        DeskCommand::ListControllers(reply) => {
+            let _ = reply.send(rpc_result(client.list_controllers(desk_context()).await)?);
+        }
+        DeskCommand::ListMacroPads(reply) => {
+            let _ = reply.send(rpc_result(client.list_macro_pads(desk_context()).await)?);
         }
     }
     Ok(())
